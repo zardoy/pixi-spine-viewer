@@ -28,6 +28,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const [selectedAnimation, setSelectedAnimation] = useState<string>("");
   const [animations, setAnimations] = useState<string[]>([]);
   const [infoPanelPos, setInfoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [fps, setFps] = useState(0);
 
   // Initialize PixiJS and load Spine data
   useEffect(() => {
@@ -194,6 +195,38 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     }
   }, [scale]);
 
+  // Track timeline and FPS over time
+  useEffect(() => {
+    if (!appRef.current || !spineRef.current) return;
+    const app = appRef.current;
+    let lastTimeline = -1;
+
+    const update = () => {
+      if (!spineRef.current) return;
+      const track = spineRef.current.state.tracks[0];
+      if (track) {
+        const t = track.trackTime ?? (track as any).time ?? 0;
+        // Avoid excessive React updates
+        if (Math.abs(t - lastTimeline) > 0.01) {
+          lastTimeline = t;
+          setTimeline(t);
+        }
+      }
+
+      // Update FPS from ticker
+      if (app.ticker) {
+        const currentFps = app.ticker.FPS ?? 0;
+        setFps(currentFps);
+      }
+    };
+
+    app.ticker.add(update);
+
+    return () => {
+      app.ticker.remove(update);
+    };
+  }, [timelineDuration]);
+
   // Debug bones / attachments
   useEffect(() => {
     if (!spineRef.current) return;
@@ -283,7 +316,6 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       {/* Draggable info panel */}
       <InfoPanel
         spine={spineRef.current}
-        speed={speed}
         scale={scale}
         loop={loop}
         smoothSwitch={smoothSwitch}
@@ -292,6 +324,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         files={files}
         pos={infoPanelPos}
         setPos={setInfoPanelPos}
+        fps={fps}
       />
     </div>
   );
@@ -299,7 +332,6 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
 interface InfoPanelProps {
   spine: Spine | null;
-  speed: number;
   scale: number;
   loop: boolean;
   smoothSwitch: boolean;
@@ -308,6 +340,7 @@ interface InfoPanelProps {
   files: SpineFiles;
   pos: { x: number; y: number };
   setPos: (pos: { x: number; y: number }) => void;
+  fps: number;
 }
 
 const InfoPanel = ({
@@ -317,6 +350,7 @@ const InfoPanel = ({
   files,
   pos,
   setPos,
+  fps,
 }: InfoPanelProps) => {
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -379,9 +413,8 @@ const InfoPanel = ({
         <div>Animation: {selectedAnimation || "None"}</div>
         <div>Bones / Slots: {bones} / {slots}</div>
         <div>Skins: {currentSkinName} / {totalSkins}</div>
-        <div>Timelines: {timelineCount}</div>
-        <div>Duration: {animationDuration.toFixed(2)}s</div>
-        <div>Animations: {animations.length}</div>
+        <div>Animation Timelines: {timelineCount}</div>
+        <div>FPS: {fps.toFixed(1)}</div>
       </div>
       <div className="flex flex-wrap gap-2 mt-2">
         <Button

@@ -109,9 +109,9 @@ export const Controls = ({
                 <SelectValue placeholder="Select animation" />
               </SelectTrigger>
               <SelectContent>
-                {animations.map((anim) => (
+                {animations.map((anim, index) => (
                   <SelectItem key={anim} value={anim}>
-                    {anim}
+                    {index < 9 ? `${index + 1}. ` : ""}{anim}
                   </SelectItem>
                 ))}
               </SelectContent>

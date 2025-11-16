@@ -1,0 +1,11 @@
+<script src="https://unpkg.com/@esotericsoftware/spine-player@4.2.*/dist/iife/spine-player.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/@esotericsoftware/spine-player@4.2.*/dist/spine-player.css">
+
+<div id="player-container" style="width: 100%; height: 100vh;"></div>
+
+<script>
+new spine.SpinePlayer("player-container", {
+	skeleton: "https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples/cloud-pot/export/cloud-pot.json",
+	atlas: "https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples/cloud-pot/export/cloud-pot.atlas"
+});
+</script>

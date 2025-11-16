@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design system with dark red accent theme for Spine Viewer */
+
+@layer base {
+  :root {
+    --background: 220 15% 10%;
+    --foreground: 210 20% 98%;
+
+    --card: 220 15% 12%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 220 15% 12%;
+    --popover-foreground: 210 20% 98%;
+
+    /* Dark red primary color */
+    --primary: 0 72% 51%;
+    --primary-foreground: 210 20% 98%;
+
+    --secondary: 220 15% 18%;
+    --secondary-foreground: 210 20% 98%;
+
+    --muted: 220 15% 20%;
+    --muted-foreground: 215 15% 65%;
+
+    /* Dark red accent */
+    --accent: 0 65% 45%;
+    --accent-foreground: 210 20% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 98%;
+
+    --border: 220 15% 20%;
+    --input: 220 15% 18%;
+    --ring: 0 72% 51%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 15% 6%;
+    --foreground: 210 20% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

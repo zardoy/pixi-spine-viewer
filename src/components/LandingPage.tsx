@@ -1,0 +1,243 @@
+import { Upload, FileImage, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useRef, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { SpineFiles } from "@/pages/Index";
+import { fetchSpineFilesFromUrl, isValidSpineUrl } from "@/lib/urlFetcher";
+import { SPINE_EXAMPLES, SpineExample } from "@/lib/spineExamples";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface LandingPageProps {
+  onFilesSelect: (files: SpineFiles) => void;
+}
+
+export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedExample, setSelectedExample] = useState<string>("");
+
+  const processFiles = async (files: File[]) => {
+    // Find JSON, Atlas, and image files
+    const jsonFile = files.find(f => f.name.endsWith('.json'));
+    const atlasFile = files.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
+    const imageFiles = files.filter(f =>
+      f.type.startsWith("image/") ||
+      f.name.match(/\.(png|jpg|jpeg|webp)$/i)
+    );
+
+    if (!jsonFile) {
+      toast.error("No .json file found. Please include the Spine JSON file.");
+      return;
+    }
+
+    if (!atlasFile) {
+      toast.error("No .atlas file found. Please include the Spine atlas file.");
+      return;
+    }
+
+    if (imageFiles.length === 0) {
+      toast.error("No image files found. Please include at least one atlas image (.png, .webp, .jpg).");
+      return;
+    }
+
+    toast.success(`Loaded: ${jsonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
+    onFilesSelect({
+      jsonFile,
+      atlasFile,
+      imageFiles,
+    });
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    await processFiles(files);
+  };
+
+  const handleFilesClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer.files);
+
+    if (files.length > 0) {
+      await processFiles(files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handlePaste = async (e: ClipboardEvent) => {
+    const text = e.clipboardData?.getData('text');
+
+    if (text && isValidSpineUrl(text)) {
+      e.preventDefault();
+      toast.loading('Downloading Spine files from URL...');
+
+      try {
+        const files = await fetchSpineFilesFromUrl(text);
+        toast.dismiss();
+        toast.success(`Downloaded: ${files.jsonFile.name}, ${files.atlasFile.name}, and ${files.imageFiles.length} image(s)`);
+        onFilesSelect(files);
+      } catch (error) {
+        toast.dismiss();
+        toast.error(error instanceof Error ? error.message : 'Failed to download files from URL');
+      }
+    }
+  };
+
+  // Add paste event listener
+  useEffect(() => {
+    window.addEventListener('paste', handlePaste as any);
+    return () => window.removeEventListener('paste', handlePaste as any);
+  }, []);
+
+  const handleLoadExample = async () => {
+    if (!selectedExample) {
+      toast.error('Please select an example');
+      return;
+    }
+
+    const example = SPINE_EXAMPLES.find(ex => ex.name === selectedExample);
+    if (!example) return;
+
+    toast.loading(`Loading ${example.name}...`);
+
+    try {
+      const files = await fetchSpineFilesFromUrl(example.jsonUrl);
+      toast.dismiss();
+      toast.success(`Loaded ${example.name}`);
+      onFilesSelect(files);
+    } catch (error) {
+      toast.dismiss();
+      toast.error(error instanceof Error ? error.message : 'Failed to load example');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-background via-background to-secondary relative">
+      {/* File picker input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".json,.atlas,.atlas.txt,.png,.webp,.jpg,.jpeg,image/*"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+      {/* ZARDOY Watermark */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="text-[20rem] font-bold italic text-white opacity-[0.03] select-none tracking-wider" style={{ fontFamily: 'Impact, "Arial Black", sans-serif' }}>
+          ZARDOY
+        </div>
+      </div>
+      <Card className="max-w-2xl w-full p-12 text-center border-2 border-dashed border-border hover:border-primary/50 transition-colors relative z-10">
+        <div
+          onDrop={handleDrop as any}
+          onDragOver={handleDragOver as any}
+          onDragEnter={handleDragEnter as any}
+          onDragLeave={handleDragLeave as any}
+          className="space-y-8"
+        >
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Upload className="w-10 h-10 text-primary" />
+              </div>
+            </div>
+            <h1 className="text-4xl font-bold text-foreground">
+              Spine Animation Viewer
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              Load Spine animations from files or URL
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Required files: <span className="text-primary font-medium">.json</span>, <span className="text-primary font-medium">.atlas</span>, and <span className="text-primary font-medium">atlas image(s)</span>
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-muted-foreground">
+              Drag and drop files here or
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button
+                onClick={handleFilesClick}
+                size="lg"
+                className="gap-2 font-semibold"
+              >
+                <FileImage className="w-5 h-5" />
+                Select Files
+              </Button>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-border space-y-4">
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground flex items-center justify-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Try an Example
+              </p>
+              <div className="flex gap-2 items-center justify-center">
+                <Select value={selectedExample} onValueChange={setSelectedExample}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="Select an example..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SPINE_EXAMPLES.map((example) => (
+                      <SelectItem key={example.name} value={example.name}>
+                        {example.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={handleLoadExample}
+                  variant="outline"
+                  disabled={!selectedExample}
+                  className="gap-2"
+                >
+                  Load Example
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm text-accent flex items-center justify-center gap-2">
+                <span className="font-semibold">💡 Tip:</span>
+                <span className="text-muted-foreground">
+                  Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground">Ctrl+V</kbd> to paste a URL to any file (.json, .atlas, or image) and we'll download all related files automatically
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground">R</kbd> to reset,
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">Space</kbd> to play/pause
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+};

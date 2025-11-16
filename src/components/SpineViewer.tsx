@@ -20,14 +20,14 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const [isPlaying, setIsPlaying] = useState(true);
   const [loop, setLoop] = useState(true);
   const [speed, setSpeed] = useState(1.0);
-  const [opacity, setOpacity] = useState(1.0);
   const [scale, setScale] = useState(1.0);
   const [smoothSwitch, setSmoothSwitch] = useState(false);
+  const [timeline, setTimeline] = useState(0);
+  const [timelineDuration, setTimelineDuration] = useState(0);
+  const [debugBones, setDebugBones] = useState(false);
   const [selectedAnimation, setSelectedAnimation] = useState<string>("");
   const [animations, setAnimations] = useState<string[]>([]);
   const [infoPanelPos, setInfoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const draggingRef = useRef(false);
-  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Initialize PixiJS and load Spine data
   useEffect(() => {
@@ -99,7 +99,8 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           }
 
           // Get available animations
-          const availableAnimations = spine.skeleton.data.animations.map((anim: any) => anim.name);
+          const data: any = spine.skeleton.data;
+          const availableAnimations = data.animations.map((anim: any) => anim.name);
           console.log('Available animations:', availableAnimations);
           setAnimations(availableAnimations);
 
@@ -107,6 +108,11 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
             const firstAnimation = availableAnimations[0];
             setSelectedAnimation(firstAnimation);
             spine.state.setAnimation(0, firstAnimation, true);
+            const anim = data.findAnimation?.(firstAnimation);
+            if (anim) {
+              setTimelineDuration(anim.duration ?? 0);
+              setTimeline(0);
+            }
             toast.success(`Loaded Spine animation with ${availableAnimations.length} animation(s)`);
           } else {
             toast.warning('Spine loaded but no animations found');
@@ -149,7 +155,15 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   // Update animation when selected animation changes
   useEffect(() => {
     if (!spineRef.current || !selectedAnimation) return;
-    const state = spineRef.current.state;
+    const spine = spineRef.current;
+    const state = spine.state;
+    const data: any = spine.skeleton.data;
+    const anim = data.findAnimation?.(selectedAnimation);
+
+    if (anim) {
+      setTimelineDuration(anim.duration ?? 0);
+      setTimeline(0);
+    }
 
     if (smoothSwitch && !loop) {
       // Queue next animation after current non-looping one
@@ -173,19 +187,36 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     }
   }, [speed]);
 
-  // Update opacity
-  useEffect(() => {
-    if (spineRef.current) {
-      spineRef.current.alpha = opacity;
-    }
-  }, [opacity]);
-
   // Update scale
   useEffect(() => {
     if (spineRef.current) {
       spineRef.current.scale.set(scale);
     }
   }, [scale]);
+
+  // Debug bones / attachments
+  useEffect(() => {
+    if (!spineRef.current) return;
+    let cancelled = false;
+
+    (async () => {
+      const { SpineDebugRenderer } = await import("@esotericsoftware/spine-pixi-v8");
+      if (cancelled || !spineRef.current) return;
+
+      // Reuse single debug renderer to avoid leaks
+      if (debugBones) {
+        if (!(spineRef.current.debug instanceof SpineDebugRenderer)) {
+          spineRef.current.debug = new SpineDebugRenderer();
+        }
+      } else {
+        spineRef.current.debug = undefined;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debugBones]);
 
   // Keyboard controls
   useEffect(() => {
@@ -196,6 +227,17 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       } else if (e.code === "KeyR") {
         e.preventDefault();
         onBack();
+      } else if (e.code === "KeyT") {
+        e.preventDefault();
+        setDebugBones((prev) => !prev);
+      } else if (e.code === "KeyS") {
+        // Restart current animation from start
+        if (spineRef.current && selectedAnimation) {
+          e.preventDefault();
+          const state = spineRef.current.state;
+          state.setAnimation(0, selectedAnimation, loop);
+          setTimeline(0);
+        }
       } else if (e.code.startsWith("Digit")) {
         const digit = parseInt(e.code.replace("Digit", ""), 10);
         if (!Number.isNaN(digit) && digit >= 1 && digit <= 9) {
@@ -211,23 +253,26 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onBack]);
+  }, [onBack, animations, loop, selectedAnimation]);
 
   return (
     <div className="min-h-screen flex flex-col bg-background relative">
       <Controls
+        timeline={timeline}
+        timelineDuration={timelineDuration}
+        onTimelineChange={setTimeline}
         isPlaying={isPlaying}
         onPlayPause={() => setIsPlaying(!isPlaying)}
         loop={loop}
         onLoopChange={setLoop}
         speed={speed}
         onSpeedChange={setSpeed}
-        opacity={opacity}
-        onOpacityChange={setOpacity}
         scale={scale}
         onScaleChange={setScale}
         smoothSwitch={smoothSwitch}
         onSmoothSwitchChange={setSmoothSwitch}
+        debugBones={debugBones}
+        onDebugBonesChange={setDebugBones}
         selectedAnimation={selectedAnimation}
         animations={animations}
         onAnimationChange={setSelectedAnimation}
@@ -240,7 +285,6 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         spine={spineRef.current}
         speed={speed}
         scale={scale}
-        opacity={opacity}
         loop={loop}
         smoothSwitch={smoothSwitch}
         animations={animations}
@@ -257,7 +301,6 @@ interface InfoPanelProps {
   spine: Spine | null;
   speed: number;
   scale: number;
-  opacity: number;
   loop: boolean;
   smoothSwitch: boolean;
   animations: string[];
@@ -269,11 +312,6 @@ interface InfoPanelProps {
 
 const InfoPanel = ({
   spine,
-  speed,
-  scale,
-  opacity,
-  loop,
-  smoothSwitch,
   animations,
   selectedAnimation,
   files,
@@ -315,6 +353,19 @@ const InfoPanel = ({
   const skeletonName = spine?.skeleton?.data?.name ?? "N/A";
   const bones = spine?.skeleton?.bones?.length ?? 0;
   const slots = spine?.skeleton?.slots?.length ?? 0;
+  const totalSkins = spine?.skeleton?.data?.skins?.length ?? 0;
+  const currentSkinName = spine?.skeleton?.skin?.name ?? "default";
+
+  let timelineCount = 0;
+  let animationDuration = 0;
+  if (spine && selectedAnimation) {
+    const data: any = spine.skeleton.data as any;
+    const anim = data.findAnimation?.(selectedAnimation);
+    if (anim) {
+      timelineCount = anim.timelines?.length ?? 0;
+      animationDuration = anim.duration ?? 0;
+    }
+  }
 
   return (
     <div
@@ -327,6 +378,9 @@ const InfoPanel = ({
         <div>Skeleton: {skeletonName}</div>
         <div>Animation: {selectedAnimation || "None"}</div>
         <div>Bones / Slots: {bones} / {slots}</div>
+        <div>Skins: {currentSkinName} / {totalSkins}</div>
+        <div>Timelines: {timelineCount}</div>
+        <div>Duration: {animationDuration.toFixed(2)}s</div>
         <div>Animations: {animations.length}</div>
       </div>
       <div className="flex flex-wrap gap-2 mt-2">
@@ -351,9 +405,6 @@ const InfoPanel = ({
         >
           Open Texture{files.imageFiles.length > 1 ? "s" : ""}
         </Button>
-      </div>
-      <div className="text-[10px] text-muted-foreground mt-1">
-        Hotkeys: 1–9 animations, Space play/pause, R close
       </div>
     </div>
   );

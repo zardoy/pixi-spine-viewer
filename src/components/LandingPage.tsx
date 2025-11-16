@@ -1,18 +1,18 @@
 import { Upload, FileImage, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
 import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SpineFiles } from "@/pages/Index";
-import { fetchSpineFilesFromUrl, isValidSpineUrl } from "@/lib/urlFetcher";
-import { SPINE_EXAMPLES, SpineExample } from "@/lib/spineExamples";
+import { SpineFiles } from "../pages/Index";
+import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
+import { SPINE_EXAMPLES, SpineExample } from "../lib/spineExamples";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "./ui/select";
 
 interface LandingPageProps {
   onFilesSelect: (files: SpineFiles) => void;
@@ -126,7 +126,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     toast.loading(`Loading ${example.name}...`);
 
     try {
-      const files = await fetchSpineFilesFromUrl(example.jsonUrl);
+      const files = await fetchSpineFilesFromUrl(example.jsonUrl, example.atlasUrl);
       toast.dismiss();
       toast.success(`Loaded ${example.name}`);
       onFilesSelect(files);

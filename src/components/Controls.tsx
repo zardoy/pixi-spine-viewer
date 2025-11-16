@@ -20,12 +20,15 @@ interface ControlsProps {
   onLoopChange: (loop: boolean) => void;
   speed: number;
   onSpeedChange: (speed: number) => void;
-  opacity: number;
-  onOpacityChange: (opacity: number) => void;
   scale: number;
   onScaleChange: (scale: number) => void;
+  timeline: number;
+  timelineDuration: number;
+  onTimelineChange: (time: number) => void;
   smoothSwitch: boolean;
   onSmoothSwitchChange: (value: boolean) => void;
+  debugBones: boolean;
+  onDebugBonesChange: (value: boolean) => void;
   selectedAnimation: string;
   animations: string[];
   onAnimationChange: (animation: string) => void;
@@ -41,12 +44,15 @@ export const Controls = ({
   onLoopChange,
   speed,
   onSpeedChange,
-  opacity,
-  onOpacityChange,
   scale,
   onScaleChange,
+  timeline,
+  timelineDuration,
+  onTimelineChange,
   smoothSwitch,
   onSmoothSwitchChange,
+  debugBones,
+  onDebugBonesChange,
   selectedAnimation,
   animations,
   onAnimationChange,
@@ -120,7 +126,17 @@ export const Controls = ({
                 onCheckedChange={(val: boolean) => onSmoothSwitchChange(Boolean(val))}
               />
               <Label htmlFor="smoothSwitch" className="cursor-pointer text-xs">
-              Smooth switch (queue)
+                Smooth switch (queue)
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="debugBones"
+                checked={debugBones}
+                onCheckedChange={(val: boolean) => onDebugBonesChange(Boolean(val))}
+              />
+              <Label htmlFor="debugBones" className="cursor-pointer text-xs">
+                Debug bones / attachments
               </Label>
             </div>
           </div>
@@ -156,16 +172,17 @@ export const Controls = ({
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">
-              Opacity: {Math.round(opacity * 100)}%
+              Timeline: {timelineDuration > 0 ? `${timeline.toFixed(2)}s / ${timelineDuration.toFixed(2)}s` : "N/A"}
             </Label>
             <div className="flex items-center gap-2 min-w-48">
               <Slider
-                value={[opacity]}
-                onValueChange={(value) => onOpacityChange(value[0])}
+                value={[Math.min(timeline, timelineDuration || 0)]}
+                onValueChange={(value) => onTimelineChange(value[0])}
                 min={0}
-                max={1}
-                step={0.05}
+                max={timelineDuration || 0}
+                step={timelineDuration ? timelineDuration / 200 : 0.01}
                 className="flex-1"
+                disabled={timelineDuration <= 0}
               />
             </div>
           </div>

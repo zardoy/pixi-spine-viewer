@@ -5,6 +5,8 @@ import { Controls } from "./Controls";
 import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { Button } from './ui/button';
+import { SpineDisplay } from "../lib/SpineDisplay";
+import { SpineDebugRenderer } from '../lib/SplineDebugRenderer';
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -16,6 +18,10 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const appRef = useRef<PIXI.Application | null>(null);
   const spineRef = useRef<Spine | null>(null);
   const hasInitializedRef = useRef<boolean>(false);
+  const stressTestRunningRef = useRef<boolean>(false);
+  const perfSpinesRef = useRef<Spine[]>([]);
+  const spineDataRef = useRef<{ jsonText: string; atlasText: string } | null>(null);
+  const imageFilesRef = useRef<File[] | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [loop, setLoop] = useState(true);
@@ -64,13 +70,15 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         console.log('Atlas:', files.atlasFile.name);
         console.log('Images:', files.imageFiles.map(f => f.name).join(', '));
 
-        // Read atlas and JSON
+        // Read atlas and JSON (also cache for debug tools)
         const atlasText = await files.atlasFile.text();
         const jsonText = await files.jsonFile.text();
+        spineDataRef.current = { jsonText, atlasText };
+        imageFilesRef.current = files.imageFiles;
 
-        // Load Spine using official spine-pixi-v8
+        // Load Spine using encapsulated helper (SpineDisplay)
         try {
-          const spine = await loadSpineFromFiles(
+          const spine = await SpineDisplay.loadSpineFromFiles(
             jsonText,
             atlasText,
             files.imageFiles
@@ -143,6 +151,16 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         spineRef.current.destroy();
       }
 
+      // Clean up any performance test spines
+      if (appRef.current && perfSpinesRef.current.length) {
+        const app = appRef.current;
+        for (const s of perfSpinesRef.current) {
+          app.stage.removeChild(s);
+          s.destroy();
+        }
+        perfSpinesRef.current = [];
+      }
+
       if (appRef.current) {
         try {
           appRef.current.destroy(true);
@@ -172,7 +190,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     } else {
       state.setAnimation(0, selectedAnimation, loop);
     }
-  }, [selectedAnimation, loop, smoothSwitch]);
+    // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAnimation, loop]);
 
   // Update play/pause state
   useEffect(() => {
@@ -223,7 +243,10 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     app.ticker.add(update);
 
     return () => {
-      app.ticker.remove(update);
+      // app.ticker may be nulled by Application.destroy, so guard it
+      if (app.ticker) {
+        app.ticker.remove(update);
+      }
     };
   }, [timelineDuration]);
 
@@ -233,16 +256,19 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     let cancelled = false;
 
     (async () => {
-      const { SpineDebugRenderer } = await import("@esotericsoftware/spine-pixi-v8");
       if (cancelled || !spineRef.current) return;
 
-      // Reuse single debug renderer to avoid leaks
       if (debugBones) {
-        if (!(spineRef.current.debug instanceof SpineDebugRenderer)) {
-          spineRef.current.debug = new SpineDebugRenderer();
+        const spine = spineRef.current;
+        if (!(spine.debug instanceof SpineDebugRenderer)) {
+          spine.debug = new SpineDebugRenderer();
         }
       } else {
-        spineRef.current.debug = undefined;
+        const spine = spineRef.current;
+        // Only clear debug if it's our debug renderer
+        if (spine && spine.debug instanceof SpineDebugRenderer) {
+          spine.debug = undefined;
+        }
       }
     })();
 
@@ -288,6 +314,97 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onBack, animations, loop, selectedAnimation]);
 
+  const runStressTest = async () => {
+    if (stressTestRunningRef.current) return;
+    if (!appRef.current || !spineDataRef.current || !imageFilesRef.current) {
+      toast.warning("Viewer not ready for stress test");
+      return;
+    }
+
+    stressTestRunningRef.current = true;
+    const app = appRef.current;
+    const { jsonText, atlasText } = spineDataRef.current;
+    const imageFiles = imageFilesRef.current;
+
+    try {
+      for (let i = 0; i < 100; i++) {
+        const tempSpine = await SpineDisplay.loadSpineFromFiles(
+          jsonText,
+          atlasText,
+          imageFiles
+        );
+        tempSpine.x = app.screen.width / 2;
+        tempSpine.y = app.screen.height / 2;
+        app.stage.addChild(tempSpine);
+
+        app.render();
+
+        app.stage.removeChild(tempSpine);
+        tempSpine.destroy();
+      }
+      toast.success("Stress test (100x reload) completed");
+    } catch (err) {
+      console.error("Stress test failed:", err);
+      toast.error("Stress test failed, see console for details");
+    } finally {
+      stressTestRunningRef.current = false;
+    }
+  };
+
+  const runPerformanceTest = async () => {
+    if (!appRef.current || !spineDataRef.current || !imageFilesRef.current) {
+      toast.warning("Viewer not ready for performance test");
+      return;
+    }
+
+    const app = appRef.current;
+    const { jsonText, atlasText } = spineDataRef.current;
+    const imageFiles = imageFilesRef.current;
+
+    // Clear previous perf test spines
+    if (perfSpinesRef.current.length) {
+      for (const s of perfSpinesRef.current) {
+        app.stage.removeChild(s);
+        s.destroy();
+      }
+      perfSpinesRef.current = [];
+    }
+
+    try {
+      const count = 50;
+      const columns = 10;
+      const rows = Math.ceil(count / columns);
+
+      for (let i = 0; i < count; i++) {
+        const clone = await SpineDisplay.loadSpineFromFiles(
+          jsonText,
+          atlasText,
+          imageFiles
+        );
+
+        const col = i % columns;
+        const row = Math.floor(i / columns);
+
+        clone.x = (app.screen.width / columns) * (col + 0.5);
+        clone.y = (app.screen.height / rows) * (row + 0.5);
+
+        const animName =
+          selectedAnimation || (animations.length ? animations[0] : "");
+        if (animName) {
+          clone.state.setAnimation(0, animName, loop);
+        }
+
+        app.stage.addChild(clone);
+        perfSpinesRef.current.push(clone);
+      }
+
+      toast.success("Performance test: 50 instances added");
+    } catch (err) {
+      console.error("Performance test failed:", err);
+      toast.error("Performance test failed, see console for details");
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-background relative">
       <Controls
@@ -319,12 +436,13 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         scale={scale}
         loop={loop}
         smoothSwitch={smoothSwitch}
-        animations={animations}
         selectedAnimation={selectedAnimation}
         files={files}
         pos={infoPanelPos}
         setPos={setInfoPanelPos}
         fps={fps}
+        onStressTest={runStressTest}
+        onPerformanceTest={runPerformanceTest}
       />
     </div>
   );
@@ -335,22 +453,24 @@ interface InfoPanelProps {
   scale: number;
   loop: boolean;
   smoothSwitch: boolean;
-  animations: string[];
   selectedAnimation: string;
   files: SpineFiles;
   pos: { x: number; y: number };
   setPos: (pos: { x: number; y: number }) => void;
   fps: number;
+  onStressTest: () => void;
+  onPerformanceTest: () => void;
 }
 
 const InfoPanel = ({
   spine,
-  animations,
   selectedAnimation,
   files,
   pos,
   setPos,
   fps,
+  onStressTest,
+  onPerformanceTest,
 }: InfoPanelProps) => {
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -391,13 +511,11 @@ const InfoPanel = ({
   const currentSkinName = spine?.skeleton?.skin?.name ?? "default";
 
   let timelineCount = 0;
-  let animationDuration = 0;
   if (spine && selectedAnimation) {
     const data: any = spine.skeleton.data as any;
     const anim = data.findAnimation?.(selectedAnimation);
     if (anim) {
       timelineCount = anim.timelines?.length ?? 0;
-      animationDuration = anim.duration ?? 0;
     }
   }
 
@@ -439,75 +557,30 @@ const InfoPanel = ({
           Open Texture{files.imageFiles.length > 1 ? "s" : ""}
         </Button>
       </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            onStressTest();
+          }}
+        >
+          Stress test (100× reload)
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPerformanceTest();
+          }}
+        >
+          Perf test (50× instances)
+        </Button>
+      </div>
     </div>
   );
 };
 
-/**
- * Load Spine from files using @esotericsoftware/spine-pixi-v8
- */
-async function loadSpineFromFiles(
-  jsonText: string,
-  atlasText: string,
-  imageFiles: File[]
-): Promise<Spine> {
-  // Import core spine classes and SpineTexture bridge
-  const { TextureAtlas, AtlasAttachmentLoader, SkeletonJson } = await import('@esotericsoftware/spine-core');
-  const { SpineTexture } = await import('@esotericsoftware/spine-pixi-v8');
-
-  // Create texture atlas from atlas text (no callback, per runtime API)
-  const textureAtlas = new TextureAtlas(atlasText);
-
-  // Load images as Pixi textures and connect them to atlas pages
-  // We assume one image per page; map by filename
-  for (const page of textureAtlas.pages) {
-    // Find matching file by name
-    const pageFile =
-      imageFiles.find(f => f.name === page.name) ||
-      imageFiles.find(f => f.name.toLowerCase().includes(page.name.toLowerCase().split('.')[0]));
-
-    if (!pageFile) {
-      console.warn(`No image file found for atlas page ${page.name}, using first image as fallback.`);
-    }
-
-    const fileToUse = pageFile || imageFiles[0];
-
-    if (!fileToUse) {
-      console.error('No image files provided for Spine atlas.');
-      continue;
-    }
-
-    try {
-      const url = URL.createObjectURL(fileToUse);
-
-      // Load image manually
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = reject;
-        img.crossOrigin = 'anonymous';
-        img.src = url;
-      });
-
-      // Create Pixi texture & SpineTexture
-      const pixiTexture = PIXI.Texture.from(img);
-      const spineTex = SpineTexture.from(pixiTexture.source);
-
-      // Attach to atlas page (this also sets region.texture)
-      page.setTexture(spineTex);
-
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(`Failed to load image for atlas page ${page.name}:`, err);
-    }
-  }
-
-  // Create attachment loader and skeleton JSON parser
-  const atlasLoader = new AtlasAttachmentLoader(textureAtlas);
-  const skeletonJson = new SkeletonJson(atlasLoader);
-  const skeletonData = skeletonJson.readSkeletonData(JSON.parse(jsonText));
-
-  // Create and return Spine instance
-  const spine = new Spine(skeletonData);
-  return spine;
-}
+// Spine loading is now encapsulated in SpineDisplay.loadSpineFromFiles

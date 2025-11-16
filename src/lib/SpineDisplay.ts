@@ -1,6 +1,8 @@
 import * as PIXI from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Graphics } from 'pixi.js';
+import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson } from '@esotericsoftware/spine-core';
+import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
 
 export interface SpineDisplayOptions {
   width: number;
@@ -39,19 +41,57 @@ export class SpineDisplay extends Container {
   }
 
   /**
-   * Set the Spine instance to display
-   * @param spine - The Spine instance
+   * Helper: Load a Spine instance from JSON, atlas text and image files.
+   * This can be used from any PixiJS v8 application.
    */
-  setSpine(spine: Spine): void {
-    if (this.spine) {
-      this.removeChild(this.spine);
+  static async loadSpineFromFiles(
+    jsonText: string,
+    atlasText: string,
+    imageFiles: File[]
+  ): Promise<Spine> {
+
+    // Create texture atlas from atlas text
+    const textureAtlas = new TextureAtlas(atlasText);
+
+    // For each atlas page, find or fallback to an image file, then attach via SpineTexture
+    for (const page of textureAtlas.pages) {
+      const pageFile =
+        imageFiles.find(f => f.name === page.name) ||
+        imageFiles.find(f => f.name.toLowerCase().includes(page.name.toLowerCase().split('.')[0]));
+
+      const fileToUse = pageFile || imageFiles[0];
+      if (!fileToUse) {
+        console.error('No image files provided for Spine atlas.');
+        continue;
+      }
+
+      try {
+        const url = URL.createObjectURL(fileToUse);
+
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = reject;
+          img.crossOrigin = 'anonymous';
+          img.src = url;
+        });
+
+        const pixiTexture = PIXI.Texture.from(img);
+        const spineTex = SpineTexture.from(pixiTexture.source);
+
+        page.setTexture(spineTex);
+
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error(`Failed to load image for atlas page ${page.name}:`, err);
+      }
     }
 
-    this.spine = spine;
-    // Center the spine animation
-    this.spine.x = this.dimensions.width / 2;
-    this.spine.y = this.dimensions.height / 2;
-    this.addChild(this.spine);
+    const atlasLoader = new AtlasAttachmentLoader(textureAtlas);
+    const skeletonJson = new SkeletonJson(atlasLoader);
+    const skeletonData = skeletonJson.readSkeletonData(JSON.parse(jsonText));
+
+    return new Spine(skeletonData);
   }
 
   /**

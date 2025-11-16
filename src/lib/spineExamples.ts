@@ -11,7 +11,7 @@ export interface SpineExample {
 
 export const SPINE_EXAMPLES: SpineExample[] = [
   {
-    name: "Cloud Pot",
+    name: "Cloud Pot (physics)",
     jsonUrl: "https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples/cloud-pot/export/cloud-pot.json",
     atlasUrl: "https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples/cloud-pot/export/cloud-pot.atlas",
     description: "Animated cloud pot"
@@ -23,7 +23,7 @@ export const SPINE_EXAMPLES: SpineExample[] = [
     description: "Flying dragon"
   },
   {
-    name: "Owl",
+    name: "Owl (texture transform)",
     jsonUrl: "https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples/owl/export/owl-pro.json",
     atlasUrl: "https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples/owl/export/owl.atlas",
     description: "Animated owl"

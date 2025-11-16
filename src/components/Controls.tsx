@@ -1,17 +1,17 @@
-import { Play, Pause, SkipBack, ArrowLeft, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Card } from "@/components/ui/card";
+import { Play, Pause, X } from "lucide-react";
+import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Slider } from "./ui/slider";
+import { Card } from "./ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "./ui/select";
 
 interface ControlsProps {
   isPlaying: boolean;
@@ -24,6 +24,8 @@ interface ControlsProps {
   onOpacityChange: (opacity: number) => void;
   scale: number;
   onScaleChange: (scale: number) => void;
+  smoothSwitch: boolean;
+  onSmoothSwitchChange: (value: boolean) => void;
   selectedAnimation: string;
   animations: string[];
   onAnimationChange: (animation: string) => void;
@@ -43,6 +45,8 @@ export const Controls = ({
   onOpacityChange,
   scale,
   onScaleChange,
+  smoothSwitch,
+  onSmoothSwitchChange,
   selectedAnimation,
   animations,
   onAnimationChange,
@@ -52,10 +56,6 @@ export const Controls = ({
     <Card className="p-6 rounded-none border-x-0 border-t-0 border-b border-border relative">
       <div className="flex flex-wrap gap-6 items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button onClick={onBack} variant="outline" size="sm" className="gap-2">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Button>
           <Button
             onClick={onBack}
             variant="ghost"
@@ -110,6 +110,19 @@ export const Controls = ({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="smoothSwitch"
+                checked={smoothSwitch}
+                onCheckedChange={(val: boolean) => onSmoothSwitchChange(Boolean(val))}
+              />
+              <Label htmlFor="smoothSwitch" className="cursor-pointer text-xs">
+              Smooth switch (queue)
+              </Label>
+            </div>
           </div>
 
           <div className="space-y-2">

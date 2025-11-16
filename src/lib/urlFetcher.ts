@@ -97,8 +97,9 @@ export async function fetchSpineFilesFromUrl(inputUrl: string): Promise<FetchedS
  */
 export function isValidSpineUrl(url: string): boolean {
   try {
-    new URL(url);
-    return /\.(json|atlas|png|webp|jpg|jpeg)$/i.test(url);
+    const parsed = new URL(url);
+    const clean = parsed.origin + parsed.pathname; // strip query/hash
+    return /\.(json|atlas|png|webp|jpg|jpeg)$/i.test(clean);
   } catch {
     return false;
   }

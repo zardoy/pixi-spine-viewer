@@ -4,6 +4,7 @@ import { Spine } from "@esotericsoftware/spine-pixi-v8";
 import { Controls } from "./Controls";
 import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
+import { Button } from './ui/button';
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -21,8 +22,12 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const [speed, setSpeed] = useState(1.0);
   const [opacity, setOpacity] = useState(1.0);
   const [scale, setScale] = useState(1.0);
+  const [smoothSwitch, setSmoothSwitch] = useState(false);
   const [selectedAnimation, setSelectedAnimation] = useState<string>("");
   const [animations, setAnimations] = useState<string[]>([]);
+  const [infoPanelPos, setInfoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const draggingRef = useRef(false);
+  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Initialize PixiJS and load Spine data
   useEffect(() => {
@@ -73,10 +78,25 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           // Position spine in center
           spine.x = app.screen.width / 2;
           spine.y = app.screen.height / 2;
-          spine.scale.set(scale);
 
           app.stage.addChild(spine);
           spineRef.current = spine;
+
+          // Auto-fit scale to view
+          try {
+            const bounds = spine.getBounds();
+            if (bounds.width > 0 && bounds.height > 0) {
+              const padding = 0.8;
+              const scaleX = (app.screen.width * padding) / bounds.width;
+              const scaleY = (app.screen.height * padding) / bounds.height;
+              const fitScale = Math.min(scaleX, scaleY);
+              spine.scale.set(fitScale);
+              setScale(fitScale);
+              console.log('Auto-fit scale:', fitScale);
+            }
+          } catch (err) {
+            console.warn('Failed to auto-fit scale:', err);
+          }
 
           // Get available animations
           const availableAnimations = spine.skeleton.data.animations.map((anim: any) => anim.name);
@@ -128,10 +148,16 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
   // Update animation when selected animation changes
   useEffect(() => {
-    if (spineRef.current && selectedAnimation) {
-      spineRef.current.state.setAnimation(0, selectedAnimation, loop);
+    if (!spineRef.current || !selectedAnimation) return;
+    const state = spineRef.current.state;
+
+    if (smoothSwitch && !loop) {
+      // Queue next animation after current non-looping one
+      state.addAnimation(0, selectedAnimation, loop, 0);
+    } else {
+      state.setAnimation(0, selectedAnimation, loop);
     }
-  }, [selectedAnimation, loop]);
+  }, [selectedAnimation, loop, smoothSwitch]);
 
   // Update play/pause state
   useEffect(() => {
@@ -170,6 +196,16 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       } else if (e.code === "KeyR") {
         e.preventDefault();
         onBack();
+      } else if (e.code.startsWith("Digit")) {
+        const digit = parseInt(e.code.replace("Digit", ""), 10);
+        if (!Number.isNaN(digit) && digit >= 1 && digit <= 9) {
+          const index = digit - 1;
+          const anim = animations[index];
+          if (anim) {
+            e.preventDefault();
+            setSelectedAnimation(anim);
+          }
+        }
       }
     };
 
@@ -178,7 +214,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   }, [onBack]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background relative">
       <Controls
         isPlaying={isPlaying}
         onPlayPause={() => setIsPlaying(!isPlaying)}
@@ -190,12 +226,135 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         onOpacityChange={setOpacity}
         scale={scale}
         onScaleChange={setScale}
+        smoothSwitch={smoothSwitch}
+        onSmoothSwitchChange={setSmoothSwitch}
         selectedAnimation={selectedAnimation}
         animations={animations}
         onAnimationChange={setSelectedAnimation}
         onBack={onBack}
       />
       <div ref={canvasRef} className="flex-1" />
+
+      {/* Draggable info panel */}
+      <InfoPanel
+        spine={spineRef.current}
+        speed={speed}
+        scale={scale}
+        opacity={opacity}
+        loop={loop}
+        smoothSwitch={smoothSwitch}
+        animations={animations}
+        selectedAnimation={selectedAnimation}
+        files={files}
+        pos={infoPanelPos}
+        setPos={setInfoPanelPos}
+      />
+    </div>
+  );
+};
+
+interface InfoPanelProps {
+  spine: Spine | null;
+  speed: number;
+  scale: number;
+  opacity: number;
+  loop: boolean;
+  smoothSwitch: boolean;
+  animations: string[];
+  selectedAnimation: string;
+  files: SpineFiles;
+  pos: { x: number; y: number };
+  setPos: (pos: { x: number; y: number }) => void;
+}
+
+const InfoPanel = ({
+  spine,
+  speed,
+  scale,
+  opacity,
+  loop,
+  smoothSwitch,
+  animations,
+  selectedAnimation,
+  files,
+  pos,
+  setPos,
+}: InfoPanelProps) => {
+  const draggingRef = useRef(false);
+  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    draggingRef.current = true;
+    dragOffsetRef.current = {
+      x: e.clientX - pos.x,
+      y: e.clientY - pos.y,
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!draggingRef.current) return;
+    setPos({
+      x: e.clientX - dragOffsetRef.current.x,
+      y: e.clientY - dragOffsetRef.current.y,
+    });
+  };
+
+  const handleMouseUp = () => {
+    draggingRef.current = false;
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
+  };
+
+  const openFileInNewTab = (file: File) => {
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank");
+  };
+
+  const skeletonName = spine?.skeleton?.data?.name ?? "N/A";
+  const bones = spine?.skeleton?.bones?.length ?? 0;
+  const slots = spine?.skeleton?.slots?.length ?? 0;
+
+  return (
+    <div
+      className="fixed z-20 bg-card/95 text-xs text-card-foreground border border-border rounded-md shadow-lg p-3 space-y-2 cursor-move"
+      style={{ bottom: 16, right: 16, transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      onMouseDown={handleMouseDown}
+    >
+      <div className="font-semibold text-xs mb-1">Spine Info</div>
+      <div className="space-y-1 text-[11px]">
+        <div>Skeleton: {skeletonName}</div>
+        <div>Animation: {selectedAnimation || "None"}</div>
+        <div>Bones / Slots: {bones} / {slots}</div>
+        <div>Animations: {animations.length}</div>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openFileInNewTab(files.jsonFile)}
+        >
+          Open JSON
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => openFileInNewTab(files.atlasFile)}
+        >
+          Open Atlas
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => files.imageFiles.forEach(openFileInNewTab)}
+        >
+          Open Texture{files.imageFiles.length > 1 ? "s" : ""}
+        </Button>
+      </div>
+      <div className="text-[10px] text-muted-foreground mt-1">
+        Hotkeys: 1–9 animations, Space play/pause, R close
+      </div>
     </div>
   );
 };

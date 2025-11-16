@@ -89,7 +89,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
   };
 
   const handlePaste = async (e: ClipboardEvent) => {
-    const text = e.clipboardData?.getData('text');
+    const rawText = e.clipboardData?.getData('text');
+    const text = rawText?.split(/[?#]/)[0] || rawText;
 
     if (text && isValidSpineUrl(text)) {
       e.preventDefault();

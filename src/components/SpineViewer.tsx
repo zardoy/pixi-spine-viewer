@@ -126,16 +126,25 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
               const scaleY = app.screen.height / viewportHeight;
               const fitScale = Math.min(scaleX, scaleY);
 
-              spine.scale.set(fitScale);
-              setScale(fitScale);
+              // Validate scale before applying
+              if (isFinite(fitScale) && fitScale > 0) {
+                spine.scale.set(fitScale);
+                setScale(fitScale);
 
-              // Center the spine based on viewport
-              const viewportCenterX = viewport.x + viewport.width / 2;
-              const viewportCenterY = viewport.y + viewport.height / 2;
-              spine.x = app.screen.width / 2 - viewportCenterX * fitScale;
-              spine.y = app.screen.height / 2 - viewportCenterY * fitScale;
+                // Center the spine based on viewport
+                const viewportCenterX = viewport.x + viewport.width / 2;
+                const viewportCenterY = viewport.y + viewport.height / 2;
+                spine.x = app.screen.width / 2 - viewportCenterX * fitScale;
+                spine.y = app.screen.height / 2 - viewportCenterY * fitScale;
 
-              console.log('Auto-fit scale:', fitScale, 'Viewport:', viewport);
+                console.log('Auto-fit scale:', fitScale, 'Viewport:', viewport);
+              } else {
+                console.warn('Invalid scale calculated, using default scale 1.0');
+                spine.scale.set(1.0);
+                setScale(1.0);
+                spine.x = app.screen.width / 2;
+                spine.y = app.screen.height / 2;
+              }
 
               setSelectedAnimation(firstAnimation);
               spine.state.setAnimation(0, firstAnimation, true);
@@ -211,14 +220,29 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       setTimelineDuration(anim.duration ?? 0);
       setTimeline(0);
 
-      // Store previous viewport for transition
-      previousViewportRef.current = currentViewportRef.current;
-      viewportTransitionStartRef.current = performance.now();
-
       // Calculate viewport BEFORE setting animation (official Spine player approach)
       // This temporarily modifies the skeleton, but setAnimation will restore it
       const newViewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
-      currentViewportRef.current = newViewport;
+
+      // Validate viewport before storing
+      const isValidViewport =
+        isFinite(newViewport.x) &&
+        isFinite(newViewport.y) &&
+        isFinite(newViewport.width) &&
+        isFinite(newViewport.height) &&
+        newViewport.width > 0 &&
+        newViewport.height > 0;
+
+      if (isValidViewport) {
+        // Store previous viewport for transition
+        previousViewportRef.current = currentViewportRef.current;
+        currentViewportRef.current = newViewport;
+        viewportTransitionStartRef.current = performance.now();
+        console.log('Animation switched to:', selectedAnimation, 'New viewport:', newViewport);
+      } else {
+        console.warn('Invalid viewport calculated for animation:', selectedAnimation, newViewport);
+        // Keep current viewport, don't transition
+      }
 
       // Now set the animation - this restores skeleton to proper state
       if (smoothSwitch && !loop) {
@@ -233,8 +257,6 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       state.update(0);
       state.apply(spine.skeleton);
       spine.skeleton.updateWorldTransform(Physics.update);
-
-      console.log('Animation switched to:', selectedAnimation, 'New viewport:', newViewport);
     }
     // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -320,12 +342,15 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           const scaleY = app.screen.height / interpHeight;
           const fitScale = Math.min(scaleX, scaleY);
 
-          spine.scale.set(fitScale);
-          setScale(fitScale);
+          // Validate scale before applying
+          if (isFinite(fitScale) && fitScale > 0) {
+            spine.scale.set(fitScale);
+            setScale(fitScale);
 
-          // Center based on interpolated viewport
-          spine.x = app.screen.width / 2 - interpCenterX * fitScale;
-          spine.y = app.screen.height / 2 - interpCenterY * fitScale;
+            // Center based on interpolated viewport
+            spine.x = app.screen.width / 2 - interpCenterX * fitScale;
+            spine.y = app.screen.height / 2 - interpCenterY * fitScale;
+          }
         } else {
           // Transition complete, clear previous viewport
           previousViewportRef.current = null;

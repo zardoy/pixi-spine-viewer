@@ -149,18 +149,39 @@ export class SpineDisplay extends Container {
       }
     }
 
+    // Validate bounds - if no valid bounds found, use default viewport
+    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+      console.warn(`Animation "${animation.name}" has no valid bounds, using default viewport`);
+      // Use a default viewport centered at origin
+      return {
+        x: -500,
+        y: -500,
+        width: 1000,
+        height: 1000,
+        padLeft: 100,
+        padRight: 100,
+        padTop: 100,
+        padBottom: 100,
+      };
+    }
+
     const width = maxX - minX;
     const height = maxY - minY;
-    const padLeft = width * padding;
-    const padRight = width * padding;
-    const padTop = height * padding;
-    const padBottom = height * padding;
+
+    // Ensure minimum dimensions to prevent division by zero
+    const safeWidth = Math.max(width, 1);
+    const safeHeight = Math.max(height, 1);
+
+    const padLeft = safeWidth * padding;
+    const padRight = safeWidth * padding;
+    const padTop = safeHeight * padding;
+    const padBottom = safeHeight * padding;
 
     return {
       x: minX,
       y: minY,
-      width,
-      height,
+      width: safeWidth,
+      height: safeHeight,
       padLeft,
       padRight,
       padTop,

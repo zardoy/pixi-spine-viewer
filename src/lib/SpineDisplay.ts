@@ -1,12 +1,23 @@
 import * as PIXI from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Graphics } from 'pixi.js';
-import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson } from '@esotericsoftware/spine-core';
+import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
 import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
 
 export interface SpineDisplayOptions {
   width: number;
   height: number;
+}
+
+export interface AnimationViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  padLeft: number;
+  padRight: number;
+  padTop: number;
+  padBottom: number;
 }
 
 /**
@@ -92,6 +103,69 @@ export class SpineDisplay extends Container {
     const skeletonData = skeletonJson.readSkeletonData(JSON.parse(jsonText));
 
     return new Spine(skeletonData);
+  }
+
+  /**
+   * Calculate the viewport (bounding box) for an animation by sampling it over time.
+   * This matches the official Spine player's approach.
+   * @param animation - Animation to calculate bounds for
+   * @param spine - Spine instance
+   * @param padding - Padding percentage (default 0.1 = 10%)
+   */
+  static calculateAnimationViewport(
+    animation: Animation,
+    spine: Spine,
+    padding: number = 0.1
+  ): AnimationViewport {
+    const skeleton = spine.skeleton;
+
+    // Note: We temporarily modify the skeleton to calculate bounds.
+    // The caller should set the desired animation immediately after this
+    // to restore the skeleton to the correct state.
+    skeleton.setToSetupPose();
+
+    const steps = 100;
+    const stepTime = animation.duration ? animation.duration / steps : 0;
+    let time = 0;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    const offset = new Vector2();
+    const size = new Vector2();
+
+    // Sample animation at 100 different time points to find bounding box
+    for (let i = 0; i < steps; i++, time += stepTime) {
+      animation.apply(skeleton, time, time, false, [], 1, MixBlend.setup, MixDirection.mixIn);
+      skeleton.updateWorldTransform(Physics.update);
+      skeleton.getBounds(offset, size, []);
+
+      if (!isNaN(offset.x) && !isNaN(offset.y) && !isNaN(size.x) && !isNaN(size.y)) {
+        minX = Math.min(offset.x, minX);
+        maxX = Math.max(offset.x + size.x, maxX);
+        minY = Math.min(offset.y, minY);
+        maxY = Math.max(offset.y + size.y, maxY);
+      }
+    }
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const padLeft = width * padding;
+    const padRight = width * padding;
+    const padTop = height * padding;
+    const padBottom = height * padding;
+
+    return {
+      x: minX,
+      y: minY,
+      width,
+      height,
+      padLeft,
+      padRight,
+      padTop,
+      padBottom,
+    };
   }
 
   /**

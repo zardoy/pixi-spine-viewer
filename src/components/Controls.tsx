@@ -122,8 +122,9 @@ export const Controls = ({
             <div className="flex items-center gap-2">
               <Checkbox
                 id="smoothSwitch"
-                checked={smoothSwitch}
+                checked
                 onCheckedChange={(val: boolean) => onSmoothSwitchChange(Boolean(val))}
+                disabled
               />
               <Label htmlFor="smoothSwitch" className="cursor-pointer text-xs">
                 Smooth switch (queue)
@@ -136,7 +137,7 @@ export const Controls = ({
                 onCheckedChange={(val: boolean) => onDebugBonesChange(Boolean(val))}
               />
               <Label htmlFor="debugBones" className="cursor-pointer text-xs">
-                Debug bones / attachments
+                Debug bones / attachments (T)
               </Label>
             </div>
           </div>

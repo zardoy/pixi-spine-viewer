@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import * as PIXI from "pixi.js";
 import { Spine } from "@esotericsoftware/spine-pixi-v8";
+import { Physics } from "@esotericsoftware/spine-core";
 import { Controls } from "./Controls";
 import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { Button } from './ui/button';
-import { SpineDisplay } from "../lib/SpineDisplay";
+import { SpineDisplay, AnimationViewport } from "../lib/SpineDisplay";
 import { SpineDebugRenderer } from '../lib/SplineDebugRenderer';
 
 interface SpineViewerProps {
@@ -35,6 +36,13 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const [animations, setAnimations] = useState<string[]>([]);
   const [infoPanelPos, setInfoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [fps, setFps] = useState(0);
+
+  // Viewport transition state (for smooth animation switching)
+  const currentViewportRef = useRef<AnimationViewport | null>(null);
+  const previousViewportRef = useRef<AnimationViewport | null>(null);
+  const viewportTransitionStartRef = useRef<number>(0);
+  const viewportTransitionTime = 0.25; // 250ms, matching official Spine player default
+  const defaultMixTime = 0.25; // Default animation mix/crossfade time
 
   // Initialize PixiJS and load Spine data
   useEffect(() => {
@@ -91,21 +99,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           app.stage.addChild(spine);
           spineRef.current = spine;
 
-          // Auto-fit scale to view
-          try {
-            const bounds = spine.getBounds();
-            if (bounds.width > 0 && bounds.height > 0) {
-              const padding = 0.8;
-              const scaleX = (app.screen.width * padding) / bounds.width;
-              const scaleY = (app.screen.height * padding) / bounds.height;
-              const fitScale = Math.min(scaleX, scaleY);
-              spine.scale.set(fitScale);
-              setScale(fitScale);
-              console.log('Auto-fit scale:', fitScale);
-            }
-          } catch (err) {
-            console.warn('Failed to auto-fit scale:', err);
-          }
+          // Set default mix time for smooth animation transitions
+          const stateData = spine.state.data;
+          stateData.defaultMix = defaultMixTime;
 
           // Get available animations
           const data: any = spine.skeleton.data;
@@ -115,13 +111,38 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
           if (availableAnimations.length > 0) {
             const firstAnimation = availableAnimations[0];
-            setSelectedAnimation(firstAnimation);
-            spine.state.setAnimation(0, firstAnimation, true);
             const anim = data.findAnimation?.(firstAnimation);
+
             if (anim) {
+              // Calculate viewport for first animation
+              const viewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+              currentViewportRef.current = viewport;
+
+              // Calculate scale to fit viewport in screen
+              const viewportWidth = viewport.width + viewport.padLeft + viewport.padRight;
+              const viewportHeight = viewport.height + viewport.padTop + viewport.padBottom;
+
+              const scaleX = app.screen.width / viewportWidth;
+              const scaleY = app.screen.height / viewportHeight;
+              const fitScale = Math.min(scaleX, scaleY);
+
+              spine.scale.set(fitScale);
+              setScale(fitScale);
+
+              // Center the spine based on viewport
+              const viewportCenterX = viewport.x + viewport.width / 2;
+              const viewportCenterY = viewport.y + viewport.height / 2;
+              spine.x = app.screen.width / 2 - viewportCenterX * fitScale;
+              spine.y = app.screen.height / 2 - viewportCenterY * fitScale;
+
+              console.log('Auto-fit scale:', fitScale, 'Viewport:', viewport);
+
+              setSelectedAnimation(firstAnimation);
+              spine.state.setAnimation(0, firstAnimation, true);
               setTimelineDuration(anim.duration ?? 0);
               setTimeline(0);
             }
+
             toast.success(`Loaded Spine animation with ${availableAnimations.length} animation(s)`);
           } else {
             toast.warning('Spine loaded but no animations found');
@@ -173,22 +194,47 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
   // Update animation when selected animation changes
   useEffect(() => {
-    if (!spineRef.current || !selectedAnimation) return;
+    if (!spineRef.current || !selectedAnimation || !appRef.current) return;
     const spine = spineRef.current;
     const state = spine.state;
+
+    // Add null checks for skeleton
+    if (!spine.skeleton || !spine.skeleton.data) {
+      console.warn('Skeleton not ready for animation switch');
+      return;
+    }
+
     const data: any = spine.skeleton.data;
     const anim = data.findAnimation?.(selectedAnimation);
 
     if (anim) {
       setTimelineDuration(anim.duration ?? 0);
       setTimeline(0);
-    }
 
-    if (smoothSwitch && !loop) {
-      // Queue next animation after current non-looping one
-      state.addAnimation(0, selectedAnimation, loop, 0);
-    } else {
-      state.setAnimation(0, selectedAnimation, loop);
+      // Store previous viewport for transition
+      previousViewportRef.current = currentViewportRef.current;
+      viewportTransitionStartRef.current = performance.now();
+
+      // Calculate viewport BEFORE setting animation (official Spine player approach)
+      // This temporarily modifies the skeleton, but setAnimation will restore it
+      const newViewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+      currentViewportRef.current = newViewport;
+
+      // Now set the animation - this restores skeleton to proper state
+      if (smoothSwitch && !loop) {
+        // Queue next animation after current non-looping one
+        state.addAnimation(0, selectedAnimation, loop, 0);
+      } else {
+        state.setAnimation(0, selectedAnimation, loop);
+      }
+
+      // Immediately apply the new animation state to prevent visual glitch
+      // Update with delta 0 to just apply the initial pose of the new animation
+      state.update(0);
+      state.apply(spine.skeleton);
+      spine.skeleton.updateWorldTransform(Physics.update);
+
+      console.log('Animation switched to:', selectedAnimation, 'New viewport:', newViewport);
     }
     // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,21 +254,25 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     }
   }, [speed]);
 
-  // Update scale
+  // Update scale (manual user adjustment)
   useEffect(() => {
     if (spineRef.current) {
+      // Manual scale override - just set the scale directly
       spineRef.current.scale.set(scale);
     }
   }, [scale]);
 
-  // Track timeline and FPS over time
+  // Track timeline, FPS, and handle viewport transitions
   useEffect(() => {
     if (!appRef.current || !spineRef.current) return;
     const app = appRef.current;
+    const spine = spineRef.current;
     let lastTimeline = -1;
 
     const update = () => {
-      if (!spineRef.current) return;
+      if (!spineRef.current || !appRef.current) return;
+
+      // Update timeline
       const track = spineRef.current.state.tracks[0];
       if (track) {
         const t = track.trackTime ?? (track as any).time ?? 0;
@@ -238,6 +288,49 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         const currentFps = app.ticker.FPS ?? 0;
         setFps(currentFps);
       }
+
+      // Handle smooth viewport transitions on animation change
+      if (currentViewportRef.current && previousViewportRef.current) {
+        const elapsed = (performance.now() - viewportTransitionStartRef.current) / 1000;
+        const transitionAlpha = Math.min(elapsed / viewportTransitionTime, 1);
+
+        if (transitionAlpha < 1) {
+          // Interpolate between previous and current viewport
+          const prev = previousViewportRef.current;
+          const curr = currentViewportRef.current;
+
+          const prevWidth = prev.width + prev.padLeft + prev.padRight;
+          const prevHeight = prev.height + prev.padTop + prev.padBottom;
+          const prevCenterX = prev.x + prev.width / 2;
+          const prevCenterY = prev.y + prev.height / 2;
+
+          const currWidth = curr.width + curr.padLeft + curr.padRight;
+          const currHeight = curr.height + curr.padTop + curr.padBottom;
+          const currCenterX = curr.x + curr.width / 2;
+          const currCenterY = curr.y + curr.height / 2;
+
+          // Interpolate viewport dimensions
+          const interpWidth = prevWidth + (currWidth - prevWidth) * transitionAlpha;
+          const interpHeight = prevHeight + (currHeight - prevHeight) * transitionAlpha;
+          const interpCenterX = prevCenterX + (currCenterX - prevCenterX) * transitionAlpha;
+          const interpCenterY = prevCenterY + (currCenterY - prevCenterY) * transitionAlpha;
+
+          // Calculate scale to fit interpolated viewport
+          const scaleX = app.screen.width / interpWidth;
+          const scaleY = app.screen.height / interpHeight;
+          const fitScale = Math.min(scaleX, scaleY);
+
+          spine.scale.set(fitScale);
+          setScale(fitScale);
+
+          // Center based on interpolated viewport
+          spine.x = app.screen.width / 2 - interpCenterX * fitScale;
+          spine.y = app.screen.height / 2 - interpCenterY * fitScale;
+        } else {
+          // Transition complete, clear previous viewport
+          previousViewportRef.current = null;
+        }
+      }
     };
 
     app.ticker.add(update);
@@ -248,7 +341,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         app.ticker.remove(update);
       }
     };
-  }, [timelineDuration]);
+  }, [viewportTransitionTime]);
 
   // Debug bones / attachments
   useEffect(() => {

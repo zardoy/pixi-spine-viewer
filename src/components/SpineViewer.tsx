@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { Button } from './ui/button';
 import { SpineDisplay, AnimationViewport } from "../lib/SpineDisplay";
-import { SpineDebugRenderer } from '../lib/SplineDebugRenderer';
+import { SpineDebugRenderer } from '../lib/SpineDebugRenderer';
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -290,16 +290,23 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     const app = appRef.current;
     const spine = spineRef.current;
     let lastTimeline = -1;
+    const lastFpsUpdate = 0;
+    const frameCount = 0;
+    const fpsTimeAccumulator = 0;
 
-    const update = () => {
+    const update = (deltaTime?: number) => {
       if (!spineRef.current || !appRef.current) return;
 
       // Update timeline
       const track = spineRef.current.state.tracks[0];
       if (track) {
         const t = track.trackTime ?? (track as any).time ?? 0;
-        // Avoid excessive React updates
-        if (Math.abs(t - lastTimeline) > 0.01) {
+        // Handle loop reset: if timeline jumps backwards significantly, it's a loop
+        const timelineDiff = t - lastTimeline;
+        const isLoopReset = timelineDiff < -0.5 && lastTimeline > 0.5;
+
+        // Update if significant change OR if it's a loop reset
+        if (isLoopReset || Math.abs(timelineDiff) > 0.01) {
           lastTimeline = t;
           setTimeline(t);
         }
@@ -358,15 +365,22 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       }
     };
 
-    app.ticker.add(update);
+    // PIXI v8 ticker callback receives the ticker object
+    // deltaTime is in seconds, deltaMS is in milliseconds
+    const tickerCallback = (ticker: PIXI.Ticker) => {
+      const deltaTime = ticker.deltaMS ?? (ticker.deltaTime ? ticker.deltaTime * 1000 : 0);
+      update(deltaTime);
+    };
+
+    app.ticker.add(tickerCallback);
 
     return () => {
       // app.ticker may be nulled by Application.destroy, so guard it
       if (app.ticker) {
-        app.ticker.remove(update);
+        app.ticker.remove(tickerCallback);
       }
     };
-  }, [viewportTransitionTime]);
+  }, [viewportTransitionTime, appRef.current]);
 
   // Debug bones / attachments
   useEffect(() => {
@@ -599,8 +613,8 @@ const InfoPanel = ({
       x: e.clientX - pos.x,
       y: e.clientY - pos.y,
     };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("pointermove", handleMouseMove);
+    window.addEventListener("pointerup", handleMouseUp);
   };
 
   const handleMouseMove = (e: MouseEvent) => {
@@ -613,8 +627,8 @@ const InfoPanel = ({
 
   const handleMouseUp = () => {
     draggingRef.current = false;
-    window.removeEventListener("mousemove", handleMouseMove);
-    window.removeEventListener("mouseup", handleMouseUp);
+    window.removeEventListener("pointermove", handleMouseMove);
+    window.removeEventListener("pointerup", handleMouseUp);
   };
 
   const openFileInNewTab = (file: File) => {
@@ -641,7 +655,7 @@ const InfoPanel = ({
     <div
       className="fixed z-20 bg-card/95 text-xs text-card-foreground border border-border rounded-md shadow-lg p-3 space-y-2 cursor-move"
       style={{ bottom: 16, right: 16, transform: `translate(${pos.x}px, ${pos.y}px)` }}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handleMouseDown}
     >
       <div className="font-semibold text-xs mb-1">Spine Info</div>
       <div className="space-y-1 text-[11px]">

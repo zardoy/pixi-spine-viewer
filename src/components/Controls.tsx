@@ -32,6 +32,9 @@ interface ControlsProps {
   selectedAnimation: string;
   animations: string[];
   onAnimationChange: (animation: string) => void;
+  selectedSkin: string;
+  skins: string[];
+  onSkinChange: (skin: string) => void;
   onBack: () => void;
 }
 
@@ -56,6 +59,9 @@ export const Controls = ({
   selectedAnimation,
   animations,
   onAnimationChange,
+  selectedSkin,
+  skins,
+  onSkinChange,
   onBack,
 }: ControlsProps) => {
   return (
@@ -117,6 +123,24 @@ export const Controls = ({
               </SelectContent>
             </Select>
           </div>
+
+          {skins.length > 1 && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Skin (C to cycle)</Label>
+              <Select value={selectedSkin} onValueChange={onSkinChange}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select skin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {skins.map((skin) => (
+                    <SelectItem key={skin} value={skin}>
+                      {skin}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">

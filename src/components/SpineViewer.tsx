@@ -34,6 +34,8 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const [debugBones, setDebugBones] = useState(false);
   const [selectedAnimation, setSelectedAnimation] = useState<string>("");
   const [animations, setAnimations] = useState<string[]>([]);
+  const [selectedSkin, setSelectedSkin] = useState<string>("");
+  const [skins, setSkins] = useState<string[]>([]);
   const [infoPanelPos, setInfoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [fps, setFps] = useState(0);
 
@@ -64,7 +66,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         });
 
         if (!canvasRef.current) return;
-        canvasRef.current.appendChild(app.canvas);
+        (canvasRef.current as any).appendChild(app.canvas);
         appRef.current = app;
 
         console.log('PIXI Application v8 initialized');
@@ -103,11 +105,14 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           const stateData = spine.state.data;
           stateData.defaultMix = defaultMixTime;
 
-          // Get available animations
+          // Get available animations and skins
           const data: any = spine.skeleton.data;
           const availableAnimations = data.animations.map((anim: any) => anim.name);
+          const availableSkins = data.skins.map((skin: any) => skin.name);
           console.log('Available animations:', availableAnimations);
+          console.log('Available skins:', availableSkins);
           setAnimations(availableAnimations);
+          setSkins(availableSkins);
 
           if (availableAnimations.length > 0) {
             const firstAnimation = availableAnimations[0];
@@ -146,10 +151,21 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
                 spine.y = app.screen.height / 2;
               }
 
-              setSelectedAnimation(firstAnimation);
-              spine.state.setAnimation(0, firstAnimation, true);
-              setTimelineDuration(anim.duration ?? 0);
-              setTimeline(0);
+            setSelectedAnimation(firstAnimation);
+            spine.state.setAnimation(0, firstAnimation, true);
+            setTimelineDuration(anim.duration ?? 0);
+            setTimeline(0);
+          }
+
+          // Set default skin if available
+          if (availableSkins.length > 0) {
+            const defaultSkin = availableSkins.find((s: string) => s === 'default') || availableSkins[0];
+            setSelectedSkin(defaultSkin);
+            const skinData = data.findSkin?.(defaultSkin);
+            if (skinData) {
+              spine.skeleton.setSkin(skinData);
+              spine.skeleton.setSlotsToSetupPose();
+            }
             }
 
             toast.success(`Loaded Spine animation with ${availableAnimations.length} animation(s)`);
@@ -262,6 +278,29 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAnimation, loop]);
 
+  // Update skin when selected skin changes
+  useEffect(() => {
+    if (!spineRef.current || !selectedSkin) return;
+    const spine = spineRef.current;
+
+    // Add null checks for skeleton
+    if (!spine.skeleton || !spine.skeleton.data) {
+      console.warn('Skeleton not ready for skin switch');
+      return;
+    }
+
+    const data: any = spine.skeleton.data;
+    const skinData = data.findSkin?.(selectedSkin);
+
+    if (skinData) {
+      console.log('Switching to skin:', selectedSkin);
+      spine.skeleton.setSkin(skinData);
+      spine.skeleton.setSlotsToSetupPose();
+    } else {
+      console.warn('Skin not found:', selectedSkin);
+    }
+  }, [selectedSkin]);
+
   // Update play/pause state
   useEffect(() => {
     if (spineRef.current) {
@@ -288,13 +327,10 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   useEffect(() => {
     if (!appRef.current || !spineRef.current) return;
     const app = appRef.current;
-    const spine = spineRef.current;
-    let lastTimeline = -1;
-    const lastFpsUpdate = 0;
-    const frameCount = 0;
-    const fpsTimeAccumulator = 0;
+      const spine = spineRef.current;
+      let lastTimeline = -1;
 
-    const update = (deltaTime?: number) => {
+      const update = () => {
       if (!spineRef.current || !appRef.current) return;
 
       // Update timeline
@@ -365,19 +401,12 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       }
     };
 
-    // PIXI v8 ticker callback receives the ticker object
-    // deltaTime is in seconds, deltaMS is in milliseconds
-    const tickerCallback = (ticker: PIXI.Ticker) => {
-      const deltaTime = ticker.deltaMS ?? (ticker.deltaTime ? ticker.deltaTime * 1000 : 0);
-      update(deltaTime);
-    };
-
-    app.ticker.add(tickerCallback);
+    app.ticker.add(update);
 
     return () => {
       // app.ticker may be nulled by Application.destroy, so guard it
       if (app.ticker) {
-        app.ticker.remove(tickerCallback);
+        app.ticker.remove(update);
       }
     };
   }, [viewportTransitionTime, appRef.current]);
@@ -439,12 +468,20 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
             setSelectedAnimation(anim);
           }
         }
+      } else if (e.code === "KeyC") {
+        // Cycle through skins with 'C' key
+        if (skins.length > 1) {
+          e.preventDefault();
+          const currentIndex = skins.indexOf(selectedSkin);
+          const nextIndex = (currentIndex + 1) % skins.length;
+          setSelectedSkin(skins[nextIndex]);
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onBack, animations, loop, selectedAnimation]);
+  }, [onBack, animations, skins, loop, selectedAnimation, selectedSkin]);
 
   const runStressTest = async () => {
     if (stressTestRunningRef.current) return;
@@ -558,6 +595,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         selectedAnimation={selectedAnimation}
         animations={animations}
         onAnimationChange={setSelectedAnimation}
+        selectedSkin={selectedSkin}
+        skins={skins}
+        onSkinChange={setSelectedSkin}
         onBack={onBack}
       />
       <div ref={canvasRef} className="flex-1" />
@@ -569,6 +609,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         loop={loop}
         smoothSwitch={smoothSwitch}
         selectedAnimation={selectedAnimation}
+        selectedSkin={selectedSkin}
         files={files}
         pos={infoPanelPos}
         setPos={setInfoPanelPos}
@@ -586,6 +627,7 @@ interface InfoPanelProps {
   loop: boolean;
   smoothSwitch: boolean;
   selectedAnimation: string;
+  selectedSkin: string;
   files: SpineFiles;
   pos: { x: number; y: number };
   setPos: (pos: { x: number; y: number }) => void;
@@ -597,6 +639,7 @@ interface InfoPanelProps {
 const InfoPanel = ({
   spine,
   selectedAnimation,
+  selectedSkin,
   files,
   pos,
   setPos,
@@ -607,7 +650,7 @@ const InfoPanel = ({
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
     draggingRef.current = true;
     dragOffsetRef.current = {
       x: e.clientX - pos.x,

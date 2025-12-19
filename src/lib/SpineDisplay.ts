@@ -1,6 +1,5 @@
-import * as PIXI from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, ImageSource } from 'pixi.js';
 import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
 import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
 
@@ -52,13 +51,40 @@ export class SpineDisplay extends Container {
   }
 
   /**
+   * Options for loading Spine from files
+   */
+  static loadSpineOptions: {
+    /**
+     * Control dark tint rendering mode:
+     * - true: Force use dark tint batcher (supports two-color tinting, but may have blending issues)
+     * - false: Force use default PIXI batcher (better blending, no two-color tinting)
+     * - undefined: Auto-detect based on whether skeleton uses dark colors (default)
+     */
+    darkTint?: boolean;
+  } = {};
+
+  /**
    * Helper: Load a Spine instance from JSON, atlas text and image files.
    * This can be used from any PixiJS v8 application.
+   *
+   * @param jsonText - The skeleton JSON content
+   * @param atlasText - The atlas file content
+   * @param imageFiles - Array of image files for the atlas
+   * @param options - Optional loading options
    */
   static async loadSpineFromFiles(
     jsonText: string,
     atlasText: string,
-    imageFiles: File[]
+    imageFiles: File[],
+    options?: {
+      /**
+       * Control dark tint rendering:
+       * - true: Force dark tint batcher (two-color tinting, may have blending issues with semi-transparent overlays)
+       * - false: Force default PIXI batcher (better blending for overlays, no dark tint support)
+       * - undefined: Auto-detect based on skeleton dark colors
+       */
+      darkTint?: boolean
+    }
   ): Promise<Spine> {
 
     // Create texture atlas from atlas text
@@ -87,10 +113,21 @@ export class SpineDisplay extends Container {
           img.src = url;
         });
 
-        const pixiTexture = PIXI.Texture.from(img);
-        const spineTex = SpineTexture.from(pixiTexture.source);
+        // IMPORTANT: Respect the atlas page's pma (premultiplied alpha) flag!
+        // If pma is true, the texture is already premultiplied, use 'premultiplied-alpha'
+        // If pma is false, PIXI should premultiply on upload (this is the default)
+        // This is critical for correct blending of semi-transparent textures!
+        const alphaMode = page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload';
 
+        // Create ImageSource with correct alphaMode for proper blending
+        const imageSource = new ImageSource({
+          resource: img,
+          alphaMode: alphaMode as any,
+        });
+
+        const spineTex = SpineTexture.from(imageSource);
         page.setTexture(spineTex);
+        console.log(`Loaded texture for page ${page.name}, pma=${page.pma}, alphaMode=${alphaMode}`);
 
         URL.revokeObjectURL(url);
       } catch (err) {
@@ -102,7 +139,13 @@ export class SpineDisplay extends Container {
     const skeletonJson = new SkeletonJson(atlasLoader);
     const skeletonData = skeletonJson.readSkeletonData(JSON.parse(jsonText));
 
-    return new Spine(skeletonData);
+    // Use darkTint option from parameter, fallback to static option, or undefined for auto-detect
+    const darkTint = options?.darkTint ?? SpineDisplay.loadSpineOptions.darkTint;
+
+    return new Spine({
+      skeletonData,
+      darkTint, // undefined = auto-detect, false = disable for better blending, true = force enable
+    });
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Play, Pause, X } from "lucide-react";
+import { Play, Pause, X, Copy } from "lucide-react";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
@@ -35,6 +35,9 @@ interface ControlsProps {
   selectedSkin: string;
   skins: string[];
   onSkinChange: (skin: string) => void;
+  backgroundColor: string;
+  onBackgroundColorChange: (color: string) => void;
+  onCopyUrl: () => void;
   onBack: () => void;
 }
 
@@ -62,6 +65,9 @@ export const Controls = ({
   selectedSkin,
   skins,
   onSkinChange,
+  backgroundColor,
+  onBackgroundColorChange,
+  onCopyUrl,
   onBack,
 }: ControlsProps) => {
   return (
@@ -105,6 +111,29 @@ export const Controls = ({
               Loop
             </Label>
           </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="bgColor" className="text-xs text-muted-foreground whitespace-nowrap">
+              BG:
+            </Label>
+            <Input
+              id="bgColor"
+              type="color"
+              value={backgroundColor}
+              onChange={(e) => onBackgroundColorChange(e.target.value)}
+              className="w-16 h-8 cursor-pointer"
+              title="Background color"
+            />
+          </div>
+          <Button
+            onClick={onCopyUrl}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            title="Copy URL with current settings"
+          >
+            <Copy className="w-4 h-4" />
+            Copy URL
+          </Button>
         </div>
 
         <div className="flex items-center gap-6">

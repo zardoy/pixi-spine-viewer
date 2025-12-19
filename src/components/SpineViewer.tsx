@@ -38,6 +38,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const [skins, setSkins] = useState<string[]>([]);
   const [infoPanelPos, setInfoPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [fps, setFps] = useState(0);
+  const [backgroundColor, setBackgroundColor] = useState('#1a1625');
 
   // Viewport transition state (for smooth animation switching)
   const currentViewportRef = useRef<AnimationViewport | null>(null);
@@ -45,6 +46,32 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const viewportTransitionStartRef = useRef<number>(0);
   const viewportTransitionTime = 0.25; // 250ms, matching official Spine player default
   const defaultMixTime = 0.25; // Default animation mix/crossfade time
+
+  // Parse URL parameters on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlAnimation = params.get('animation');
+    const urlSkin = params.get('skin');
+    const urlTime = params.get('time');
+
+    if (urlAnimation) {
+      setSelectedAnimation(urlAnimation);
+    }
+    if (urlSkin) {
+      setSelectedSkin(urlSkin);
+    }
+    if (urlTime !== null) {
+      const time = parseFloat(urlTime);
+      if (!isNaN(time)) {
+        setTimeline(time);
+        setIsPlaying(false); // Pause if time is specified
+      }
+    }
+    const urlBg = params.get('bg');
+    if (urlBg) {
+      setBackgroundColor(urlBg);
+    }
+  }, []);
 
   // Initialize PixiJS and load Spine data
   useEffect(() => {
@@ -58,7 +85,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         // Create PIXI application (v8 uses async init)
         const app = new PIXI.Application();
         await app.init({
-          background: '#1a1625',
+          background: backgroundColor,
           resizeTo: canvasRef.current,
           antialias: true,
           resolution: window.devicePixelRatio || 1,
@@ -114,9 +141,19 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           setAnimations(availableAnimations);
           setSkins(availableSkins);
 
+          // Check URL params for initial values
+          const params = new URLSearchParams(window.location.search);
+          const urlAnimation = params.get('animation');
+          const urlSkin = params.get('skin');
+          const urlTime = params.get('time');
+
+          // Use URL animation if valid, otherwise use first
+          const initialAnimation = urlAnimation && availableAnimations.includes(urlAnimation)
+            ? urlAnimation
+            : availableAnimations[0];
+
           if (availableAnimations.length > 0) {
-            const firstAnimation = availableAnimations[0];
-            const anim = data.findAnimation?.(firstAnimation);
+            const anim = data.findAnimation?.(initialAnimation);
 
             if (anim) {
               // Calculate viewport for first animation
@@ -151,17 +188,33 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
                 spine.y = app.screen.height / 2;
               }
 
-            setSelectedAnimation(firstAnimation);
-            spine.state.setAnimation(0, firstAnimation, true);
+            setSelectedAnimation(initialAnimation);
+            spine.state.setAnimation(0, initialAnimation, true);
             setTimelineDuration(anim.duration ?? 0);
-            setTimeline(0);
+
+            // Set timeline from URL if provided, otherwise 0
+            const initialTime = urlTime ? parseFloat(urlTime) : 0;
+            if (!isNaN(initialTime) && initialTime >= 0 && initialTime <= (anim.duration ?? 0)) {
+              setTimeline(initialTime);
+              const track = spine.state.tracks[0];
+              if (track) {
+                track.trackTime = initialTime;
+                track.trackEnd = initialTime;
+                spine.state.apply(spine.skeleton);
+                spine.skeleton.updateWorldTransform(Physics.update);
+              }
+            } else {
+              setTimeline(0);
+            }
           }
 
-          // Set default skin if available
+          // Set skin from URL if valid, otherwise default
           if (availableSkins.length > 0) {
-            const defaultSkin = availableSkins.find((s: string) => s === 'default') || availableSkins[0];
-            setSelectedSkin(defaultSkin);
-            const skinData = data.findSkin?.(defaultSkin);
+            const initialSkin = urlSkin && availableSkins.includes(urlSkin)
+              ? urlSkin
+              : availableSkins.find((s: string) => s === 'default') || availableSkins[0];
+            setSelectedSkin(initialSkin);
+            const skinData = data.findSkin?.(initialSkin);
             if (skinData) {
               spine.skeleton.setSkin(skinData);
               spine.skeleton.setSlotsToSetupPose();
@@ -322,6 +375,16 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       spineRef.current.scale.set(scale);
     }
   }, [scale]);
+
+  // Update background color
+  useEffect(() => {
+    if (appRef.current) {
+      // Convert hex to number for PIXI
+      const hex = backgroundColor.replace('#', '');
+      const color = parseInt(hex, 16);
+      appRef.current.renderer.background.color = color;
+    }
+  }, [backgroundColor]);
 
   // Track timeline, FPS, and handle viewport transitions
   useEffect(() => {
@@ -520,6 +583,21 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     }
   };
 
+  const handleCopyUrl = () => {
+    const params = new URLSearchParams();
+    if (selectedAnimation) params.set('animation', selectedAnimation);
+    if (selectedSkin) params.set('skin', selectedSkin);
+    if (timeline > 0) params.set('time', timeline.toFixed(3));
+    if (backgroundColor !== '#1a1625') params.set('bg', backgroundColor);
+
+    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success('URL copied to clipboard');
+    }).catch(() => {
+      toast.error('Failed to copy URL');
+    });
+  };
+
   const runPerformanceTest = async () => {
     if (!appRef.current || !spineDataRef.current || !imageFilesRef.current) {
       toast.warning("Viewer not ready for performance test");
@@ -598,6 +676,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         selectedSkin={selectedSkin}
         skins={skins}
         onSkinChange={setSelectedSkin}
+        backgroundColor={backgroundColor}
+        onBackgroundColorChange={setBackgroundColor}
+        onCopyUrl={handleCopyUrl}
         onBack={onBack}
       />
       <div ref={canvasRef} className="flex-1" />
@@ -609,7 +690,6 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         loop={loop}
         smoothSwitch={smoothSwitch}
         selectedAnimation={selectedAnimation}
-        selectedSkin={selectedSkin}
         files={files}
         pos={infoPanelPos}
         setPos={setInfoPanelPos}
@@ -627,7 +707,6 @@ interface InfoPanelProps {
   loop: boolean;
   smoothSwitch: boolean;
   selectedAnimation: string;
-  selectedSkin: string;
   files: SpineFiles;
   pos: { x: number; y: number };
   setPos: (pos: { x: number; y: number }) => void;
@@ -639,7 +718,6 @@ interface InfoPanelProps {
 const InfoPanel = ({
   spine,
   selectedAnimation,
-  selectedSkin,
   files,
   pos,
   setPos,

@@ -1,6 +1,6 @@
-import { Spine } from '@esotericsoftware/spine-pixi-v8';
+import { Spine, AABBRectangleBoundsProvider } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Graphics, ImageSource } from 'pixi.js';
-import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
+import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
 import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
 
 export interface SpineDisplayOptions {
@@ -64,29 +64,18 @@ export class SpineDisplay extends Container {
   } = {};
 
   /**
-   * Helper: Load a Spine instance from JSON, atlas text and image files.
+   * Helper: Load skeleton data from JSON, atlas text and image files.
    * This can be used from any PixiJS v8 application.
    *
-   * @param jsonText - The skeleton JSON content
+   * @param json - The skeleton JSON content (string or parsed object)
    * @param atlasText - The atlas file content
    * @param imageFiles - Array of image files for the atlas
-   * @param options - Optional loading options
    */
-  static async loadSpineFromFiles(
-    jsonText: string,
+  static async loadSpineDataFromFiles(
+    json: string | Record<string, any>,
     atlasText: string,
-    imageFiles: File[],
-    options?: {
-      /**
-       * Control dark tint rendering:
-       * - true: Force dark tint batcher (two-color tinting, may have blending issues with semi-transparent overlays)
-       * - false: Force default PIXI batcher (better blending for overlays, no dark tint support)
-       * - undefined: Auto-detect based on skeleton dark colors
-       */
-      darkTint?: boolean
-    }
-  ): Promise<Spine> {
-
+    imageFiles: File[]
+  ): Promise<SkeletonData> {
     // Create texture atlas from atlas text
     const textureAtlas = new TextureAtlas(atlasText);
 
@@ -127,7 +116,6 @@ export class SpineDisplay extends Container {
 
         const spineTex = SpineTexture.from(imageSource);
         page.setTexture(spineTex);
-        console.log(`Loaded texture for page ${page.name}, pma=${page.pma}, alphaMode=${alphaMode}`);
 
         URL.revokeObjectURL(url);
       } catch (err) {
@@ -137,15 +125,79 @@ export class SpineDisplay extends Container {
 
     const atlasLoader = new AtlasAttachmentLoader(textureAtlas);
     const skeletonJson = new SkeletonJson(atlasLoader);
-    const skeletonData = skeletonJson.readSkeletonData(JSON.parse(jsonText));
+    const jsonData = typeof json === 'string' ? JSON.parse(json) : json;
+    const skeletonData = skeletonJson.readSkeletonData(jsonData);
+
+    return skeletonData;
+  }
+
+  /**
+   * Helper: Load a Spine instance from JSON, atlas text and image files.
+   * This can be used from any PixiJS v8 application.
+   *
+   * @param json - The skeleton JSON content (string or parsed object)
+   * @param atlasText - The atlas file content
+   * @param imageFiles - Array of image files for the atlas
+   * @param options - Optional loading options
+   */
+  static async loadSpineFromFiles(
+    json: string | Record<string, any>,
+    atlasText: string,
+    imageFiles: File[],
+    options?: {
+      /**
+       * Control dark tint rendering:
+       * - true: Force dark tint batcher (two-color tinting, may have blending issues with semi-transparent overlays)
+       * - false: Force default PIXI batcher (better blending for overlays, no dark tint support)
+       * - undefined: Auto-detect based on skeleton dark colors
+       */
+      darkTint?: boolean;
+      /**
+       * Fixed bounds x position. If x, y, width, and height are all provided, a boundsProvider will be created.
+       */
+      boundsX?: number;
+      /**
+       * Fixed bounds y position. If x, y, width, and height are all provided, a boundsProvider will be created.
+       */
+      boundsY?: number;
+      /**
+       * Fixed bounds width. If x, y, width, and height are all provided, a boundsProvider will be created.
+       */
+      boundsWidth?: number;
+      /**
+       * Fixed bounds height. If x, y, width, and height are all provided, a boundsProvider will be created.
+       */
+      boundsHeight?: number;
+    }
+  ): Promise<Spine> {
+    const skeletonData = await this.loadSpineDataFromFiles(json, atlasText, imageFiles);
 
     // Use darkTint option from parameter, fallback to static option, or undefined for auto-detect
     const darkTint = options?.darkTint ?? SpineDisplay.loadSpineOptions.darkTint;
 
-    return new Spine({
+    // Create bounds provider if all bounds values are provided
+    let boundsProvider;
+    if (
+      options?.boundsX !== undefined &&
+      options?.boundsY !== undefined &&
+      options?.boundsWidth !== undefined &&
+      options?.boundsHeight !== undefined
+    ) {
+      boundsProvider = new AABBRectangleBoundsProvider(
+        options.boundsX,
+        options.boundsY,
+        options.boundsWidth,
+        options.boundsHeight
+      );
+    }
+
+    const spine = new Spine({
       skeletonData,
       darkTint, // undefined = auto-detect, false = disable for better blending, true = force enable
+      boundsProvider,
     });
+
+    return spine;
   }
 
   /**

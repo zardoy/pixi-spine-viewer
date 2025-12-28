@@ -17,6 +17,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^3.10.0
         version: 3.10.0(react-hook-form@7.66.0(react@19.2.3))
+      '@pixi/layout':
+        specifier: ^3.2.0
+        version: 3.2.0(@types/react@19.2.7)(pixi.js@8.14.1)(react@19.2.3)(yoga-layout@3.2.1)
       '@pixi/react':
         specifier: ^8.0.5
         version: 8.0.5(@types/react@19.2.7)(pixi.js@8.14.1)(react@19.2.3)
@@ -390,6 +393,12 @@ packages:
 
   '@pixi/colord@2.9.6':
     resolution: {integrity: sha512-nezytU2pw587fQstUu1AsJZDVEynjskwOL+kibwcdxsMBFqPsFFNA7xl0ii/gXuDi6M0xj3mfRJj8pBSc2jCfA==}
+
+  '@pixi/layout@3.2.0':
+    resolution: {integrity: sha512-7TtDLHfaF65sTnYjrvRNqNJSQHMH109b04RtNgoy//BjR+pKWFUCgDMnUhs13fdNM0AkGccQW3UqCdylHuGvbA==}
+    peerDependencies:
+      pixi.js: ^8
+      yoga-layout: ^3
 
   '@pixi/react@8.0.5':
     resolution: {integrity: sha512-Z1VRdnv9Gh+lTLzNKjpS7GaTNDjUxRVJNtIdtK2i0sCpigvjx5mvJ72EPLhBFgepB6j3ZCkL0YBb6BqgTGbhGA==}
@@ -2032,6 +2041,9 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
+  yoga-layout@3.2.1:
+    resolution: {integrity: sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ==}
+
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
@@ -2226,6 +2238,16 @@ snapshots:
       fastq: 1.19.1
 
   '@pixi/colord@2.9.6': {}
+
+  '@pixi/layout@3.2.0(@types/react@19.2.7)(pixi.js@8.14.1)(react@19.2.3)(yoga-layout@3.2.1)':
+    dependencies:
+      pixi.js: 8.14.1
+      yoga-layout: 3.2.1
+    optionalDependencies:
+      '@pixi/react': 8.0.5(@types/react@19.2.7)(pixi.js@8.14.1)(react@19.2.3)
+    transitivePeerDependencies:
+      - '@types/react'
+      - react
 
   '@pixi/react@8.0.5(@types/react@19.2.7)(pixi.js@8.14.1)(react@19.2.3)':
     dependencies:
@@ -3785,3 +3807,5 @@ snapshots:
       strip-ansi: 7.1.2
 
   yocto-queue@0.1.0: {}
+
+  yoga-layout@3.2.1: {}

@@ -5,7 +5,7 @@ import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
-import { SPINE_EXAMPLES, SpineExample } from "../lib/spineExamples";
+import { SPINE_EXAMPLES } from "../lib/spineExamples";
 import {
   Select,
   SelectContent,
@@ -113,6 +113,45 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     window.addEventListener('paste', handlePaste as any);
     return () => window.removeEventListener('paste', handlePaste as any);
   }, []);
+
+  // Handle P key to load first example
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      // Check if P key is pressed (not when modifier keys are held)
+      if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+
+        // Load first example
+        if (SPINE_EXAMPLES.length > 0) {
+          const firstExample = SPINE_EXAMPLES[0];
+          setSelectedExample(firstExample.name);
+
+          // Load the example
+          toast.loading(`Loading ${firstExample.name}...`);
+
+          fetchSpineFilesFromUrl(firstExample.jsonUrl, firstExample.atlasUrl)
+            .then((files) => {
+              toast.dismiss();
+              toast.success(`Loaded ${firstExample.name}`);
+              onFilesSelect(files);
+            })
+            .catch((error) => {
+              toast.dismiss();
+              toast.error(error instanceof Error ? error.message : 'Failed to load example');
+            });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onFilesSelect]);
 
   const handleLoadExample = async () => {
     if (!selectedExample) {
@@ -232,7 +271,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
                 </span>
               </p>
               <p className="text-xs text-muted-foreground">
-                Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground">R</kbd> to reset,
+                Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground">P</kbd> to load first example,
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">R</kbd> to reset,
                 <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">Space</kbd> to play/pause
               </p>
             </div>

@@ -12,31 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { useSnapshot } from "valtio";
+import { spineViewerStore } from "../store/spineViewerStore";
 
 interface ControlsProps {
-  isPlaying: boolean;
-  onPlayPause: () => void;
-  loop: boolean;
-  onLoopChange: (loop: boolean) => void;
-  speed: number;
-  onSpeedChange: (speed: number) => void;
-  scale: number;
-  onScaleChange: (scale: number) => void;
-  timeline: number;
-  timelineDuration: number;
-  onTimelineChange: (time: number) => void;
-  smoothSwitch: boolean;
-  onSmoothSwitchChange: (value: boolean) => void;
-  debugBones: boolean;
-  onDebugBonesChange: (value: boolean) => void;
-  selectedAnimation: string;
-  animations: string[];
-  onAnimationChange: (animation: string) => void;
-  selectedSkin: string;
-  skins: string[];
-  onSkinChange: (skin: string) => void;
-  backgroundColor: string;
-  onBackgroundColorChange: (color: string) => void;
   onCopyUrl: () => void;
   onBack: () => void;
 }
@@ -44,32 +23,11 @@ interface ControlsProps {
 const SPEED_PRESETS = [0.25, 0.5, 1.0, 1.5, 2.0];
 
 export const Controls = ({
-  isPlaying,
-  onPlayPause,
-  loop,
-  onLoopChange,
-  speed,
-  onSpeedChange,
-  scale,
-  onScaleChange,
-  timeline,
-  timelineDuration,
-  onTimelineChange,
-  smoothSwitch,
-  onSmoothSwitchChange,
-  debugBones,
-  onDebugBonesChange,
-  selectedAnimation,
-  animations,
-  onAnimationChange,
-  selectedSkin,
-  skins,
-  onSkinChange,
-  backgroundColor,
-  onBackgroundColorChange,
   onCopyUrl,
   onBack,
 }: ControlsProps) => {
+  const state = useSnapshot(spineViewerStore);
+  const { ui } = state;
   return (
     <Card className="p-6 rounded-none border-x-0 border-t-0 border-b border-border relative">
       <div className="flex flex-wrap gap-6 items-center justify-between">
@@ -85,11 +43,11 @@ export const Controls = ({
             Close (R)
           </Button>
           <Button
-            onClick={onPlayPause}
+            onClick={() => { spineViewerStore.ui.isPlaying = !spineViewerStore.ui.isPlaying; }}
             size="lg"
             className="gap-2 font-semibold min-w-32"
           >
-            {isPlaying ? (
+            {ui.isPlaying ? (
               <>
                 <Pause className="w-5 h-5" />
                 Pause
@@ -104,8 +62,8 @@ export const Controls = ({
           <div className="flex items-center gap-2">
             <Checkbox
               id="loop"
-              checked={loop}
-              onCheckedChange={onLoopChange}
+              checked={ui.loop}
+              onCheckedChange={(val) => { spineViewerStore.ui.loop = Boolean(val); }}
             />
             <Label htmlFor="loop" className="cursor-pointer">
               Loop
@@ -118,8 +76,8 @@ export const Controls = ({
             <Input
               id="bgColor"
               type="color"
-              value={backgroundColor}
-              onChange={(e) => onBackgroundColorChange(e.target.value)}
+              value={ui.backgroundColor}
+              onChange={(e) => { spineViewerStore.ui.backgroundColor = e.target.value; }}
               className="w-16 h-8 cursor-pointer"
               title="Background color"
             />
@@ -139,12 +97,12 @@ export const Controls = ({
         <div className="flex items-center gap-6">
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Animation</Label>
-            <Select value={selectedAnimation} onValueChange={onAnimationChange}>
+            <Select value={ui.selectedAnimation} onValueChange={(val) => { spineViewerStore.ui.selectedAnimation = val; }}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Select animation" />
               </SelectTrigger>
               <SelectContent>
-                {animations.map((anim, index) => (
+                {ui.animations.map((anim, index) => (
                   <SelectItem key={anim} value={anim}>
                     {index < 9 ? `${index + 1}. ` : ""}{anim}
                   </SelectItem>
@@ -153,15 +111,15 @@ export const Controls = ({
             </Select>
           </div>
 
-          {skins.length > 1 && (
+          {ui.skins.length > 1 && (
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Skin (C to cycle)</Label>
-              <Select value={selectedSkin} onValueChange={onSkinChange}>
+              <Select value={ui.selectedSkin} onValueChange={(val) => { spineViewerStore.ui.selectedSkin = val; }}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Select skin" />
                 </SelectTrigger>
                 <SelectContent>
-                  {skins.map((skin) => (
+                  {ui.skins.map((skin) => (
                     <SelectItem key={skin} value={skin}>
                       {skin}
                     </SelectItem>
@@ -176,7 +134,7 @@ export const Controls = ({
               <Checkbox
                 id="smoothSwitch"
                 checked
-                onCheckedChange={(val: boolean) => onSmoothSwitchChange(Boolean(val))}
+                onCheckedChange={(val: boolean) => { spineViewerStore.ui.smoothSwitch = Boolean(val); }}
                 disabled
               />
               <Label htmlFor="smoothSwitch" className="cursor-pointer text-xs">
@@ -186,8 +144,8 @@ export const Controls = ({
             <div className="flex items-center gap-2">
               <Checkbox
                 id="debugBones"
-                checked={debugBones}
-                onCheckedChange={(val: boolean) => onDebugBonesChange(Boolean(val))}
+                checked={ui.debugBones}
+                onCheckedChange={(val: boolean) => { spineViewerStore.ui.debugBones = Boolean(val); }}
               />
               <Label htmlFor="debugBones" className="cursor-pointer text-xs">
                 Debug bones / attachments (T)
@@ -197,14 +155,14 @@ export const Controls = ({
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">
-              Speed: {speed.toFixed(2)}x
+              Speed: {ui.speed.toFixed(2)}x
             </Label>
             <div className="flex gap-2">
               {SPEED_PRESETS.map((preset) => (
                 <Button
                   key={preset}
-                  onClick={() => onSpeedChange(preset)}
-                  variant={speed === preset ? "default" : "outline"}
+                  onClick={() => { spineViewerStore.ui.speed = preset; }}
+                  variant={ui.speed === preset ? "default" : "outline"}
                   size="sm"
                   className="min-w-14"
                 >
@@ -214,8 +172,8 @@ export const Controls = ({
             </div>
             <div className="flex items-center gap-2 min-w-48">
               <Slider
-                value={[speed]}
-                onValueChange={(value) => onSpeedChange(value[0])}
+                value={[ui.speed]}
+                onValueChange={(value) => { spineViewerStore.ui.speed = value[0]; }}
                 min={0.1}
                 max={3.0}
                 step={0.1}
@@ -226,29 +184,29 @@ export const Controls = ({
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">
-              Timeline: {timelineDuration > 0 ? `${timeline.toFixed(2)}s / ${timelineDuration.toFixed(2)}s` : "N/A"}
+              Timeline: {ui.timelineDuration > 0 ? `${ui.timeline.toFixed(2)}s / ${ui.timelineDuration.toFixed(2)}s` : "N/A"}
             </Label>
             <div className="flex items-center gap-2 min-w-48">
               <Slider
-                value={[Math.min(timeline, timelineDuration || 0)]}
-                onValueChange={(value) => onTimelineChange(value[0])}
+                value={[Math.min(ui.timeline, ui.timelineDuration || 0)]}
+                onValueChange={(value) => { spineViewerStore.ui.timeline = value[0]; }}
                 min={0}
-                max={timelineDuration || 0}
-                step={timelineDuration ? timelineDuration / 200 : 0.01}
+                max={ui.timelineDuration || 0}
+                step={ui.timelineDuration ? ui.timelineDuration / 200 : 0.01}
                 className="flex-1"
-                disabled={timelineDuration <= 0}
+                disabled={ui.timelineDuration <= 0}
               />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">
-              Scale: {Math.round(scale * 100)}%
+              Scale: {Math.round(ui.scale * 100)}%
             </Label>
             <div className="flex items-center gap-2 min-w-48">
               <Slider
-                value={[scale]}
-                onValueChange={(value) => onScaleChange(value[0])}
+                value={[ui.scale]}
+                onValueChange={(value) => { spineViewerStore.ui.scale = value[0]; }}
                 min={0.1}
                 max={5.0}
                 step={0.1}
@@ -256,11 +214,36 @@ export const Controls = ({
               />
               <Input
                 type="number"
-                value={Math.round(scale * 100)}
-                onChange={(e) => onScaleChange(Number(e.target.value) / 100)}
+                value={Math.round(ui.scale * 100)}
+                onChange={(e) => { spineViewerStore.ui.scale = Number(e.target.value) / 100; }}
                 className="w-20"
                 min={10}
                 max={500}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              Mix Time: {ui.mixTime.toFixed(2)}s
+            </Label>
+            <div className="flex items-center gap-2 min-w-48">
+              <Slider
+                value={[ui.mixTime]}
+                onValueChange={(value) => { spineViewerStore.ui.mixTime = value[0]; }}
+                min={0}
+                max={2.0}
+                step={0.01}
+                className="flex-1"
+              />
+              <Input
+                type="number"
+                value={ui.mixTime.toFixed(2)}
+                onChange={(e) => { spineViewerStore.ui.mixTime = Number(e.target.value); }}
+                className="w-20"
+                min={0}
+                max={2}
+                step={0.01}
               />
             </div>
           </div>

@@ -11,7 +11,7 @@ export class FileSpineLoader {
   private loadingPromises: Map<string, Promise<void>> = new Map();
 
   constructor(
-    private jsonText: string,
+    private skeletonData: string | ArrayBuffer | Uint8Array,
     private atlasText: string,
     private imageFiles: File[]
   ) {}
@@ -35,7 +35,7 @@ export class FileSpineLoader {
     const loadPromise = (async () => {
       try {
         const skeletonData = await SpineDisplay.loadSpineDataFromFiles(
-          this.jsonText,
+          this.skeletonData,
           this.atlasText,
           this.imageFiles
         );

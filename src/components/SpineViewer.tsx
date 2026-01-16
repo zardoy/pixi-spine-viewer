@@ -206,7 +206,7 @@ const InfoPanel = () => {
           variant="outline"
           onClick={() => openFileInNewTab(files.jsonFile)}
         >
-          Open JSON
+          Open Skeleton
         </Button>
         <Button
           size="sm"
@@ -242,12 +242,12 @@ const InfoPanel = () => {
               }
 
               spineViewerStore.refs.stressTestRunning = true;
-              const { jsonText, atlasText } = spineData;
+              const { skeletonData, atlasText } = spineData;
 
               try {
                 for (let i = 0; i < 100; i++) {
                   const tempSpine = await SpineDisplay.loadSpineFromFiles(
-                    jsonText,
+                    skeletonData,
                     atlasText,
                     imageFiles
                   );
@@ -288,7 +288,7 @@ const InfoPanel = () => {
                 return;
               }
 
-              const { jsonText, atlasText } = spineData;
+              const { skeletonData, atlasText } = spineData;
 
               // Clear previous perf test spines
               if (spineViewerStore.refs.perfSpines.length) {
@@ -306,7 +306,7 @@ const InfoPanel = () => {
 
                 for (let i = 0; i < count; i++) {
                   const clone = await SpineDisplay.loadSpineFromFiles(
-                    jsonText,
+                    skeletonData,
                     atlasText,
                     imageFiles
                   );

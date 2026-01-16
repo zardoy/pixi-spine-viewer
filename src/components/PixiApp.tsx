@@ -67,16 +67,28 @@ const PixiAppContent = () => {
         console.log('[PixiApp] Starting loader initialization...');
         const files = spineViewerStore.files!;
 
-        // Read atlas and JSON
+        // Read atlas and skeleton file (JSON or binary .skel)
         console.log('[PixiApp] Reading files...');
         const atlasText = await files.atlasFile.text();
-        const jsonText = await files.jsonFile.text();
-        spineViewerStore.refs.spineData = { jsonText, atlasText };
+
+        // Detect if skeleton file is binary (.skel) or JSON
+        const isSkelFile = files.jsonFile.name.toLowerCase().endsWith('.skel');
+        let skeletonData: string | ArrayBuffer;
+
+        if (isSkelFile) {
+          skeletonData = await files.jsonFile.arrayBuffer();
+          console.log('[PixiApp] Detected .skel binary file');
+        } else {
+          skeletonData = await files.jsonFile.text();
+          console.log('[PixiApp] Detected .json text file');
+        }
+
+        spineViewerStore.refs.spineData = { skeletonData, atlasText };
         spineViewerStore.refs.imageFiles = ref(files.imageFiles);
 
         // Create file-based spine loader
         console.log('[PixiApp] Creating FileSpineLoader...');
-        const loader = new FileSpineLoader(jsonText, atlasText, files.imageFiles);
+        const loader = new FileSpineLoader(skeletonData, atlasText, files.imageFiles);
         fileSpineLoaderRef.current = loader;
 
         // Load skeleton data
@@ -475,13 +487,13 @@ const PixiAppContent = () => {
   // Use position from store (updated in ticker for smooth transitions)
   const position = state.ui.spinePosition;
 
-  const [count, setCount] = useState(0)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCount(count => count + 1)
-    }, 100)
-    return () => clearInterval(interval)
-  }, [])
+  // const [count, setCount] = useState(0)
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setCount(count => count + 1)
+  //   }, 100)
+  //   return () => clearInterval(interval)
+  // }, [])
 
   if (!fileSpineLoaderRef.current || !isLoaderReady) {
     console.log('[PixiApp] Not rendering SpineBase yet:', {

@@ -23,16 +23,16 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
   const [selectedExample, setSelectedExample] = useState<string>("");
 
   const processFiles = async (files: File[]) => {
-    // Find JSON, Atlas, and image files
-    const jsonFile = files.find(f => f.name.endsWith('.json'));
+    // Find skeleton file (.json or .skel), Atlas, and image files
+    const skeletonFile = files.find(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
     const atlasFile = files.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
     const imageFiles = files.filter(f =>
       f.type.startsWith("image/") ||
       f.name.match(/\.(png|jpg|jpeg|webp)$/i)
     );
 
-    if (!jsonFile) {
-      toast.error("No .json file found. Please include the Spine JSON file.");
+    if (!skeletonFile) {
+      toast.error("No .json or .skel file found. Please include the Spine skeleton file.");
       return;
     }
 
@@ -46,9 +46,9 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
       return;
     }
 
-    toast.success(`Loaded: ${jsonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
+    toast.success(`Loaded: ${skeletonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
     onFilesSelect({
-      jsonFile,
+      jsonFile: skeletonFile, // Keep the prop name as jsonFile for compatibility
       atlasFile,
       imageFiles,
     });
@@ -193,7 +193,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".json,.atlas,.atlas.txt,.png,.webp,.jpg,.jpeg,image/*"
+        accept=".json,.skel,.atlas,.atlas.txt,.png,.webp,.jpg,.jpeg,image/*"
         onChange={handleFileInputChange}
         className="hidden"
       />
@@ -218,7 +218,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               Load Spine animations from files or URL
             </p>
             <p className="text-sm text-muted-foreground">
-              Required files: <span className="text-primary font-medium">.json</span>, <span className="text-primary font-medium">.atlas</span>, and <span className="text-primary font-medium">atlas image(s)</span>
+              Required files: <span className="text-primary font-medium">.json</span> or <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.atlas</span>, and <span className="text-primary font-medium">atlas image(s)</span>
             </p>
           </div>
 

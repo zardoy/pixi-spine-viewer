@@ -12,7 +12,7 @@ export interface SpineViewerState {
     spine: Spine | null;
     stressTestRunning: boolean;
     perfSpines: Spine[];
-    spineData: { jsonText: string; atlasText: string } | null;
+    spineData: { skeletonData: string | ArrayBuffer; atlasText: string } | null;
     imageFiles: File[] | null;
     currentViewport: AnimationViewport | null;
     previousViewport: AnimationViewport | null;

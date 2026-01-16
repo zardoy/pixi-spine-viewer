@@ -1,13 +1,14 @@
 /**
  * URL Fetcher - Download Spine files from URLs
  *
- * This utility attempts to download .json, .atlas, and image files from a base URL
+ * This utility attempts to download .json/.skel, .atlas, and image files from a base URL
  * by trying different extensions. Supports pasting any file URL and automatically
  * finding the related files.
  */
 
 const IMAGE_EXTENSIONS = ['png', 'webp', 'jpg', 'jpeg'];
 const ATLAS_EXTENSIONS = ['atlas', 'atlas.txt'];
+const SKELETON_EXTENSIONS = ['json', 'skel'];
 
 export interface FetchedSpineFiles {
   jsonFile: File;
@@ -22,7 +23,7 @@ function getBaseUrl(url: string): string {
   // Remove query parameters
   const cleanUrl = url.split('?')[0].split('#')[0];
   // Remove extension
-  return cleanUrl.replace(/\.(json|atlas|atlas\.txt|png|webp|jpg|jpeg)$/i, '');
+  return cleanUrl.replace(/\.(json|skel|atlas|atlas\.txt|png|webp|jpg|jpeg)$/i, '');
 }
 
 /**
@@ -45,30 +46,33 @@ async function fetchFile(url: string, filename: string): Promise<File | null> {
 /**
  * Try to download all necessary Spine files from URLs.
  *
- * - inputUrl: URL to any of the spine files (usually the JSON)
+ * - inputUrl: URL to any of the spine files (usually the JSON or .skel)
  * - atlasUrlOverride: optional explicit atlas URL (for cases like dragon-ess.json + dragon.atlas)
  */
 export async function fetchSpineFilesFromUrl(
   inputUrl: string,
   atlasUrlOverride?: string
 ): Promise<FetchedSpineFiles> {
-  const jsonBaseUrl = getBaseUrl(inputUrl);
-  const jsonBaseFilename = jsonBaseUrl.split('/').pop() || 'spine';
+  const skeletonBaseUrl = getBaseUrl(inputUrl);
+  const skeletonBaseFilename = skeletonBaseUrl.split('/').pop() || 'spine';
 
-  // 1. Try to fetch JSON file
+  // 1. Try to fetch skeleton file (.json or .skel)
   let jsonFile: File | null = null;
-  const jsonUrl = `${jsonBaseUrl}.json`;
-  jsonFile = await fetchFile(jsonUrl, `${jsonBaseFilename}.json`);
+  for (const ext of SKELETON_EXTENSIONS) {
+    const skeletonUrl = `${skeletonBaseUrl}.${ext}`;
+    jsonFile = await fetchFile(skeletonUrl, `${skeletonBaseFilename}.${ext}`);
+    if (jsonFile) break;
+  }
 
   if (!jsonFile) {
-    throw new Error('Failed to fetch .json file. Make sure the URL is correct.');
+    throw new Error('Failed to fetch .json or .skel file. Make sure the URL is correct.');
   }
 
   // 2. Try to fetch Atlas file
   let atlasFile: File | null = null;
-  // If override provided, use its base; otherwise derive from JSON base
-  const atlasBaseUrl = atlasUrlOverride ? getBaseUrl(atlasUrlOverride) : jsonBaseUrl;
-  const atlasBaseFilename = atlasBaseUrl.split('/').pop() || jsonBaseFilename;
+  // If override provided, use its base; otherwise derive from skeleton base
+  const atlasBaseUrl = atlasUrlOverride ? getBaseUrl(atlasUrlOverride) : skeletonBaseUrl;
+  const atlasBaseFilename = atlasBaseUrl.split('/').pop() || skeletonBaseFilename;
   for (const ext of ATLAS_EXTENSIONS) {
     const atlasUrl = `${atlasBaseUrl}.${ext}`;
     atlasFile = await fetchFile(atlasUrl, `${atlasBaseFilename}.${ext}`);
@@ -108,7 +112,7 @@ export function isValidSpineUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const clean = parsed.origin + parsed.pathname; // strip query/hash
-    return /\.(json|atlas|png|webp|jpg|jpeg)$/i.test(clean);
+    return /\.(json|skel|atlas|png|webp|jpg|jpeg)$/i.test(clean);
   } catch {
     return false;
   }

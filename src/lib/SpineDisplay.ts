@@ -1,6 +1,6 @@
 import { Spine, AABBRectangleBoundsProvider } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Graphics, ImageSource } from 'pixi.js';
-import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
+import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonBinary, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
 import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
 
 export interface SpineDisplayOptions {
@@ -72,7 +72,7 @@ export class SpineDisplay extends Container {
    * @param imageFiles - Array of image files for the atlas
    */
   static async loadSpineDataFromFiles(
-    json: string | Record<string, any>,
+    json: string | Record<string, any> | ArrayBuffer | Uint8Array,
     atlasText: string,
     imageFiles: File[]
   ): Promise<SkeletonData> {
@@ -124,11 +124,23 @@ export class SpineDisplay extends Container {
     }
 
     const atlasLoader = new AtlasAttachmentLoader(textureAtlas);
-    const skeletonJson = new SkeletonJson(atlasLoader);
-    const jsonData = typeof json === 'string' ? JSON.parse(json) : json;
-    const skeletonData = skeletonJson.readSkeletonData(jsonData);
 
-    return skeletonData;
+    // Determine if input is binary (.skel) or JSON
+    const isBinary = json instanceof ArrayBuffer || json instanceof Uint8Array;
+
+    if (isBinary) {
+      // Load binary .skel file
+      const skeletonBinary = new SkeletonBinary(atlasLoader);
+      const binaryData = json instanceof ArrayBuffer ? new Uint8Array(json) : json;
+      const skeletonData = skeletonBinary.readSkeletonData(binaryData);
+      return skeletonData;
+    } else {
+      // Load JSON file
+      const skeletonJson = new SkeletonJson(atlasLoader);
+      const jsonData = typeof json === 'string' ? JSON.parse(json) : json;
+      const skeletonData = skeletonJson.readSkeletonData(jsonData);
+      return skeletonData;
+    }
   }
 
   /**
@@ -141,7 +153,7 @@ export class SpineDisplay extends Container {
    * @param options - Optional loading options
    */
   static async loadSpineFromFiles(
-    json: string | Record<string, any>,
+    json: string | Record<string, any> | ArrayBuffer | Uint8Array,
     atlasText: string,
     imageFiles: File[],
     options?: {

@@ -8,7 +8,7 @@ import { SpineDisplay } from "../lib/SpineDisplay";
 import { SpineDebugRenderer } from '../lib/SpineDebugRenderer';
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
-import { SpineBase } from "../lib/Spine";
+import { SpineBase } from "../lib/SpineBase";
 import { FileSpineLoader } from "../lib/FileSpineLoader";
 import { Spine as SpineInstance } from "@esotericsoftware/spine-pixi-v8";
 
@@ -97,8 +97,15 @@ const PixiAppContent = () => {
 
   // Sync spineRef to store - handled in handleSpineLoaded callback instead
 
+  const wasSpineLoaded = useRef(false)
+
   // Handle spine loaded - extract animations/skins and do initial setup
   const handleSpineLoaded = (spine: SpineInstance) => {
+    if (wasSpineLoaded.current) {
+      return;
+    }
+    wasSpineLoaded.current = true;
+
     console.log('[PixiApp] handleSpineLoaded called', {
       hasApp: !!app.app,
       appScreen: app.app ? { width: app.app.screen.width, height: app.app.screen.height } : null,
@@ -236,27 +243,13 @@ const PixiAppContent = () => {
   useEffect(() => {
     if (!app.app || !state.refs.spine) return;
 
-    let lastTimeline = -1;
-
     const update = () => {
       if (!spineViewerStore.refs.spine || !app.app) return;
 
       // Update timeline (loop resets are handled by handleAnimationComplete callback)
       const track = spineViewerStore.refs.spine.state.tracks[0];
       if (track) {
-        const t = track.trackTime ?? (track as any).time ?? 0;
-        const timelineDiff = t - lastTimeline;
-
-        // Only update if significant forward progress (loop resets are handled by callback)
-        // Skip if jumping backwards (loop reset - callback will handle it)
-        if (timelineDiff > -0.01 && Math.abs(timelineDiff) > 0.01) {
-          lastTimeline = t;
-          spineViewerStore.ui.timeline = t;
-        } else if (t === 0 && lastTimeline > 0.5) {
-          // If track time is 0 and we were at a high value, callback already reset it
-          // Just sync our lastTimeline to match
-          lastTimeline = 0;
-        }
+        spineViewerStore.ui.timeline = track.getAnimationTime();
       }
 
       // Update FPS from ticker
@@ -473,12 +466,22 @@ const PixiAppContent = () => {
 
   // Handle animation complete (fires even when looping) - memoized to prevent re-renders
   const handleAnimationComplete = () => {
-    console.log('[PixiApp] Animation completed, resetting timeline to 0');
+    if (!spineViewerStore.ui.loop) {
+      spineViewerStore.ui.isPlaying = false;
+    }
     spineViewerStore.ui.timeline = 0;
   }
 
   // Use position from store (updated in ticker for smooth transitions)
   const position = state.ui.spinePosition;
+
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCount(count => count + 1)
+    }, 100)
+    return () => clearInterval(interval)
+  }, [])
 
   if (!fileSpineLoaderRef.current || !isLoaderReady) {
     console.log('[PixiApp] Not rendering SpineBase yet:', {
@@ -488,25 +491,22 @@ const PixiAppContent = () => {
     return <pixiContainer ref={containerRef} />;
   }
 
-  const spineProps = {
-    spine: SPINE_KEY,
-    animation: state.ui.selectedAnimation || undefined,
-    loop: state.ui.loop,
-    timeScale: state.ui.speed,
-    playing: state.ui.isPlaying,
-    skin: state.ui.selectedSkin || undefined,
-    mixTime: state.ui.mixTime,
-    scale: { x: state.ui.scale, y: state.ui.scale },
-    x: position.x,
-    y: position.y,
-  };
-
-  console.log('[PixiApp] Rendering SpineBase with props:', spineProps);
-
   return (
     <pixiContainer ref={containerRef}>
       <SpineBase
-        {...spineProps}
+      // key={count}
+
+        spine={SPINE_KEY}
+        animation={state.ui.selectedAnimation}
+        loop={state.ui.loop}
+        timeScale={state.ui.speed}
+        playing={state.ui.isPlaying}
+        startPlaying={state.ui.isPlaying}
+        skin={state.ui.selectedSkin}
+        mixTime={state.ui.mixTime}
+        scale={{ x: state.ui.scale, y: state.ui.scale }}
+        x={position.x}
+        y={position.y}
         spineLoader={fileSpineLoaderRef.current}
         spineRef={spineRef}
         onSpineLoaded={handleSpineLoaded}

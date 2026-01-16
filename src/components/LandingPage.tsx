@@ -108,10 +108,21 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     }
   };
 
-  // Add paste event listener
+  // Add paste and drag/drop event listeners
   useEffect(() => {
     window.addEventListener('paste', handlePaste as any);
-    return () => window.removeEventListener('paste', handlePaste as any);
+    window.addEventListener('drop', handleDrop as any);
+    window.addEventListener('dragover', handleDragOver as any);
+    window.addEventListener('dragenter', handleDragEnter as any);
+    window.addEventListener('dragleave', handleDragLeave as any);
+
+    return () => {
+      window.removeEventListener('paste', handlePaste as any);
+      window.removeEventListener('drop', handleDrop as any);
+      window.removeEventListener('dragover', handleDragOver as any);
+      window.removeEventListener('dragenter', handleDragEnter as any);
+      window.removeEventListener('dragleave', handleDragLeave as any);
+    };
   }, []);
 
   // Handle P key to load first example
@@ -193,13 +204,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         </div>
       </div>
       <Card className="max-w-2xl w-full p-12 text-center border-2 border-dashed border-border hover:border-primary/50 transition-colors relative z-10">
-        <div
-          onDrop={handleDrop as any}
-          onDragOver={handleDragOver as any}
-          onDragEnter={handleDragEnter as any}
-          onDragLeave={handleDragLeave as any}
-          className="space-y-8"
-        >
+        <div className="space-y-8">
           <div className="space-y-4">
             <div className="flex justify-center">
               <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">

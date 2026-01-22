@@ -29,6 +29,7 @@ export interface SpineViewerState {
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
+    debugBounds: boolean;
     selectedAnimation: string;
     animations: string[];
     selectedSkin: string;
@@ -66,6 +67,7 @@ export const spineViewerStore = proxy<SpineViewerState>({
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
+    debugBounds: false,
     selectedAnimation: '',
     animations: [],
     selectedSkin: '',

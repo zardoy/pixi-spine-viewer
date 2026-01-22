@@ -1,6 +1,6 @@
 import '@pixi/layout'
 import { useEffect, useRef, useState } from "react";
-import { Container } from "pixi.js";
+import { Container, Graphics, Text } from "pixi.js";
 import { Physics } from "@esotericsoftware/spine-core";
 import { Application, useExtend, useApplication } from "@pixi/react";
 import { useSnapshot, ref } from "valtio";
@@ -16,7 +16,7 @@ const SPINE_KEY = 'viewer-spine'; // Single key for the viewer
 
 const PixiAppContent = () => {
   // useExtend must be used within Application context
-  useExtend({ Container });
+  useExtend({ Container, Graphics, Text });
 
   const app = useApplication();
   const state = useSnapshot(spineViewerStore);
@@ -25,6 +25,8 @@ const PixiAppContent = () => {
   const fileSpineLoaderRef = useRef<FileSpineLoader | null>(null);
   const [isLoaderReady, setIsLoaderReady] = useState(false);
   const viewportTransitionTime = 0.25;
+  const boundsGraphicsRef = useRef<Graphics | null>(null);
+  const boundsTextRef = useRef<Text | null>(null);
 
   // Sync container ref to store (wrapped in ref() to prevent proxying)
   useEffect(() => {
@@ -475,6 +477,133 @@ const PixiAppContent = () => {
       cancelled = true;
     };
   }, [state.ui.debugBones]);
+
+  // Debug bounds - create/remove graphics and text
+  useEffect(() => {
+    if (!containerRef.current || !state.ui.debugBounds) {
+      // Remove graphics if debug bounds is disabled
+      if (boundsGraphicsRef.current && containerRef.current) {
+        containerRef.current.removeChild(boundsGraphicsRef.current);
+        boundsGraphicsRef.current.destroy();
+        boundsGraphicsRef.current = null;
+      }
+      if (boundsTextRef.current && containerRef.current) {
+        containerRef.current.removeChild(boundsTextRef.current);
+        boundsTextRef.current.destroy();
+        boundsTextRef.current = null;
+      }
+      return;
+    }
+
+    // Create graphics for bounds border
+    if (!boundsGraphicsRef.current && containerRef.current) {
+      const graphics = new Graphics();
+      containerRef.current.addChild(graphics);
+      boundsGraphicsRef.current = graphics;
+    }
+
+    // Create text for bounds dimensions
+    if (!boundsTextRef.current && containerRef.current) {
+      const text = new Text({
+        text: '',
+        style: {
+          fontSize: 12,
+          fill: 0xff0000,
+          fontWeight: 'bold',
+        },
+      });
+      containerRef.current.addChild(text);
+      boundsTextRef.current = text;
+    }
+
+    return () => {
+      if (boundsGraphicsRef.current && containerRef.current) {
+        containerRef.current.removeChild(boundsGraphicsRef.current);
+        boundsGraphicsRef.current.destroy();
+        boundsGraphicsRef.current = null;
+      }
+      if (boundsTextRef.current && containerRef.current) {
+        containerRef.current.removeChild(boundsTextRef.current);
+        boundsTextRef.current.destroy();
+        boundsTextRef.current = null;
+      }
+    };
+  }, [state.ui.debugBounds]);
+
+  // Update debug bounds rendering
+  useEffect(() => {
+    if (!app.app || !state.ui.debugBounds) return;
+
+    const updateBounds = () => {
+      const spine = spineViewerStore.refs.spine;
+      const graphics = boundsGraphicsRef.current;
+      const text = boundsTextRef.current;
+
+      if (!spine || !graphics || !text || !containerRef.current) return;
+
+      try {
+        // Use the Spine class's built-in bounds property which is already properly calculated
+        // This is in skeleton local coordinate space
+        const spineBounds = spine.bounds;
+
+        if (!spineBounds || spineBounds.minX === Infinity || spineBounds.maxX === -Infinity) {
+          graphics.clear();
+          text.text = '';
+          return;
+        }
+
+        // Calculate local bounds dimensions
+        const localX = spineBounds.minX;
+        const localY = spineBounds.minY;
+        const localWidth = spineBounds.maxX - spineBounds.minX;
+        const localHeight = spineBounds.maxY - spineBounds.minY;
+
+        if (!isFinite(localX) || !isFinite(localY) || !isFinite(localWidth) || !isFinite(localHeight)) {
+          graphics.clear();
+          text.text = '';
+          return;
+        }
+
+        // The Spine instance is inside SpineBase's container which has:
+        // - position: spineViewerStore.ui.spinePosition (x, y)
+        // - scale: spineViewerStore.ui.scale
+        // The boundsGraphics is added to containerRef which is the parent of SpineBase's container
+        // So we need to transform the local bounds through the container's transform
+        const containerX = spineViewerStore.ui.spinePosition.x;
+        const containerY = spineViewerStore.ui.spinePosition.y;
+        const containerScale = spineViewerStore.ui.scale;
+
+        // Transform local bounds to containerRef's coordinate space
+        const boundsX = containerX + localX * containerScale;
+        const boundsY = containerY + localY * containerScale;
+        const boundsWidth = localWidth * containerScale;
+        const boundsHeight = localHeight * containerScale;
+
+        // Draw red border rectangle
+        graphics.clear();
+        graphics.rect(boundsX, boundsY, boundsWidth, boundsHeight);
+        graphics.stroke({ color: 0xff0000, width: 2 });
+
+        // Update text with dimensions (in skeleton local space, not scaled)
+        text.text = `${localWidth.toFixed(1)} × ${localHeight.toFixed(1)}`;
+        text.x = boundsX;
+        text.y = boundsY - 16; // Position text above the top-left corner
+      } catch (err) {
+        console.error('Error updating debug bounds:', err);
+        graphics.clear();
+        text.text = '';
+      }
+    };
+
+    // Update on every frame
+    app.app.ticker.add(updateBounds);
+
+    return () => {
+      if (app.app?.ticker) {
+        app.app.ticker.remove(updateBounds);
+      }
+    };
+  }, [app.app, state.ui.debugBounds]);
 
   // Handle animation complete (fires even when looping) - memoized to prevent re-renders
   const handleAnimationComplete = () => {

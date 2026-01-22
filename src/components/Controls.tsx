@@ -151,6 +151,16 @@ export const Controls = ({
                 Debug bones / attachments (T)
               </Label>
             </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="debugBounds"
+                checked={ui.debugBounds}
+                onCheckedChange={(val: boolean) => { spineViewerStore.ui.debugBounds = Boolean(val); }}
+              />
+              <Label htmlFor="debugBounds" className="cursor-pointer text-xs">
+                Debug bounds
+              </Label>
+            </div>
           </div>
 
           <div className="space-y-2">

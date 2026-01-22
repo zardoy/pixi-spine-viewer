@@ -643,6 +643,7 @@ const PixiAppContent = () => {
         timeScale={state.ui.speed}
         playing={state.ui.isPlaying}
         startPlaying={state.ui.isPlaying}
+        startPlayingNoReset={true}
         skin={state.ui.selectedSkin}
         mixTime={state.ui.mixTime}
         scale={{ x: state.ui.scale, y: state.ui.scale }}

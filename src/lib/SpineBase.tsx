@@ -2,6 +2,7 @@ import { Container, EventMode } from 'pixi.js'
 import { PixiReactElementProps } from '@pixi/react'
 import { useEffect, useRef } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
+import { Physics } from '@esotericsoftware/spine-core'
 import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
@@ -26,8 +27,12 @@ export interface SpineProps
   loop?: boolean
   /** Animation playback speed (default: 1.0) */
   timeScale?: number
-  /** Whether the animation is playing (default: true). Set to false to pause/freeze on first frame */
+  /** @deprecated Use `paused` prop instead. Whether the animation is playing (default: true). Set to false to pause/freeze on first frame */
   playing?: boolean
+  /** Whether the animation is paused (default: false). Only one of `playing` or `paused` should be passed. */
+  paused?: boolean
+  /** Animation progress from 0 to 1. If passed on initial render, sets the play progress. When changed, updates play progress to that percentage. */
+  animationProgress?: number
   /** Mix time for animation transitions (default: 0.25) */
   mixTime?: number
   /** Delay before starting animation initially in seconds (default: 0) */
@@ -40,6 +45,7 @@ export interface SpineProps
   loopDelay?: number
   /** When set to true, starts animation playback (changes to false are ignored) */
   startPlaying?: boolean
+  startPlayingNoReset?: boolean
 
   // === Layout ===
   x?: number
@@ -87,13 +93,16 @@ export const SpineBase = (props: SpineProps) => {
     animation,
     loop = false,
     timeScale: timeScaleProp = 1.0,
-    playing = true,
+    playing,
+    paused,
+    animationProgress,
     mixTime = 0.25,
     initialDelay = 0,
     resumeDelay = 0,
     resetOnPause,
     loopDelay = 0,
     startPlaying,
+    startPlayingNoReset,
 
     // Layout
     x = 0,
@@ -122,11 +131,15 @@ export const SpineBase = (props: SpineProps) => {
     ...passthroughProps
   } = props
 
+  // Determine playing state: if paused is explicitly passed, use !paused, otherwise use playing (default true)
+  // Only one should be passed at a time
+  const isPlaying = paused !== undefined ? !paused : (playing !== undefined ? playing : true)
+
   const ref = useRef<Container>(null!)
   const spineRef = useRef<SpineInstance | null>(null)
   const onCompleteRef = useRef(onCurrentAnimComplete)
   const listenerRef = useRef<{ complete: (trackEntry: any) => void } | null>(null)
-  const previousPlayingRef = useRef<boolean>(playing)
+  const previousPlayingRef = useRef<boolean>(isPlaying)
   const loopDelayRef = useRef<number>(loopDelay)
   const loopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -140,6 +153,30 @@ export const SpineBase = (props: SpineProps) => {
     if (spineRef.current) {
       spineRef.current.state.data.defaultMix = mixTime
     }
+  }
+
+  const updateAnimationProgress = () => {
+    if (!spineRef.current || animationProgress === undefined) return
+
+    const track = spineRef.current.state.tracks[0]
+    if (!track || !track.animation) return
+
+    const duration = track.animation.duration
+    if (duration <= 0) return
+
+    // Calculate time from progress (0-1)
+    const targetTime = animationProgress * duration
+
+    // Clamp to valid range
+    const clampedTime = Math.max(0, Math.min(targetTime, duration))
+
+    // Set track time
+    track.trackTime = clampedTime
+    track.trackEnd = clampedTime
+
+    // Apply the state immediately
+    spineRef.current.state.apply(spineRef.current.skeleton)
+    spineRef.current.skeleton.updateWorldTransform(Physics.update)
   }
 
   // Register spine on mount
@@ -217,7 +254,9 @@ export const SpineBase = (props: SpineProps) => {
             if (!destroyed && spineRef.current) {
               setAnimationWithDelay()
               // Set time scale based on playing state
-              spineRef.current.state.timeScale = playing ? timeScale : 0
+              spineRef.current.state.timeScale = isPlaying ? timeScale : 0
+              // Apply initial animation progress if provided
+              updateAnimationProgress()
             }
           }, initialDelay * 1000) // Convert seconds to milliseconds
         } else {
@@ -230,10 +269,15 @@ export const SpineBase = (props: SpineProps) => {
 
         // Set time scale based on playing state (only if no initial delay)
         if (initialDelay === 0) {
-          spine.state.timeScale = playing || startPlaying ? timeScale : 0
+          spine.state.timeScale = isPlaying || startPlaying ? timeScale : 0
         }
 
         updateMixTime()
+
+        // Apply initial animation progress if provided
+        if (animationProgress !== undefined) {
+          updateAnimationProgress()
+        }
 
         // Set skin if provided
         if (skin) {
@@ -267,7 +311,7 @@ export const SpineBase = (props: SpineProps) => {
 
                 // Resume after loop delay
                 loopTimeoutRef.current = setTimeout(() => {
-                  if (spineRef.current && playing) {
+                  if (spineRef.current && isPlaying) {
                     spineRef.current.state.timeScale = timeScaleRef.current
                   }
                 }, loopDelayRef.current * 1000) // Convert seconds to milliseconds
@@ -318,12 +362,19 @@ export const SpineBase = (props: SpineProps) => {
         spineRef.current = null
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps do not add any other deps, its for initial load only
+     
+    // do not add any other deps, its for initial load only
   }, [spineKey])
 
   useEffect(() => {
     updateMixTime()
   }, [mixTime])
+
+  // Handle animationProgress changes
+  useEffect(() => {
+    if (!spineRef.current || animationProgress === undefined) return
+    updateAnimationProgress()
+  }, [animationProgress]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle animation and loop prop changes (separate effect to avoid re-creating spine)
   useEffect(() => {
@@ -363,15 +414,15 @@ export const SpineBase = (props: SpineProps) => {
     }
   }, [animation, loop])
 
-  // Handle playing, timeScale changes with resumeDelay and resetOnPause
+  // Handle playing/paused, timeScale changes with resumeDelay and resetOnPause
   useEffect(() => {
     if (!spineRef.current) {
       return
     }
 
     const previousPlaying = previousPlayingRef.current
-    const isResuming = !previousPlaying && playing
-    const isPausing = previousPlaying && !playing
+    const isResuming = !previousPlaying && isPlaying
+    const isPausing = previousPlaying && !isPlaying
 
     timeScaleRef.current = timeScale
 
@@ -384,7 +435,7 @@ export const SpineBase = (props: SpineProps) => {
     }
 
     let cleanup: (() => void) | undefined
-    if (playing) {
+    if (isPlaying) {
       if (isResuming && resumeDelay > 0) {
         spineRef.current.state.timeScale = 0
         // TODO split into playing, timeScale hooks there
@@ -404,10 +455,12 @@ export const SpineBase = (props: SpineProps) => {
     }
 
     // Update previous playing ref
-    previousPlayingRef.current = playing
+    previousPlayingRef.current = isPlaying
 
     return cleanup
-  }, [playing, timeScale]) // eslint-disable-line react-hooks/exhaustive-deps ignore resumeDelay, resetOnPause
+     
+    // ignore resumeDelay, resetOnPause
+  }, [isPlaying, timeScale])
 
   // Handle startPlaying changes (only responds to false->true transitions)
   useChangedEffect(([prevStartPlaying]) => {
@@ -434,7 +487,7 @@ export const SpineBase = (props: SpineProps) => {
         return animations && animations.length > 0 ? animations[0].name : null
       })()
 
-      if (animToUse && (!track || track.getAnimationTime() === track.animationEnd)) {
+      if (animToUse && (!track || track.getAnimationTime() === track.animationEnd || track.getAnimationTime() === 0 || !startPlayingNoReset)) {
         spineRef.current.state.setAnimation(0, animToUse, loop)
         spineRef.current.state.timeScale = timeScaleRef.current
       }

@@ -7,6 +7,7 @@ import { SpineDisplay } from "../lib/SpineDisplay";
 import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
 import { spineViewerStore } from "../store/spineViewerStore";
+import { AttachmentTestPanel } from "./AttachmentTestPanel";
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -127,6 +128,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
       {/* Draggable info panel */}
       <InfoPanel />
+
+      {/* Draggable attachment test panel */}
+      <AttachmentTestPanel />
     </div>
   );
 };

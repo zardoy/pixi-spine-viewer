@@ -25,7 +25,6 @@ export interface SpineViewerState {
     loop: boolean;
     speed: number;
     scale: number;
-    smoothSwitch: boolean;
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
@@ -39,6 +38,11 @@ export interface SpineViewerState {
     backgroundColor: string;
     mixTime: number;
     spinePosition: { x: number; y: number };
+    autocenter: boolean;
+    attachmentTestPanelVisible: boolean;
+    attachmentTestPanelPos: { x: number; y: number };
+    selectedAttachmentSlot: string;
+    availableAttachmentSlots: string[];
   };
 
   // Files (set once when viewer opens, wrapped in ref to prevent proxying)
@@ -63,7 +67,6 @@ export const spineViewerStore = proxy<SpineViewerState>({
     loop: true,
     speed: 1.0,
     scale: 1.0,
-    smoothSwitch: false,
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
@@ -77,6 +80,11 @@ export const spineViewerStore = proxy<SpineViewerState>({
     backgroundColor: '#1a1625',
     mixTime: 0.25,
     spinePosition: { x: 0, y: 0 },
+    autocenter: true,
+    attachmentTestPanelVisible: false,
+    attachmentTestPanelPos: { x: 0, y: 0 },
+    selectedAttachmentSlot: '',
+    availableAttachmentSlots: [],
   },
   files: null,
 });

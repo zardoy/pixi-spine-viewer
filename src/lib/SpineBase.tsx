@@ -362,7 +362,7 @@ export const SpineBase = (props: SpineProps) => {
         spineRef.current = null
       }
     }
-     
+
     // do not add any other deps, its for initial load only
   }, [spineKey])
 
@@ -458,7 +458,7 @@ export const SpineBase = (props: SpineProps) => {
     previousPlayingRef.current = isPlaying
 
     return cleanup
-     
+
     // ignore resumeDelay, resetOnPause
   }, [isPlaying, timeScale])
 

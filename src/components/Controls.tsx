@@ -132,17 +132,6 @@ export const Controls = ({
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Checkbox
-                id="smoothSwitch"
-                checked
-                onCheckedChange={(val: boolean) => { spineViewerStore.ui.smoothSwitch = Boolean(val); }}
-                disabled
-              />
-              <Label htmlFor="smoothSwitch" className="cursor-pointer text-xs">
-                Smooth switch (queue)
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
                 id="debugBones"
                 checked={ui.debugBones}
                 onCheckedChange={(val: boolean) => { spineViewerStore.ui.debugBones = Boolean(val); }}
@@ -159,6 +148,16 @@ export const Controls = ({
               />
               <Label htmlFor="debugBounds" className="cursor-pointer text-xs">
                 Debug bounds
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="autocenter"
+                checked={ui.autocenter}
+                onCheckedChange={(val: boolean) => { spineViewerStore.ui.autocenter = Boolean(val); }}
+              />
+              <Label htmlFor="autocenter" className="cursor-pointer text-xs">
+                Auto center
               </Label>
             </div>
           </div>

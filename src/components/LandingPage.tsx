@@ -193,7 +193,6 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".json,.skel,.atlas,.atlas.txt,.png,.webp,.jpg,.jpeg,image/*"
         onChange={handleFileInputChange}
         className="hidden"
       />

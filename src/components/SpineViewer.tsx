@@ -83,10 +83,22 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         if (!Number.isNaN(digit) && digit >= 1 && digit <= 9) {
           const index = digit - 1;
           const anim = state.ui.animations[index];
-          if (anim) {
+          if (anim && anim !== state.ui.selectedAnimation) {
             e.preventDefault();
+            // Store current animation as previous before switching
+            if (state.ui.selectedAnimation) {
+              spineViewerStore.ui.previousAnimation = state.ui.selectedAnimation;
+            }
             spineViewerStore.ui.selectedAnimation = anim;
           }
+        }
+      } else if (e.code === "KeyQ") {
+        // Switch to previous animation
+        if (state.ui.previousAnimation && state.ui.previousAnimation !== state.ui.selectedAnimation) {
+          e.preventDefault();
+          const prevAnim = state.ui.previousAnimation;
+          spineViewerStore.ui.previousAnimation = state.ui.selectedAnimation;
+          spineViewerStore.ui.selectedAnimation = prevAnim;
         }
       } else if (e.code === "KeyC") {
         // Cycle through skins with 'C' key

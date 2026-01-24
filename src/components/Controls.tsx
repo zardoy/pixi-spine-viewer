@@ -96,8 +96,13 @@ export const Controls = ({
 
         <div className="flex items-center gap-6">
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Animation</Label>
-            <Select value={ui.selectedAnimation} onValueChange={(val) => { spineViewerStore.ui.selectedAnimation = val; }}>
+            <Label className="text-xs text-muted-foreground">Animation (Q: prev)</Label>
+            <Select value={ui.selectedAnimation} onValueChange={(val) => {
+              if (ui.selectedAnimation && ui.selectedAnimation !== val) {
+                spineViewerStore.ui.previousAnimation = ui.selectedAnimation;
+              }
+              spineViewerStore.ui.selectedAnimation = val;
+            }}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Select animation" />
               </SelectTrigger>

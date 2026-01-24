@@ -480,6 +480,13 @@ const PixiAppContent = () => {
     const anim = data.findAnimation?.(state.ui.selectedAnimation);
 
     if (anim) {
+      // Track previous animation before switching (only if different)
+      const currentTrack = spineState.tracks[0];
+      const currentAnimName = currentTrack?.animation?.name;
+      if (currentAnimName && currentAnimName !== state.ui.selectedAnimation) {
+        spineViewerStore.ui.previousAnimation = currentAnimName;
+      }
+
       spineViewerStore.ui.timelineDuration = anim.duration ?? 0;
       spineViewerStore.ui.timeline = 0;
 

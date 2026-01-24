@@ -214,10 +214,10 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               Spine Animation Viewer
             </h1>
             <p className="text-lg text-muted-foreground">
-              Load Spine animations from files or URL
+              Open to view exported Spine animation files online
             </p>
             <p className="text-sm text-muted-foreground">
-              Required files: <span className="text-primary font-medium">.json</span> or <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.atlas</span>, and <span className="text-primary font-medium">atlas image(s)</span>
+              Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. Preview and test your Spine animations in the browser.
             </p>
           </div>
 
@@ -277,7 +277,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               <p className="text-xs text-muted-foreground">
                 Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground">P</kbd> to load first example,
                 <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">R</kbd> to reset,
-                <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">Space</kbd> to play/pause
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">Space</kbd> to play/pause,
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground mx-1">Q</kbd> to switch to previous animation
               </p>
             </div>
           </div>

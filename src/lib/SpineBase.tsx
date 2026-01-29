@@ -6,6 +6,7 @@ import { Physics } from '@esotericsoftware/spine-core'
 import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
+import gsap from 'gsap'
 
 interface SpineLoader {
   loadSpine: (spineKey: string) => Promise<void>
@@ -59,14 +60,7 @@ export interface SpineProps
   // === Layout ===
   x?: number
   y?: number
-  eventMode?: EventMode
-  cursor?: string
-  filters?: any[]
-  layout?: any
-  zIndex?: number
-  mask?: any
-  scale?: number | { x: number; y: number }
-  origin?: number | { x: number; y: number }
+  scaleAnimationDuration?: number
 
   // === Bounds ===
   xBounds?: number
@@ -122,6 +116,8 @@ export const SpineBase = (props: SpineProps) => {
     filters,
     layout,
     zIndex,
+    scale,
+    scaleAnimationDuration,
 
     // Bounds
     xBounds,
@@ -476,7 +472,7 @@ export const SpineBase = (props: SpineProps) => {
     prevResetCounterRef.current = cur
 
     if (!spineRef.current) return
-    
+
     const animToUse = getAnimToUse(animation, spineRef.current)
     if (!animToUse) return
 
@@ -534,6 +530,49 @@ export const SpineBase = (props: SpineProps) => {
   useEffect(() => {
     onCompleteRef.current = onCurrentAnimComplete
   }, [onCurrentAnimComplete])
+
+  // Set initial scale value
+  useEffect(() => {
+    if (!ref.current) return
+
+    const initialScale = scale ?? 1
+    const initialScaleObj = typeof initialScale === 'number'
+      ? { x: initialScale, y: initialScale }
+      : initialScale
+
+    ref.current.scale.set(initialScaleObj.x, initialScaleObj.y)
+  }, []) // Only run on mount
+
+  // Animate scale changes with GSAP
+  useChangedEffect(([prevScale]) => {
+    if (!ref.current) return
+
+    const currentScale = scale ?? 1
+    const prevScaleValue = prevScale ?? 1
+
+    // Convert to object format for easier handling
+    const currentScaleObj = typeof currentScale === 'number'
+      ? { x: currentScale, y: currentScale }
+      : currentScale
+    const prevScaleObj = typeof prevScaleValue === 'number'
+      ? { x: prevScaleValue, y: prevScaleValue }
+      : prevScaleValue
+
+    // Only animate if scale actually changed
+    if (
+      currentScaleObj.x === prevScaleObj.x &&
+      currentScaleObj.y === prevScaleObj.y
+    ) {
+      return
+    }
+
+    // Animate scale change
+    gsap.to(ref.current, {
+      pixi: { scaleX: currentScaleObj.x, scaleY: currentScaleObj.y },
+      duration: scaleAnimationDuration ?? 0.3,
+      ease: 'power1.out',
+    })
+  }, [scale])
 
   return (
     <pixiContainer

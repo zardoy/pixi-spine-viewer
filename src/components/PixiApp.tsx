@@ -870,6 +870,7 @@ const PixiAppContent = () => {
         mixTime={state.ui.mixTime}
         resetCounter={state.ui.resetCounter}
         scale={{ x: state.ui.scale, y: state.ui.scale }}
+        scaleAnimationDuration={0}
         x={position.x}
         y={position.y}
         spineLoader={fileSpineLoaderRef.current}

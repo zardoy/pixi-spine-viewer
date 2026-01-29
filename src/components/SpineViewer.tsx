@@ -63,7 +63,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       if (e.code === "Space") {
         e.preventDefault();
         spineViewerStore.ui.isPlaying = !spineViewerStore.ui.isPlaying;
-      } else if (e.code === "KeyR") {
+        return;
+      }
+      if (e.code === "KeyR") {
         e.preventDefault();
         onBack();
       } else if (e.code === "KeyT") {
@@ -108,8 +110,8 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [onBack, state.ui.animations, state.ui.skins, state.ui.loop, state.ui.selectedAnimation, state.ui.selectedSkin]);
 
   const handleCopyUrl = () => {

@@ -566,6 +566,11 @@ export const SpineBase = (props: SpineProps) => {
       return
     }
 
+    if (scaleAnimationDuration === 0) {
+      ref.current.scale.set(currentScaleObj.x, currentScaleObj.y)
+      return
+    }
+
     // Animate scale change
     gsap.to(ref.current, {
       pixi: { scaleX: currentScaleObj.x, scaleY: currentScaleObj.y },

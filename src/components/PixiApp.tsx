@@ -722,6 +722,7 @@ const PixiAppContent = () => {
 
   // Handle animation complete (fires even when looping) - memoized to prevent re-renders
   const handleAnimationComplete = () => {
+    console.log('Animation complete');
     if (!spineViewerStore.ui.loop) {
       spineViewerStore.ui.isPlaying = false;
     }

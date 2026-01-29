@@ -868,6 +868,7 @@ const PixiAppContent = () => {
         startPlayingNoReset={true}
         skin={state.ui.selectedSkin}
         mixTime={state.ui.mixTime}
+        resetCounter={state.ui.resetCounter}
         scale={{ x: state.ui.scale, y: state.ui.scale }}
         x={position.x}
         y={position.y}

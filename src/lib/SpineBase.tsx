@@ -12,6 +12,13 @@ interface SpineLoader {
   createSpine: (spineKey: string, options: any) => SpineInstance
 }
 
+function getAnimToUse(animation: string | undefined, spine: SpineInstance | null): string | null {
+  if (animation) return animation
+  if (!spine) return null
+  const animations = spine.skeleton.data.animations
+  return animations && animations.length > 0 ? animations[0].name : null
+}
+
 export interface SpineProps
   extends Pick<PixiReactElementProps<typeof Container>, 'x' | 'y' | 'eventMode' | 'cursor' | 'filters' | 'layout' | 'zIndex' | 'mask' | 'scale' | 'origin'> {
   // === Core ===
@@ -46,6 +53,8 @@ export interface SpineProps
   /** When set to true, starts animation playback (changes to false are ignored) */
   startPlaying?: boolean
   startPlayingNoReset?: boolean
+  /** Increment to reset current animation to start (uses mix time). SpineBase reacts when this increases. */
+  resetCounter?: number
 
   // === Layout ===
   x?: number
@@ -103,6 +112,7 @@ export const SpineBase = (props: SpineProps) => {
     loopDelay = 0,
     startPlaying,
     startPlayingNoReset,
+    resetCounter,
 
     // Layout
     x = 0,
@@ -142,6 +152,7 @@ export const SpineBase = (props: SpineProps) => {
   const previousPlayingRef = useRef<boolean>(isPlaying)
   const loopDelayRef = useRef<number>(loopDelay)
   const loopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const prevResetCounterRef = useRef<number>(resetCounter ?? 0)
 
   // Subscribe to global spine overrides
   const spineOverrides = useSnapshot(globalSpineOverrides).overrides[spineKey]
@@ -382,15 +393,8 @@ export const SpineBase = (props: SpineProps) => {
       return
     }
 
-    // Determine which animation to use
-    const animToUse = animation || (() => {
-      const animations = spineRef.current!.skeleton.data.animations
-      return animations && animations.length > 0 ? animations[0].name : null
-    })()
-
-    if (!animToUse) {
-      return
-    }
+    const animToUse = getAnimToUse(animation, spineRef.current)
+    if (!animToUse) return
 
     const track = spineRef.current.state.tracks[0]
     const currentAnim = track?.animation?.name
@@ -462,6 +466,27 @@ export const SpineBase = (props: SpineProps) => {
     // ignore resumeDelay, resetOnPause
   }, [isPlaying, timeScale])
 
+  // Handle resetCounter increases: reset current animation to start (uses mix time)
+  useEffect(() => {
+    const cur = resetCounter ?? 0
+    if (cur <= prevResetCounterRef.current) {
+      prevResetCounterRef.current = cur
+      return
+    }
+    prevResetCounterRef.current = cur
+
+    if (!spineRef.current) return
+    
+    const animToUse = getAnimToUse(animation, spineRef.current)
+    if (!animToUse) return
+
+    if (loopTimeoutRef.current) {
+      clearTimeout(loopTimeoutRef.current)
+      loopTimeoutRef.current = null
+    }
+    spineRef.current.state.setAnimation(0, animToUse, loop)
+  }, [resetCounter])
+
   // Handle startPlaying changes (only responds to false->true transitions)
   useChangedEffect(([prevStartPlaying]) => {
     if (!spineRef.current) {
@@ -481,12 +506,7 @@ export const SpineBase = (props: SpineProps) => {
       // Start animation from beginning
       const track = spineRef.current.state.tracks[0]
 
-      // Set animation to restart from beginning
-      const animToUse = animation || (() => {
-        const animations = spineRef.current!.skeleton.data.animations
-        return animations && animations.length > 0 ? animations[0].name : null
-      })()
-
+      const animToUse = getAnimToUse(animation, spineRef.current)
       if (animToUse && (!track || track.getAnimationTime() === track.animationEnd || track.getAnimationTime() === 0 || !startPlayingNoReset)) {
         spineRef.current.state.setAnimation(0, animToUse, loop)
         spineRef.current.state.timeScale = timeScaleRef.current

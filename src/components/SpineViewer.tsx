@@ -70,12 +70,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         e.preventDefault();
         spineViewerStore.ui.debugBones = !spineViewerStore.ui.debugBones;
       } else if (e.code === "KeyS") {
-        // Restart current animation from start
-        const spine = spineViewerStore.refs.spine;
-        if (spine && state.ui.selectedAnimation) {
+        if (state.ui.selectedAnimation) {
           e.preventDefault();
-          const spineState = spine.state;
-          spineState.setAnimation(0, state.ui.selectedAnimation, state.ui.loop);
+          spineViewerStore.ui.resetCounter += 1;
           spineViewerStore.ui.timeline = 0;
         }
       } else if (e.code.startsWith("Digit")) {

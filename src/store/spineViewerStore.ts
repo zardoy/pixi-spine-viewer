@@ -44,6 +44,8 @@ export interface SpineViewerState {
     attachmentTestPanelPos: { x: number; y: number };
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
+    /** Increment to trigger spine reset-to-start. SpineBase reacts when it increases. */
+    resetCounter: number;
   };
 
   // Files (set once when viewer opens, wrapped in ref to prevent proxying)
@@ -87,6 +89,7 @@ export const spineViewerStore = proxy<SpineViewerState>({
     attachmentTestPanelPos: { x: 0, y: 0 },
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
+    resetCounter: 0,
   },
   files: null,
 });

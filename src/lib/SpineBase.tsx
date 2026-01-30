@@ -1,6 +1,6 @@
-import { Container, EventMode } from 'pixi.js'
-import { PixiReactElementProps } from '@pixi/react'
-import { useEffect, useRef } from 'react'
+import { Container } from 'pixi.js'
+import { PixiReactElementProps, useTick } from '@pixi/react'
+import { useEffect, useRef, type Ref, type RefObject } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
 import { Physics } from '@esotericsoftware/spine-core'
 import { useSnapshot } from 'valtio'
@@ -18,6 +18,44 @@ function getAnimToUse(animation: string | undefined, spine: SpineInstance | null
   if (!spine) return null
   const animations = spine.skeleton.data.animations
   return animations && animations.length > 0 ? animations[0].name : null
+}
+
+/** Data for a single slot's attachment (world vertices, bone transform, etc.). Exported for consumers that need full data. */
+export interface AttachmentUpdateData {
+  slotName: string
+  slotIndex: number
+  attachmentName: string | null
+  attachmentType: string | null
+  bonePosition: { x: number; y: number }
+  boneRotation: number
+  boneScale: { x: number; y: number }
+  worldVertices: Float32Array | null
+  visible: boolean
+}
+
+/** PIXI-like object that SpineBase will update each frame (x, y, and optionally scale). */
+export interface AttachmentsFollowTarget {
+  x: number
+  y: number
+  scale?: { x: number; y: number }
+}
+
+/** One entry for attachmentsFollow: slot to follow and ref to the PIXI object to position each frame. */
+export interface AttachmentsFollowItem {
+  slotName: string
+  ref: RefObject<AttachmentsFollowTarget | null>
+}
+
+function getAttachmentFollowTransform(spine: SpineInstance, slotName: string): { x: number; y: number; scaleX: number; scaleY: number } | null {
+  const slot = spine.skeleton.findSlot(slotName)
+  if (!slot) return null
+  const bone = slot.bone
+  return {
+    x: bone.worldX,
+    y: bone.worldY,
+    scaleX: bone.getWorldScaleX(),
+    scaleY: bone.getWorldScaleY(),
+  }
 }
 
 export interface SpineProps
@@ -76,10 +114,14 @@ export interface SpineProps
 
   // === Refs ===
   /** Container ref */
-  itemRef?: React.Ref<Container>
+  itemRef?: Ref<Container>
   /** React 19 ref prop */
-  ref?: React.RefObject<Container>
-  spineRef?: React.RefObject<SpineInstance | null>
+  ref?: RefObject<Container>
+  spineRef?: RefObject<SpineInstance | null>
+
+  // === Attachments (world vertices) ===
+  /** Slots to follow: SpineBase sets each ref's x/y (and scale if present) each frame to the attachment bone's world transform. Ref must be a PIXI object added as a child of this Spine's container. Uses app ticker (useTick). */
+  attachmentsFollow?: AttachmentsFollowItem[]
 
   // === Required ===
   spineLoader: SpineLoader
@@ -134,8 +176,34 @@ export const SpineBase = (props: SpineProps) => {
     ref: refProp,
     spineRef: spineRefProp,
 
+    // Attachments
+    attachmentsFollow,
+
     ...passthroughProps
   } = props
+
+  const attachmentsFollowRef = useRef(attachmentsFollow)
+  attachmentsFollowRef.current = attachmentsFollow
+
+  // Update PIXI objects (x, y, scale) each frame to follow attachment bone transforms
+  useTick(() => {
+    const spine = spineRef.current
+    const list = attachmentsFollowRef.current
+    if (!spine || !list?.length) return
+    spine._validateAndTransformAttachments()
+    for (const item of list) {
+      const target = item.ref.current
+      if (!target) continue
+      const t = getAttachmentFollowTransform(spine, item.slotName)
+      if (!t) continue
+      target.x = t.x
+      target.y = t.y
+      if (target.scale !== undefined) {
+        target.scale.x = t.scaleX
+        target.scale.y = t.scaleY
+      }
+    }
+  })
 
   // Determine playing state: if paused is explicitly passed, use !paused, otherwise use playing (default true)
   // Only one should be passed at a time
@@ -149,6 +217,7 @@ export const SpineBase = (props: SpineProps) => {
   const loopDelayRef = useRef<number>(loopDelay)
   const loopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const prevResetCounterRef = useRef<number>(resetCounter ?? 0)
+  const mixAnimationFrameRef = useRef<number | null>(null)
 
   // Subscribe to global spine overrides
   const spineOverrides = useSnapshot(globalSpineOverrides).overrides[spineKey]
@@ -351,6 +420,12 @@ export const SpineBase = (props: SpineProps) => {
         loopTimeoutRef.current = null
       }
 
+      // Clear mix animation frame
+      if (mixAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(mixAnimationFrameRef.current)
+        mixAnimationFrameRef.current = null
+      }
+
       if (spineRef.current && ref.current) {
         // Remove listeners before destroying
         if (listenerRef.current) {
@@ -480,7 +555,72 @@ export const SpineBase = (props: SpineProps) => {
       clearTimeout(loopTimeoutRef.current)
       loopTimeoutRef.current = null
     }
-    spineRef.current.state.setAnimation(0, animToUse, loop)
+
+    // Clear any existing mix animation frame
+    if (mixAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(mixAnimationFrameRef.current)
+      mixAnimationFrameRef.current = null
+    }
+
+    const spine = spineRef.current
+    const wasPlaying = isPlaying
+
+    // Set the animation (this starts the mix transition)
+    spine.state.setAnimation(0, animToUse, loop)
+
+    // If paused and mixTime > 0, manually advance the mix to complete smoothly
+    if (!wasPlaying && mixTime > 0) {
+      const track = spine.state.tracks[0]
+      if (track) {
+        // Function to manually advance the mix
+        const advanceMix = () => {
+          if (!spineRef.current) {
+            mixAnimationFrameRef.current = null
+            return
+          }
+
+          const currentTrack = spineRef.current.state.tracks[0]
+          if (!currentTrack) {
+            mixAnimationFrameRef.current = null
+            return
+          }
+
+          // Check if mix is still active (mixingFrom exists and mixTime < mixDuration)
+          const mixingFrom = currentTrack.mixingFrom
+          if (mixingFrom && currentTrack.mixTime < currentTrack.mixDuration) {
+            // Temporarily set timeScale to 1 to allow the mix to advance
+            // (state.update multiplies by timeScale, so 0 would prevent advancement)
+            const previousTimeScale = spineRef.current.state.timeScale
+            spineRef.current.state.timeScale = 1
+
+            // Advance the mix with a small time delta (60fps = ~0.016s per frame)
+            const delta = 1 / 60
+            spineRef.current.state.update(delta)
+            spineRef.current.state.apply(spineRef.current.skeleton)
+            spineRef.current.skeleton.update(delta)
+            spineRef.current.skeleton.updateWorldTransform(Physics.update)
+
+            // Restore original timeScale (0 when paused)
+            spineRef.current.state.timeScale = previousTimeScale
+
+            // Continue advancing
+            mixAnimationFrameRef.current = requestAnimationFrame(advanceMix)
+          } else {
+            // Mix completed, ensure we're at the start frame
+            if (currentTrack.mixingFrom === null) {
+              currentTrack.trackTime = 0
+              spineRef.current.state.apply(spineRef.current.skeleton)
+              spineRef.current.skeleton.updateWorldTransform(Physics.update)
+            }
+            mixAnimationFrameRef.current = null
+          }
+        }
+
+        // Start advancing the mix
+        mixAnimationFrameRef.current = requestAnimationFrame(advanceMix)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetCounter])
 
   // Handle startPlaying changes (only responds to false->true transitions)

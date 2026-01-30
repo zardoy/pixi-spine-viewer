@@ -1,7 +1,7 @@
 import '@pixi/layout';
 import { useEffect, useRef, useState } from "react";
 import { Container, Graphics, Text } from "pixi.js";
-import { Physics, RegionAttachment, MeshAttachment } from "@esotericsoftware/spine-core";
+import { Physics } from "@esotericsoftware/spine-core";
 import { Application, useExtend, useApplication } from "@pixi/react";
 import { useSnapshot, ref } from "valtio";
 import { SpineDisplay } from "../lib/SpineDisplay";
@@ -13,28 +13,6 @@ import { FileSpineLoader } from "../lib/FileSpineLoader";
 import { Spine as SpineInstance } from "@esotericsoftware/spine-pixi-v8";
 
 const SPINE_KEY = 'viewer-spine'; // Single key for the viewer
-
-/** Data structure for attachment transform updates */
-export interface AttachmentUpdateData {
-  /** Slot name */
-  slotName: string
-  /** Slot index */
-  slotIndex: number
-  /** Attachment name (null if no attachment) */
-  attachmentName: string | null
-  /** Attachment type (e.g., 'RegionAttachment', 'MeshAttachment', etc.) */
-  attachmentType: string | null
-  /** Bone world position */
-  bonePosition: { x: number; y: number }
-  /** Bone world rotation in degrees */
-  boneRotation: number
-  /** Bone world scale */
-  boneScale: { x: number; y: number }
-  /** World vertices (for RegionAttachment and MeshAttachment) */
-  worldVertices: Float32Array | null
-  /** Whether the attachment is visible (in draw order) */
-  visible: boolean
-}
 
 const PixiAppContent = () => {
   // useExtend must be used within Application context
@@ -50,7 +28,6 @@ const PixiAppContent = () => {
   const boundsGraphicsRef = useRef<Graphics | null>(null);
   const boundsTextRef = useRef<Text | null>(null);
   const attachmentTestGraphicsRef = useRef<Graphics | null>(null);
-  const handleAttachmentUpdateRef = useRef<((attachments: AttachmentUpdateData[]) => void) | null>(null);
 
   // Sync container ref to store (wrapped in ref() to prevent proxying)
   useEffect(() => {
@@ -309,70 +286,6 @@ const PixiAppContent = () => {
       if (app.app.ticker) {
         const currentFps = app.app.ticker.FPS ?? 0;
         spineViewerStore.ui.fps = currentFps;
-      }
-
-      // Extract and call attachment update callback
-      if (handleAttachmentUpdateRef.current && spineViewerStore.refs.spine) {
-        const spine = spineViewerStore.refs.spine;
-        // Ensure attachments are transformed
-        spine._validateAndTransformAttachments();
-
-        const attachments: AttachmentUpdateData[] = [];
-        const drawOrder = spine.skeleton.drawOrder;
-
-        for (let i = 0; i < drawOrder.length; i++) {
-          const slot = drawOrder[i];
-          const attachment = slot.getAttachment();
-          const bone = slot.bone;
-
-          // Get world vertices if attachment is RegionAttachment or MeshAttachment
-          let worldVertices: Float32Array | null = null;
-          if (attachment) {
-            try {
-              // Try to access cached data from Spine's internal structure
-              const cacheData = (spine as any)._getCachedData?.(slot, attachment);
-              if (cacheData && cacheData.vertices) {
-                worldVertices = new Float32Array(cacheData.vertices);
-              } else {
-                // Fallback: compute vertices manually
-                if (attachment instanceof RegionAttachment) {
-                  const vertices = new Float32Array(8);
-                  attachment.computeWorldVertices(slot, vertices, 0, 2);
-                  worldVertices = vertices;
-                } else if (attachment instanceof MeshAttachment) {
-                  const vertices = new Float32Array(attachment.worldVerticesLength);
-                  attachment.computeWorldVertices(slot, 0, attachment.worldVerticesLength, vertices, 0, 2);
-                  worldVertices = vertices;
-                }
-              }
-            } catch (e) {
-              // If we can't access cached data, compute vertices manually
-              if (attachment instanceof RegionAttachment) {
-                const vertices = new Float32Array(8);
-                attachment.computeWorldVertices(slot, vertices, 0, 2);
-                worldVertices = vertices;
-              } else if (attachment instanceof MeshAttachment) {
-                const vertices = new Float32Array(attachment.worldVerticesLength);
-                attachment.computeWorldVertices(slot, 0, attachment.worldVerticesLength, vertices, 0, 2);
-                worldVertices = vertices;
-              }
-            }
-          }
-
-          attachments.push({
-            slotName: slot.data.name,
-            slotIndex: slot.data.index,
-            attachmentName: attachment?.name || null,
-            attachmentType: attachment ? attachment.constructor.name : null,
-            bonePosition: { x: bone.worldX, y: bone.worldY },
-            boneRotation: bone.getWorldRotationX(),
-            boneScale: { x: bone.getWorldScaleX(), y: bone.getWorldScaleY() },
-            worldVertices,
-            visible: true,
-          });
-        }
-
-        handleAttachmentUpdateRef.current(attachments);
       }
 
       // Handle smooth viewport transitions on animation change (only when autocenter is enabled)
@@ -729,45 +642,6 @@ const PixiAppContent = () => {
     spineViewerStore.ui.timeline = 0;
   }
 
-  // Handle attachment updates - update test graphics if panel is visible
-  useEffect(() => {
-    handleAttachmentUpdateRef.current = (attachments: AttachmentUpdateData[]) => {
-      const showPanel = spineViewerStore.ui.attachmentTestPanelVisible;
-      const selectedSlot = spineViewerStore.ui.selectedAttachmentSlot;
-
-      if (!showPanel || !selectedSlot || !attachmentTestGraphicsRef.current || !containerRef.current) {
-        if (attachmentTestGraphicsRef.current) {
-          attachmentTestGraphicsRef.current.visible = false;
-        }
-        return;
-      }
-
-      const attachment = attachments.find(a => a.slotName === selectedSlot);
-      if (!attachment || !attachment.visible) {
-        if (attachmentTestGraphicsRef.current) {
-          attachmentTestGraphicsRef.current.visible = false;
-        }
-        return;
-      }
-
-      attachmentTestGraphicsRef.current.visible = true;
-
-      // Transform bone position to containerRef's coordinate space
-      const containerX = spineViewerStore.ui.spinePosition.x;
-      const containerY = spineViewerStore.ui.spinePosition.y;
-      const containerScale = spineViewerStore.ui.scale;
-
-      // Calculate world position
-      const worldX = containerX + attachment.bonePosition.x * containerScale;
-      const worldY = containerY + attachment.bonePosition.y * containerScale;
-
-      // Draw small red box at attachment position
-      attachmentTestGraphicsRef.current.clear();
-      attachmentTestGraphicsRef.current.rect(worldX - 5, worldY - 5, 10, 10);
-      attachmentTestGraphicsRef.current.fill({ color: 0xff0000, alpha: 0.8 });
-    };
-  }, []);
-
   // Keyboard handler for 'Y' key to toggle attachment test panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -781,34 +655,45 @@ const PixiAppContent = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Create/remove attachment test graphics based on store state
+  // Create/remove attachment test graphics; add to spine container so SpineBase can set x/y via attachmentsFollow
   useEffect(() => {
-    if (!containerRef.current) return;
-
     const showPanel = state.ui.attachmentTestPanelVisible;
+    const spine = state.refs.spine;
 
-    if (showPanel) {
-      if (!attachmentTestGraphicsRef.current) {
+    if (showPanel && spine) {
+      const container = spine.parent;
+      if (container && !attachmentTestGraphicsRef.current) {
         const graphics = new Graphics();
-        containerRef.current.addChild(graphics);
+        graphics.rect(-5, -5, 10, 10);
+        graphics.fill({ color: 0xff0000, alpha: 0.8 });
+        container.addChild(graphics);
         attachmentTestGraphicsRef.current = graphics;
       }
     } else {
-      if (attachmentTestGraphicsRef.current && containerRef.current) {
-        containerRef.current.removeChild(attachmentTestGraphicsRef.current);
-        attachmentTestGraphicsRef.current.destroy();
+      if (attachmentTestGraphicsRef.current) {
+        const g = attachmentTestGraphicsRef.current;
+        g.parent?.removeChild(g);
+        g.destroy();
         attachmentTestGraphicsRef.current = null;
       }
     }
 
     return () => {
-      if (attachmentTestGraphicsRef.current && containerRef.current) {
-        containerRef.current.removeChild(attachmentTestGraphicsRef.current);
-        attachmentTestGraphicsRef.current.destroy();
+      if (attachmentTestGraphicsRef.current) {
+        const g = attachmentTestGraphicsRef.current;
+        g.parent?.removeChild(g);
+        g.destroy();
         attachmentTestGraphicsRef.current = null;
       }
     };
-  }, [state.ui.attachmentTestPanelVisible]);
+  }, [state.ui.attachmentTestPanelVisible, state.refs.spine]);
+
+  // Hide marker when no slot selected
+  useEffect(() => {
+    if (attachmentTestGraphicsRef.current) {
+      attachmentTestGraphicsRef.current.visible = !!state.ui.selectedAttachmentSlot;
+    }
+  }, [state.ui.selectedAttachmentSlot]);
 
   // Update available attachment slots in store when spine changes
   useEffect(() => {
@@ -878,6 +763,7 @@ const PixiAppContent = () => {
         spineRef={spineRef}
         onSpineLoaded={handleSpineLoaded}
         onCurrentAnimComplete={handleAnimationComplete}
+        attachmentsFollow={state.ui.selectedAttachmentSlot ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }] : []}
         layout={undefined}
         />
       </pixiContainer>

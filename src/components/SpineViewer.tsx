@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { SpineDisplay } from "../lib/SpineDisplay";
 import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
-import { spineViewerStore } from "../store/spineViewerStore";
+import { spineViewerStore, resetSpineViewerState } from "../store/spineViewerStore";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 
 interface SpineViewerProps {
@@ -21,8 +21,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   useEffect(() => {
     spineViewerStore.files = ref(files);
     return () => {
-      // Cleanup: clear files when component unmounts
-      spineViewerStore.files = null;
+      resetSpineViewerState();
     };
   }, [files]);
 

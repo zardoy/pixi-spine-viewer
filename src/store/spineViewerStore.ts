@@ -5,7 +5,6 @@ import { AnimationViewport } from '../lib/SpineDisplay';
 import { SpineFiles } from '../pages/Index';
 
 export interface SpineViewerState {
-  // Refs (stored as mutable objects since Valtio works with objects)
   refs: {
     container: Container | null;
     app: PIXIApplication | null;
@@ -19,7 +18,6 @@ export interface SpineViewerState {
     viewportTransitionStart: number;
   };
 
-  // UI state
   ui: {
     isPlaying: boolean;
     loop: boolean;
@@ -44,15 +42,13 @@ export interface SpineViewerState {
     attachmentTestPanelPos: { x: number; y: number };
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
-    /** Increment to trigger spine reset-to-start. SpineBase reacts when it increases. */
     resetCounter: number;
   };
 
-  // Files (set once when viewer opens, wrapped in ref to prevent proxying)
   files: SpineFiles | null;
 }
 
-export const spineViewerStore = proxy<SpineViewerState>({
+export const initialState: SpineViewerState = {
   refs: {
     container: null,
     app: null,
@@ -92,7 +88,16 @@ export const spineViewerStore = proxy<SpineViewerState>({
     resetCounter: 0,
   },
   files: null,
-});
+};
+
+export const spineViewerStore = proxy<SpineViewerState>(structuredClone(initialState));
+
+export function resetSpineViewerState(): void {
+  const fresh = structuredClone(initialState);
+  Object.assign(spineViewerStore.refs, fresh.refs);
+  Object.assign(spineViewerStore.ui, fresh.ui);
+  spineViewerStore.files = fresh.files;
+}
 
 (window as any).spineViewerStore = spineViewerStore;
 (window as any).state = spineViewerStore;

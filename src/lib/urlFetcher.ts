@@ -48,10 +48,12 @@ async function fetchFile(url: string, filename: string): Promise<File | null> {
  *
  * - inputUrl: URL to any of the spine files (usually the JSON or .skel)
  * - atlasUrlOverride: optional explicit atlas URL (for cases like dragon-ess.json + dragon.atlas)
+ * - pngUrlOverride: optional explicit PNG/image URL (if different from atlas base URL)
  */
 export async function fetchSpineFilesFromUrl(
   inputUrl: string,
-  atlasUrlOverride?: string
+  atlasUrlOverride?: string,
+  pngUrlOverride?: string
 ): Promise<FetchedSpineFiles> {
   const skeletonBaseUrl = getBaseUrl(inputUrl);
   const skeletonBaseFilename = skeletonBaseUrl.split('/').pop() || 'spine';
@@ -83,14 +85,26 @@ export async function fetchSpineFilesFromUrl(
     throw new Error('Failed to fetch .atlas file. Tried extensions: ' + ATLAS_EXTENSIONS.join(', '));
   }
 
-  // 3. Try to fetch image files (use atlas base if available, it usually matches texture name)
+  // 3. Try to fetch image files
   const imageFiles: File[] = [];
-  for (const ext of IMAGE_EXTENSIONS) {
-    const imageUrl = `${atlasBaseUrl}.${ext}`;
-    const imageFile = await fetchFile(imageUrl, `${atlasBaseFilename}.${ext}`);
-    if (imageFile) {
-      imageFiles.push(imageFile);
-      break; // Use first found image
+  
+  // If explicit PNG URL provided, use it
+  if (pngUrlOverride) {
+    const pngFile = await fetchFile(pngUrlOverride, `${atlasBaseFilename}.png`);
+    if (pngFile) {
+      imageFiles.push(pngFile);
+    }
+  }
+  
+  // If no PNG file found yet, try to derive from atlas base URL
+  if (imageFiles.length === 0) {
+    for (const ext of IMAGE_EXTENSIONS) {
+      const imageUrl = `${atlasBaseUrl}.${ext}`;
+      const imageFile = await fetchFile(imageUrl, `${atlasBaseFilename}.${ext}`);
+      if (imageFile) {
+        imageFiles.push(imageFile);
+        break; // Use first found image
+      }
     }
   }
 

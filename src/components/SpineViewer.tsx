@@ -8,6 +8,8 @@ import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
 import { spineViewerStore, resetSpineViewerState } from "../store/spineViewerStore";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
+import JSZip from "jszip";
+import { Download } from "lucide-react";
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -180,6 +182,84 @@ const InfoPanel = () => {
     window.open(url, "_blank");
   };
 
+  /**
+   * Parse atlas file to extract image filenames referenced in it
+   */
+  const parseAtlasImageNames = async (atlasFile: File): Promise<string[]> => {
+    const atlasText = await atlasFile.text();
+    const lines = atlasText.split('\n');
+    const imageNames: string[] = [];
+    
+    // Atlas format: first line of each page is the image filename
+    // Pages are separated by empty lines
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      // If line looks like a filename (ends with .png, .jpg, etc.) and next line starts with "size:"
+      if (line && (line.endsWith('.png') || line.endsWith('.jpg') || line.endsWith('.jpeg') || line.endsWith('.webp'))) {
+        const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+        if (nextLine.startsWith('size:')) {
+          imageNames.push(line);
+        }
+      }
+    }
+    
+    return imageNames.length > 0 ? imageNames : [atlasFile.name.replace('.atlas', '.png')];
+  };
+
+  /**
+   * Download spine files as ZIP with images named as in atlas
+   */
+  const handleDownloadZip = async () => {
+    if (!files) return;
+
+    try {
+      toast.loading('Creating ZIP archive...');
+
+      const zip = new JSZip();
+      
+      // Add JSON file
+      const jsonContent = await files.jsonFile.arrayBuffer();
+      zip.file(files.jsonFile.name, jsonContent);
+      
+      // Add Atlas file
+      const atlasContent = await files.atlasFile.arrayBuffer();
+      zip.file(files.atlasFile.name, atlasContent);
+      
+      // Parse atlas to get image names
+      const imageNames = await parseAtlasImageNames(files.atlasFile);
+      
+      // Add image files with names from atlas
+      // If we have multiple images, map them to atlas names
+      // If single image, use first atlas name
+      for (let i = 0; i < files.imageFiles.length; i++) {
+        const imageFile = files.imageFiles[i];
+        const imageName = imageNames[i] || imageFile.name;
+        const imageContent = await imageFile.arrayBuffer();
+        zip.file(imageName, imageContent);
+      }
+      
+      // Generate ZIP blob
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      
+      // Create download link
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${files.jsonFile.name.replace(/\.(json|skel)$/i, '')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.dismiss();
+      toast.success('ZIP downloaded successfully');
+    } catch (error) {
+      toast.dismiss();
+      toast.error(error instanceof Error ? error.message : 'Failed to create ZIP');
+      console.error('Error creating ZIP:', error);
+    }
+  };
+
   const spine = spineViewerStore.refs.spine;
   const skeletonName = spine?.skeleton?.data?.name ?? "N/A";
   const bones = spine?.skeleton?.bones?.length ?? 0;
@@ -235,6 +315,15 @@ const InfoPanel = () => {
           onClick={() => files.imageFiles.forEach(openFileInNewTab)}
         >
           Open Texture{files.imageFiles.length > 1 ? "s" : ""}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleDownloadZip}
+          className="gap-1"
+        >
+          <Download className="w-3 h-3" />
+          Download ZIP
         </Button>
       </div>
       <div className="flex flex-wrap gap-2 mt-2">

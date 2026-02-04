@@ -81,23 +81,43 @@ export class SpineDisplay extends Container {
 
     // For each atlas page, find or fallback to an image file, then attach via SpineTexture
     for (const page of textureAtlas.pages) {
+      console.log(`[SpineDisplay] Looking for image for atlas page: "${page.name}"`);
+      console.log(`[SpineDisplay] Available image files:`, imageFiles.map(f => f.name));
+      
+      // Extract base filename from page name (handle paths like "./images/a.png" or "a.png")
+      const pageBaseName = page.name.split('/').pop() || page.name;
+      const pageNameWithoutExt = pageBaseName.split('.')[0];
+      
       const pageFile =
         imageFiles.find(f => f.name === page.name) ||
-        imageFiles.find(f => f.name.toLowerCase().includes(page.name.toLowerCase().split('.')[0]));
+        imageFiles.find(f => f.name === pageBaseName) ||
+        imageFiles.find(f => {
+          const fileName = f.name.toLowerCase();
+          const baseName = fileName.split('.')[0];
+          return baseName === pageNameWithoutExt.toLowerCase() || fileName.includes(pageNameWithoutExt.toLowerCase());
+        });
 
       const fileToUse = pageFile || imageFiles[0];
       if (!fileToUse) {
-        console.error('No image files provided for Spine atlas.');
+        console.error(`[SpineDisplay] No image files provided for Spine atlas page: ${page.name}`);
         continue;
       }
+
+      console.log(`[SpineDisplay] Using image file: "${fileToUse.name}" for atlas page: "${page.name}"`);
 
       try {
         const url = URL.createObjectURL(fileToUse);
 
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = reject;
+          img.onload = () => {
+            console.log(`[SpineDisplay] Image loaded successfully: ${fileToUse.name}`);
+            resolve();
+          };
+          img.onerror = (err) => {
+            console.error(`[SpineDisplay] Image load error for ${fileToUse.name}:`, err);
+            reject(err);
+          };
           img.crossOrigin = 'anonymous';
           img.src = url;
         });
@@ -107,6 +127,7 @@ export class SpineDisplay extends Container {
         // If pma is false, PIXI should premultiply on upload (this is the default)
         // This is critical for correct blending of semi-transparent textures!
         const alphaMode = page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload';
+        console.log(`[SpineDisplay] Using alpha mode: ${alphaMode} (pma: ${page.pma})`);
 
         // Create ImageSource with correct alphaMode for proper blending
         const imageSource = new ImageSource({
@@ -116,10 +137,11 @@ export class SpineDisplay extends Container {
 
         const spineTex = SpineTexture.from(imageSource);
         page.setTexture(spineTex);
+        console.log(`[SpineDisplay] Texture set for atlas page: ${page.name}`);
 
         URL.revokeObjectURL(url);
       } catch (err) {
-        console.error(`Failed to load image for atlas page ${page.name}:`, err);
+        console.error(`[SpineDisplay] Failed to load image for atlas page ${page.name}:`, err);
       }
     }
 

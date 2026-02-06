@@ -112,6 +112,10 @@ export interface SpineProps
   /** Callback fired when spine is loaded and ready */
   onSpineLoaded?: (spine: SpineInstance) => void
 
+  // === Debug ===
+  /** When set, exposes ref and live state on globalThis.spineDebug[key] (getters, no extra code paths) */
+  debugKey?: string
+
   // === Refs ===
   /** Container ref */
   itemRef?: Ref<Container>
@@ -170,6 +174,9 @@ export const SpineBase = (props: SpineProps) => {
     // Callbacks
     onCurrentAnimComplete,
     onSpineLoaded,
+
+    // Debug
+    debugKey,
 
     // Refs
     itemRef,
@@ -277,6 +284,44 @@ export const SpineBase = (props: SpineProps) => {
       itemRef.current = ref.current
     }
   }, [spineKey, refProp, itemRef])
+
+  // Expose ref + live state on globalThis.spineDebug[debugKey] via getters (no extra state)
+  useEffect(() => {
+    if (!debugKey) return
+    const global = globalThis as any
+    if (!global.spineDebug) {
+      global.spineDebug = {}
+    }
+    const key = debugKey
+    global.spineDebug[key] = {
+      get ref() {
+        return ref.current
+      },
+      get spineRef() {
+        return spineRef.current
+      },
+      get spineName() {
+        return spineKey
+      },
+      get currentAnimation() {
+        const s = spineRef.current
+        const track = s?.state?.tracks?.[0]
+        return (track as { animation?: { name?: string } } | undefined)?.animation?.name ?? null
+      },
+      get timeScale() {
+        return spineRef.current?.state?.timeScale ?? null
+      },
+      get currentSkin() {
+        const s = spineRef.current
+        const applied = (s?.skeleton as { skin?: { name?: string } } | undefined)?.skin?.name
+        return applied ?? skin ?? null
+      },
+    }
+    return () => {
+      const d = global.spineDebug
+      if (d) delete d[key]
+    }
+  }, [debugKey, spineKey, skin])
 
   useEffect(() => {
     if (!ref.current) return
@@ -620,7 +665,7 @@ export const SpineBase = (props: SpineProps) => {
         mixAnimationFrameRef.current = requestAnimationFrame(advanceMix)
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetCounter])
 
   // Handle startPlaying changes (only responds to false->true transitions)

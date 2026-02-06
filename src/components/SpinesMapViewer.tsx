@@ -69,12 +69,12 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
       toast.dismiss();
       toast.success(`Loaded ${spine.name}`);
       
-      // Update URL to include spine URLs as params
+      // Update URL to include spine URLs as params (pushState for browser back/forward)
       const params = new URLSearchParams();
       params.set("jsonUrl", encodeURIComponent(spine.json));
       params.set("atlasUrl", encodeURIComponent(spine.atlas));
       params.set("pngUrl", encodeURIComponent(spine.png));
-      window.history.replaceState({}, "", `?${params.toString()}`);
+      window.history.pushState({}, "", `?${params.toString()}`);
       
       onSpineSelect(spineFiles);
     } catch (err) {

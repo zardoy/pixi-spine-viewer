@@ -16,12 +16,12 @@ const Index = () => {
   const [spinesMapUrl, setSpinesMapUrl] = useState<string | null>(null);
   const [loadingFromUrl, setLoadingFromUrl] = useState(false);
 
-  useEffect(() => {
-    // Check for ?spinesMap=<url> parameter
+  const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
     const mapUrl = params.get("spinesMap");
     if (mapUrl) {
       setSpinesMapUrl(decodeURIComponent(mapUrl));
+      setSpineFiles(null); // Clear spine files when showing map
       return;
     }
 
@@ -29,7 +29,7 @@ const Index = () => {
     const jsonUrl = params.get("jsonUrl");
     const atlasUrl = params.get("atlasUrl");
     const pngUrl = params.get("pngUrl");
-
+    
     if (jsonUrl && atlasUrl && pngUrl) {
       setLoadingFromUrl(true);
       const loadSpineFromUrls = async () => {
@@ -50,6 +50,7 @@ const Index = () => {
           toast.dismiss();
           toast.success("Spine loaded from URL");
           setSpineFiles(spineFiles);
+          setSpinesMapUrl(null); // Clear map URL when showing spine
         } catch (err) {
           toast.dismiss();
           const errorMessage = err instanceof Error ? err.message : "Failed to load spine from URL";
@@ -59,7 +60,26 @@ const Index = () => {
         }
       };
       loadSpineFromUrls();
+    } else {
+      // No params, show landing page
+      setSpinesMapUrl(null);
+      setSpineFiles(null);
     }
+  };
+
+  useEffect(() => {
+    // Initial load
+    loadFromUrl();
+
+    // Handle browser back/forward navigation
+    const handlePopState = () => {
+      loadFromUrl();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
   const handleFilesSelect = (files: SpineFiles) => {
@@ -68,13 +88,13 @@ const Index = () => {
 
   const handleBack = () => {
     setSpineFiles(null);
-    // Restore spinesMap URL if it was there
+    // Restore spinesMap URL if it was there (pushState for browser back/forward)
     if (spinesMapUrl) {
       const params = new URLSearchParams();
       params.set("spinesMap", encodeURIComponent(spinesMapUrl));
-      window.history.replaceState({}, "", `?${params.toString()}`);
+      window.history.pushState({}, "", `?${params.toString()}`);
     } else {
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.pushState({}, "", window.location.pathname);
     }
   };
 

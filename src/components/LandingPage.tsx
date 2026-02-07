@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
 import { SPINE_EXAMPLES } from "../lib/spineExamples";
+import JSZip from "jszip";
 import {
   Select,
   SelectContent,
@@ -22,30 +23,77 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedExample, setSelectedExample] = useState<string>("");
 
+  /**
+   * Extract files from a ZIP archive
+   */
+  const extractZipFiles = async (zipFile: File): Promise<File[]> => {
+    try {
+      const zip = new JSZip();
+      const zipContent = await zip.loadAsync(zipFile);
+      const extractedFiles: File[] = [];
+
+      for (const filename in zipContent.files) {
+        const zipEntry = zipContent.files[filename];
+        // Skip directories
+        if (zipEntry.dir) continue;
+
+        const blob = await zipEntry.async("blob");
+        const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+        extractedFiles.push(file);
+      }
+
+      return extractedFiles;
+    } catch (error) {
+      throw new Error(`Failed to extract ZIP file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
   const processFiles = async (files: File[]) => {
+    // Check if any files are ZIP files
+    const zipFiles = files.filter(f => f.name.endsWith('.zip'));
+    let allFiles = [...files];
+
+    // Extract ZIP files and add their contents
+    for (const zipFile of zipFiles) {
+      try {
+        toast.loading(`Extracting ${zipFile.name}...`);
+        const extractedFiles = await extractZipFiles(zipFile);
+        allFiles = allFiles.filter(f => f !== zipFile); // Remove the ZIP file itself
+        allFiles.push(...extractedFiles); // Add extracted files
+      } catch (error) {
+        toast.dismiss();
+        toast.error(error instanceof Error ? error.message : 'Failed to extract ZIP file');
+        return;
+      }
+    }
+
     // Find skeleton file (.json or .skel), Atlas, and image files
-    const skeletonFile = files.find(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
-    const atlasFile = files.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
-    const imageFiles = files.filter(f =>
+    const skeletonFile = allFiles.find(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
+    const atlasFile = allFiles.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
+    const imageFiles = allFiles.filter(f =>
       f.type.startsWith("image/") ||
       f.name.match(/\.(png|jpg|jpeg|webp)$/i)
     );
 
     if (!skeletonFile) {
+      toast.dismiss();
       toast.error("No .json or .skel file found. Please include the Spine skeleton file.");
       return;
     }
 
     if (!atlasFile) {
+      toast.dismiss();
       toast.error("No .atlas file found. Please include the Spine atlas file.");
       return;
     }
 
     if (imageFiles.length === 0) {
+      toast.dismiss();
       toast.error("No image files found. Please include at least one atlas image (.png, .webp, .jpg).");
       return;
     }
 
+    toast.dismiss();
     toast.success(`Loaded: ${skeletonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
     onFilesSelect({
       jsonFile: skeletonFile, // Keep the prop name as jsonFile for compatibility
@@ -193,6 +241,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         ref={fileInputRef}
         type="file"
         multiple
+        accept=".json,.skel,.atlas,.atlas.txt,.png,.jpg,.jpeg,.webp,.zip"
         onChange={handleFileInputChange}
         className="hidden"
       />
@@ -217,7 +266,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               Open to view exported Spine animation files online
             </p>
             <p className="text-sm text-muted-foreground">
-              Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. Preview and test your Spine animations in the browser.
+              Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. You can also drop <span className="text-primary font-medium">.zip</span> files containing Spine assets. Preview and test your Spine animations in the browser.
             </p>
           </div>
 

@@ -8,6 +8,7 @@ import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
 import { spineViewerStore, resetSpineViewerState } from "../store/spineViewerStore";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
+import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
 import JSZip from "jszip";
 import { Download } from "lucide-react";
 
@@ -143,6 +144,11 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
       {/* Draggable attachment test panel */}
       <AttachmentTestPanel />
+
+      {/* Particle generator panel */}
+      <ParticleGeneratorPanel onFilesGenerated={(files) => {
+        spineViewerStore.files = ref(files);
+      }} />
     </div>
   );
 };
@@ -189,7 +195,7 @@ const InfoPanel = () => {
     const atlasText = await atlasFile.text();
     const lines = atlasText.split('\n');
     const imageNames: string[] = [];
-    
+
     // Atlas format: first line of each page is the image filename
     // Pages are separated by empty lines
     for (let i = 0; i < lines.length; i++) {
@@ -202,7 +208,7 @@ const InfoPanel = () => {
         }
       }
     }
-    
+
     return imageNames.length > 0 ? imageNames : [atlasFile.name.replace('.atlas', '.png')];
   };
 
@@ -216,18 +222,18 @@ const InfoPanel = () => {
       toast.loading('Creating ZIP archive...');
 
       const zip = new JSZip();
-      
+
       // Add JSON file
       const jsonContent = await files.jsonFile.arrayBuffer();
       zip.file(files.jsonFile.name, jsonContent);
-      
+
       // Add Atlas file
       const atlasContent = await files.atlasFile.arrayBuffer();
       zip.file(files.atlasFile.name, atlasContent);
-      
+
       // Parse atlas to get image names
       const imageNames = await parseAtlasImageNames(files.atlasFile);
-      
+
       // Add image files with names from atlas
       // If we have multiple images, map them to atlas names
       // If single image, use first atlas name
@@ -237,10 +243,10 @@ const InfoPanel = () => {
         const imageContent = await imageFile.arrayBuffer();
         zip.file(imageName, imageContent);
       }
-      
+
       // Generate ZIP blob
       const zipBlob = await zip.generateAsync({ type: 'blob' });
-      
+
       // Create download link
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
@@ -250,7 +256,7 @@ const InfoPanel = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       toast.dismiss();
       toast.success('ZIP downloaded successfully');
     } catch (error) {
@@ -261,14 +267,15 @@ const InfoPanel = () => {
   };
 
   const spine = spineViewerStore.refs.spine;
-  const skeletonName = spine?.skeleton?.data?.name ?? "N/A";
-  const bones = spine?.skeleton?.bones?.length ?? 0;
-  const slots = spine?.skeleton?.slots?.length ?? 0;
-  const totalSkins = spine?.skeleton?.data?.skins?.length ?? 0;
-  const currentSkinName = spine?.skeleton?.skin?.name ?? "default";
+  const isDestroyed = spine ? spine.destroyed : true;
+  const skeletonName = !isDestroyed && spine?.skeleton?.data?.name ? spine.skeleton.data.name : "N/A";
+  const bones = !isDestroyed && spine?.skeleton?.bones ? spine.skeleton.bones.length : 0;
+  const slots = !isDestroyed && spine?.skeleton?.slots ? spine.skeleton.slots.length : 0;
+  const totalSkins = !isDestroyed && spine?.skeleton?.data?.skins ? spine.skeleton.data.skins.length : 0;
+  const currentSkinName = !isDestroyed && spine?.skeleton?.skin?.name ? spine.skeleton.skin.name : "default";
 
   let timelineCount = 0;
-  if (spine && state.ui.selectedAnimation) {
+  if (!isDestroyed && spine && state.ui.selectedAnimation) {
     const data: any = spine.skeleton.data as any;
     const anim = data.findAnimation?.(state.ui.selectedAnimation);
     if (anim) {
@@ -292,7 +299,8 @@ const InfoPanel = () => {
         <div>Bones / Slots: {bones} / {slots}</div>
         <div>Skins: {currentSkinName} / {totalSkins}</div>
         <div>Animation Timelines: {timelineCount}</div>
-        <div>FPS: {state.ui.fps.toFixed(1)}</div>
+        <div>FPS: <span ref={(el) => { if (el) (window as any).__fpsRef = el; }}>{state.ui.fps.toFixed(1)}</span></div>
+        <div>FPS Rendered: {state.ui.fpsRendered}</div>
       </div>
       <div className="flex flex-wrap gap-2 mt-2">
         <Button

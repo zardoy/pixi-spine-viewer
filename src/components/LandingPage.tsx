@@ -1,4 +1,4 @@
-import { Upload, FileImage, Sparkles, TestTube, FolderSync } from "lucide-react";
+import { Upload, FileImage, Sparkles, TestTube, FolderSync, Sparkles as SparklesIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { useRef, useEffect, useState } from "react";
@@ -285,7 +285,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input field
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      if ((target as any).tagName === 'INPUT' || (target as any).tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
 
@@ -349,6 +349,25 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     window.location.href = '?tester';
   };
 
+  const handleOpenParticleGenerator = () => {
+    // Set a flag to show particle generator mode
+    // We'll handle this by opening with empty files, but the panel will generate particles
+    // For now, just open with empty files - the panel will handle generation
+    const blankJson = JSON.stringify({
+      skeleton: { hash: 'particles', spine: '4.2', x: 0, y: 0, width: 12000, height: 12000, images: './' },
+      bones: [{ name: 'root' }],
+      slots: [],
+      skins: [{ name: 'default', attachments: {} }],
+      animations: {},
+    });
+    const blankFiles: SpineFiles = {
+      jsonFile: new File([blankJson], 'particles.json', { type: 'application/json' }),
+      atlasFile: new File([''], 'particles.atlas', { type: 'text/plain' }),
+      imageFiles: [],
+    };
+    onFilesSelect(blankFiles);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-background via-background to-secondary relative">
       {/* File picker input */}
@@ -400,7 +419,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
             <p className="text-muted-foreground">
               Drag and drop files here or
             </p>
-            <div className="flex gap-3 justify-center">
+            <div className="flex gap-3 justify-center flex-wrap">
               <Button
                 onClick={handleFilesClick}
                 size="lg"
@@ -418,6 +437,16 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               >
                 <FolderSync className="w-5 h-5" />
                 Synced directory
+              </Button>
+              <Button
+                onClick={handleOpenParticleGenerator}
+                size="lg"
+                variant="outline"
+                className="gap-2 font-semibold"
+                title="Open particle generator"
+              >
+                <SparklesIcon className="w-5 h-5" />
+                Spine Particles Generator (WIP)
               </Button>
             </div>
           </div>

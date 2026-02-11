@@ -1,5 +1,5 @@
 import '@pixi/layout';
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Container, Graphics, Text } from "pixi.js";
 import { Physics } from "@esotericsoftware/spine-core";
 import { Application, useExtend, useApplication } from "@pixi/react";
@@ -27,9 +27,12 @@ const PixiAppContent = () => {
   const viewportTransitionTime = 0.25;
   const boundsGraphicsRef = useRef<Graphics | null>(null);
   const boundsTextRef = useRef<Text | null>(null);
+  const spawnBoundsGraphicsRef = useRef<Graphics | null>(null);
   const attachmentTestGraphicsRef = useRef<Graphics | null>(null);
   const wasSpineLoaded = useRef(false);
   const lastAutocenterRef = useRef<boolean | undefined>(undefined);
+  const fpsCounterRef = useRef<number>(0);
+  const fpsLastSecondRef = useRef<number>(performance.now());
 
   // Sync container ref to store (wrapped in ref() to prevent proxying)
   useEffect(() => {
@@ -316,19 +319,19 @@ const PixiAppContent = () => {
     if (!app.app || !state.refs.spine) return;
 
     const update = () => {
-      if (!spineViewerStore.refs.spine || !app.app) return;
+      const spine = spineViewerStore.refs.spine;
+      if (!spine || !app.app) return;
+      
+      // Skip if spine is destroyed
+      if ((spine as any).destroyed) return;
 
       // Update timeline (loop resets are handled by handleAnimationComplete callback)
-      const track = spineViewerStore.refs.spine.state.tracks[0];
+      const track = spine.state.tracks[0];
       if (track) {
         spineViewerStore.ui.timeline = track.getAnimationTime();
       }
 
-      // Update FPS from ticker
-      if (app.app.ticker) {
-        const currentFps = app.app.ticker.FPS ?? 0;
-        spineViewerStore.ui.fps = currentFps;
-      }
+      // FPS is updated via ref in separate effect (see below)
 
       // Handle smooth viewport transitions on animation change (only when autocenter is enabled)
       if (!spineViewerStore.ui.autocenter) {
@@ -418,10 +421,47 @@ const PixiAppContent = () => {
     };
   }, [app.app, state.refs.spine, state.ui.autocenter]); // Watch for spine changes and autocenter
 
+  // FPS updates: use ref for frequent updates, state every second
+  useEffect(() => {
+    if (!app.app) return;
+
+    const updateFps = () => {
+      if (!app.app?.ticker) return;
+      
+      const currentFps = app.app.ticker.FPS ?? 0;
+      
+      // Update ref for frequent DOM updates (no React re-render)
+      const fpsElement = (window as any).__fpsRef;
+      if (fpsElement) {
+        fpsElement.textContent = currentFps.toFixed(1);
+      }
+      
+      // Count frames for UI state update (every second)
+      fpsCounterRef.current++;
+      const now = performance.now();
+      if (now - fpsLastSecondRef.current >= 1000) {
+        spineViewerStore.ui.fpsRendered = fpsCounterRef.current;
+        fpsCounterRef.current = 0;
+        fpsLastSecondRef.current = now;
+      }
+    };
+
+    app.app.ticker.add(updateFps);
+
+    return () => {
+      if (app.app?.ticker) {
+        app.app.ticker.remove(updateFps);
+      }
+    };
+  }, [app.app]);
+
   // Update animation when selected animation changes
   useEffect(() => {
     const spine = spineViewerStore.refs.spine;
     if (!spine || !state.ui.selectedAnimation || !app.app) return;
+    
+    // Skip if spine is destroyed
+    if ((spine as any).destroyed) return;
 
     const spineState = spine.state;
 
@@ -524,20 +564,24 @@ const PixiAppContent = () => {
   useEffect(() => {
     const spine = spineViewerStore.refs.spine;
     if (!spine) return;
+    
+    // Skip if spine is destroyed
+    if ((spine as any).destroyed) return;
+    
     let cancelled = false;
 
     (async () => {
-      if (cancelled || !spineViewerStore.refs.spine) return;
+      const currentSpine = spineViewerStore.refs.spine;
+      if (cancelled || !currentSpine) return;
+      if ((currentSpine as any).destroyed) return;
 
       if (state.ui.debugBones) {
-        const currentSpine = spineViewerStore.refs.spine;
         if (!(currentSpine.debug instanceof SpineDebugRenderer)) {
           currentSpine.debug = new SpineDebugRenderer();
         }
       } else {
-        const currentSpine = spineViewerStore.refs.spine;
         // Only clear debug if it's our debug renderer
-        if (currentSpine && currentSpine.debug instanceof SpineDebugRenderer) {
+        if (currentSpine.debug instanceof SpineDebugRenderer) {
           currentSpine.debug = undefined;
         }
       }
@@ -610,6 +654,13 @@ const PixiAppContent = () => {
       const text = boundsTextRef.current;
 
       if (!spine || !graphics || !text || !containerRef.current) return;
+      
+      // Skip if spine is destroyed
+      if ((spine as any).destroyed) {
+        graphics.clear();
+        text.text = '';
+        return;
+      }
 
       try {
         // Use the Spine class's built-in bounds property which is already properly calculated
@@ -675,30 +726,87 @@ const PixiAppContent = () => {
     };
   }, [app.app, state.ui.debugBounds]);
 
-  // Handle animation complete (fires even when looping). resetCounterAtComplete lets us ignore stale completions from before a reset.
-  const handleAnimationComplete = (animationName: string, resetCounterAtComplete: number) => {
-    const currentResetCounter = spineViewerStore.ui.resetCounter;
+  // Spawn bounds - create/remove graphics for particle generator spawn area
+  useEffect(() => {
+    if (!containerRef.current || !state.ui.showSpawnBounds || !state.ui.spawnBounds) {
+      if (spawnBoundsGraphicsRef.current && containerRef.current) {
+        containerRef.current.removeChild(spawnBoundsGraphicsRef.current);
+        spawnBoundsGraphicsRef.current.destroy();
+        spawnBoundsGraphicsRef.current = null;
+      }
+      return;
+    }
+
+    if (!spawnBoundsGraphicsRef.current && containerRef.current) {
+      const graphics = new Graphics();
+      containerRef.current.addChild(graphics);
+      spawnBoundsGraphicsRef.current = graphics;
+    }
+
+    return () => {
+      if (spawnBoundsGraphicsRef.current && containerRef.current) {
+        containerRef.current.removeChild(spawnBoundsGraphicsRef.current);
+        spawnBoundsGraphicsRef.current.destroy();
+        spawnBoundsGraphicsRef.current = null;
+      }
+    };
+  }, [state.ui.showSpawnBounds, state.ui.spawnBounds]);
+
+  // Update spawn bounds rendering
+  useEffect(() => {
+    if (!app.app || !state.ui.showSpawnBounds || !state.ui.spawnBounds) return;
+
+    const updateSpawnBounds = () => {
+      const graphics = spawnBoundsGraphicsRef.current;
+      if (!graphics || !containerRef.current) return;
+
+      try {
+        const spawnBounds = state.ui.spawnBounds!;
+        const [minX, maxX] = spawnBounds.x;
+        const [minY, maxY] = spawnBounds.y;
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        // Transform spawn bounds to screen space (spawn bounds are in skeleton local space)
+        const containerX = spineViewerStore.ui.spinePosition.x;
+        const containerY = spineViewerStore.ui.spinePosition.y;
+        const containerScale = spineViewerStore.ui.scale;
+
+        const boundsX = containerX + minX * containerScale;
+        const boundsY = containerY + minY * containerScale;
+        const boundsWidth = width * containerScale;
+        const boundsHeight = height * containerScale;
+
+        // Draw green border rectangle
+        graphics.clear();
+        graphics.rect(boundsX, boundsY, boundsWidth, boundsHeight);
+        graphics.stroke({ color: 0x00ff00, width: 2 });
+      } catch (err) {
+        console.error('Error updating spawn bounds:', err);
+        graphics.clear();
+      }
+    };
+
+    app.app.ticker.add(updateSpawnBounds);
+
+    return () => {
+      if (app.app?.ticker) {
+        app.app.ticker.remove(updateSpawnBounds);
+      }
+    };
+  }, [app.app, state.ui.showSpawnBounds, state.ui.spawnBounds, state.ui.spinePosition, state.ui.scale]);
+
+  // Handle animation complete (fires even when looping)
+  // Note: onCurrentAnimComplete doesn't provide parameters, so we use current store values
+  const handleAnimationComplete = useCallback(() => {
     const currentAnimation = spineViewerStore.ui.selectedAnimation;
-
-    if (resetCounterAtComplete !== currentResetCounter) {
-      // Stale completion from before a reset – ignore
-      console.log(`[PixiApp] Ignoring stale completion: resetCounter ${resetCounterAtComplete} != ${currentResetCounter}`);
-      return;
-    }
-
-    // Ignore completions from old animations (due to mix transitions)
-    if (animationName !== currentAnimation) {
-      console.log(`[PixiApp] Ignoring completion from old animation: ${animationName} (current: ${currentAnimation})`);
-      return;
-    }
-
-    console.log('animation complete', resetCounterAtComplete);
+    console.log('animation complete', currentAnimation);
 
     if (!spineViewerStore.ui.loop) {
       spineViewerStore.ui.isPlaying = false;
     }
     spineViewerStore.ui.timeline = 0;
-  }
+  }, [state.ui.loop, state.ui.selectedAnimation]);
 
   // Keyboard handler for 'Y' key to toggle attachment test panel
   useEffect(() => {
@@ -719,6 +827,9 @@ const PixiAppContent = () => {
     const spine = state.refs.spine;
 
     if (showPanel && spine) {
+      // Skip if spine is destroyed
+      if ((spine as any).destroyed) return;
+      
       const container = spine.parent;
       if (container && !attachmentTestGraphicsRef.current) {
         const graphics = new Graphics();
@@ -755,8 +866,14 @@ const PixiAppContent = () => {
 
   // Update available attachment slots in store when spine changes
   useEffect(() => {
-    if (state.refs.spine) {
-      const slots = Array.from(new Set(state.refs.spine.skeleton.drawOrder.map(slot => slot.data.name)));
+    const spine = state.refs.spine;
+    if (spine) {
+      // Skip if spine is destroyed
+      if ((spine as any).destroyed) {
+        spineViewerStore.ui.availableAttachmentSlots = [];
+        return;
+      }
+      const slots = Array.from(new Set(spine.skeleton.drawOrder.map(slot => slot.data.name)));
       spineViewerStore.ui.availableAttachmentSlots = slots;
     } else {
       spineViewerStore.ui.availableAttachmentSlots = [];

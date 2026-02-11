@@ -1,7 +1,7 @@
 import 'pixi.js/prepare' // Ensures prepare system is available for texture preload
 import { Container, type TextureSource } from 'pixi.js'
 import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
-import { useEffect, useRef, type Ref, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type Ref, type RefObject } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
 import { Physics } from '@esotericsoftware/spine-core'
 import { useSnapshot } from 'valtio'
@@ -333,7 +333,7 @@ export const SpineBase = (props: SpineProps) => {
     }
   }, [debugKey, spineKey, skin])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ref.current) return
 
     let destroyed = false
@@ -504,12 +504,12 @@ export const SpineBase = (props: SpineProps) => {
         mixAnimationFrameRef.current = null
       }
 
-      if (spineRef.current && ref.current) {
+      if (spineRef.current) {
         // Remove listeners before destroying
-        if (listenerRef.current) {
-          spineRef.current.state.removeListener(listenerRef.current)
-          listenerRef.current = null
-        }
+        // if (listenerRef.current) {
+        //   spineRef.current.state.removeListener(listenerRef.current)
+        //   listenerRef.current = null
+        // }
         // Remove from container before destroying
         try {
           if (ref.current && spineRef.current.parent === ref.current) {

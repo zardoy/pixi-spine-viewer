@@ -42,6 +42,7 @@ export interface SpineViewerState {
     skins: string[];
     infoPanelPos: { x: number; y: number };
     fps: number;
+    fpsRendered: number;
     backgroundColor: string;
     mixTime: number;
     spinePosition: { x: number; y: number };
@@ -51,6 +52,9 @@ export interface SpineViewerState {
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
     resetCounter: number;
+    particleGeneratorPanelPos: { x: number; y: number } | null;
+    showSpawnBounds: boolean;
+    spawnBounds: { x: [number, number]; y: [number, number] } | null;
   };
 
   files: SpineFiles | null;
@@ -90,6 +94,7 @@ export const initialState: SpineViewerState = {
     skins: [],
     infoPanelPos: { x: 0, y: 0 },
     fps: 0,
+    fpsRendered: 0,
     backgroundColor: '#1a1625',
     mixTime: 0.25,
     spinePosition: { x: 0, y: 0 },
@@ -99,6 +104,9 @@ export const initialState: SpineViewerState = {
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
     resetCounter: 0,
+    particleGeneratorPanelPos: null,
+    showSpawnBounds: false,
+    spawnBounds: null,
   },
   files: null,
   syncedDir: null,

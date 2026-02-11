@@ -1,4 +1,4 @@
-import { Upload, FileImage, Sparkles } from "lucide-react";
+import { Upload, FileImage, Sparkles, TestTube, FolderSync } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { useRef, useEffect, useState } from "react";
@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
 import { SPINE_EXAMPLES } from "../lib/spineExamples";
+import { ref } from "valtio";
+import { spineViewerStore } from "../store/spineViewerStore";
 import JSZip from "jszip";
 import {
   Select,
@@ -95,6 +97,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
 
     toast.dismiss();
     toast.success(`Loaded: ${skeletonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
+    spineViewerStore.syncedDir = null;
+    spineViewerStore.refs.syncedDirHandles = null;
     onFilesSelect({
       jsonFile: skeletonFile, // Keep the prop name as jsonFile for compatibility
       atlasFile,
@@ -109,6 +113,107 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
 
   const handleFilesClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleOpenSyncedDirectory = async () => {
+    if (!("showDirectoryPicker" in window)) {
+      toast.error("Synced directory requires a modern browser (Chrome/Edge)");
+      return;
+    }
+    try {
+      toast.loading("Select directory...");
+      const dirHandle = await (window as any).showDirectoryPicker();
+      const filesByName = new Map<string, FileSystemFileHandle>();
+
+      for await (const [name, handle] of dirHandle.entries()) {
+        if (handle.kind === "file") {
+          filesByName.set(name, handle as FileSystemFileHandle);
+        }
+      }
+
+      const skeletonFile = Array.from(filesByName.keys()).find(
+        (n) => n.endsWith(".json") || n.endsWith(".skel")
+      );
+      const atlasFile = Array.from(filesByName.keys()).find(
+        (n) => n.endsWith(".atlas") || n.endsWith(".atlas.txt")
+      );
+
+      if (!skeletonFile) {
+        toast.dismiss();
+        toast.error("No .json or .skel file found in directory");
+        return;
+      }
+      if (!atlasFile) {
+        toast.dismiss();
+        toast.error("No .atlas file found in directory");
+        return;
+      }
+
+      const jsonHandle = filesByName.get(skeletonFile)!;
+      const atlasHandle = filesByName.get(atlasFile)!;
+
+      const atlasFileObj = await atlasHandle.getFile();
+      const atlasText = await atlasFileObj.text();
+      const imageNames: string[] = [];
+      const lines = atlasText.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (
+          line &&
+          (line.endsWith(".png") ||
+            line.endsWith(".jpg") ||
+            line.endsWith(".jpeg") ||
+            line.endsWith(".webp"))
+        ) {
+          const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : "";
+          if (nextLine.startsWith("size:")) {
+            imageNames.push(line);
+          }
+        }
+      }
+      let imageHandles = imageNames
+        .map((n) => filesByName.get(n))
+        .filter(Boolean) as FileSystemFileHandle[];
+      if (imageHandles.length === 0) {
+        const fallback = Array.from(filesByName.entries()).find(([n]) =>
+          /\.(png|jpg|jpeg|webp)$/i.test(n)
+        );
+        if (fallback) imageHandles = [fallback[1]];
+      }
+      if (imageHandles.length === 0) {
+        toast.dismiss();
+        toast.error("No image files found in directory");
+        return;
+      }
+
+      const jsonFile = await jsonHandle.getFile();
+      const atlasFileObj2 = await atlasHandle.getFile();
+      const imageFiles = await Promise.all(
+        imageHandles.map((h) => h.getFile())
+      );
+
+      spineViewerStore.syncedDir = true;
+      spineViewerStore.refs.syncedDirHandles = ref({
+        jsonHandle,
+        atlasHandle,
+        imageHandles,
+      });
+      spineViewerStore.reloadPreserveAnimation = null;
+
+      onFilesSelect({
+        jsonFile,
+        atlasFile: atlasFileObj2,
+        imageFiles,
+      });
+
+      toast.dismiss();
+      toast.success("Synced directory opened (JSON changes will auto-reload)");
+    } catch (err) {
+      toast.dismiss();
+      if ((err as Error).name !== "AbortError") {
+        toast.error((err as Error).message || "Failed to open directory");
+      }
+    }
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -148,6 +253,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         const files = await fetchSpineFilesFromUrl(text);
         toast.dismiss();
         toast.success(`Downloaded: ${files.jsonFile.name}, ${files.atlasFile.name}, and ${files.imageFiles.length} image(s)`);
+        spineViewerStore.syncedDir = null;
+        spineViewerStore.refs.syncedDirHandles = null;
         onFilesSelect(files);
       } catch (error) {
         toast.dismiss();
@@ -198,6 +305,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
             .then((files) => {
               toast.dismiss();
               toast.success(`Loaded ${firstExample.name}`);
+              spineViewerStore.syncedDir = null;
+              spineViewerStore.refs.syncedDirHandles = null;
               onFilesSelect(files);
             })
             .catch((error) => {
@@ -227,11 +336,17 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
       const files = await fetchSpineFilesFromUrl(example.jsonUrl, example.atlasUrl);
       toast.dismiss();
       toast.success(`Loaded ${example.name}`);
+      spineViewerStore.syncedDir = null;
+      spineViewerStore.refs.syncedDirHandles = null;
       onFilesSelect(files);
     } catch (error) {
       toast.dismiss();
       toast.error(error instanceof Error ? error.message : 'Failed to load example');
     }
+  };
+
+  const handleOpenTester = () => {
+    window.location.href = '?tester';
   };
 
   return (
@@ -245,6 +360,17 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         onChange={handleFileInputChange}
         className="hidden"
       />
+      {/* Small tester button in top-right */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleOpenTester}
+        className="absolute top-4 right-4 text-xs"
+        title="Open SpineBase Tester"
+      >
+        <TestTube className="w-3 h-3 mr-1" />
+        Tester
+      </Button>
       {/* ZARDOY Watermark */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-[20rem] font-bold italic text-white opacity-[0.03] select-none tracking-wider" style={{ fontFamily: 'Impact, "Arial Black", sans-serif' }}>
@@ -263,7 +389,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               Spine Animation Viewer
             </h1>
             <p className="text-lg text-muted-foreground">
-              Open to view exported Spine animation files online
+              World's most advanced Spine animation player tool. Open to view exported Spine animation files online
             </p>
             <p className="text-sm text-muted-foreground">
               Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. You can also drop <span className="text-primary font-medium">.zip</span> files containing Spine assets. Preview and test your Spine animations in the browser.
@@ -282,6 +408,16 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               >
                 <FileImage className="w-5 h-5" />
                 Select Files
+              </Button>
+              <Button
+                onClick={handleOpenSyncedDirectory}
+                size="lg"
+                variant="outline"
+                className="gap-2 font-semibold"
+                title="Open directory and auto-reload when JSON changes"
+              >
+                <FolderSync className="w-5 h-5" />
+                Synced directory
               </Button>
             </div>
           </div>

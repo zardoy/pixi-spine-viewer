@@ -1,5 +1,6 @@
 import { Spine, AABBRectangleBoundsProvider } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Graphics, ImageSource } from 'pixi.js';
+import type { TextureSource } from 'pixi.js';
 import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonBinary, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
 import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
 
@@ -33,6 +34,9 @@ export interface AnimationViewport {
  * ```
  */
 export class SpineDisplay extends Container {
+  /** When true, logs load pipeline stages (image load, texture set, skeleton parse) for debugging. */
+  static spineLoadDebug = false;
+
   private dimensions: { width: number; height: number };
   private initialGraphic: Graphics;
   private spine: Spine | null = null;
@@ -70,19 +74,23 @@ export class SpineDisplay extends Container {
    * @param json - The skeleton JSON content (string or parsed object)
    * @param atlasText - The atlas file content
    * @param imageFiles - Array of image files for the atlas
+   * @returns Object with skeletonData and textureSources (for preloading to GPU via app.prepare.upload)
    */
   static async loadSpineDataFromFiles(
     json: string | Record<string, any> | ArrayBuffer | Uint8Array,
     atlasText: string,
     imageFiles: File[]
-  ): Promise<SkeletonData> {
-    // Create texture atlas from atlas text
+  ): Promise<{ skeletonData: SkeletonData; textureSources: TextureSource[] }> {
+    const textureSources: TextureSource[] = [];
+    const log = (msg: string) => SpineDisplay.spineLoadDebug && console.log(`[SpineDisplay] ${msg}`);
+
+    log('Creating texture atlas from atlas text');
     const textureAtlas = new TextureAtlas(atlasText);
 
     // For each atlas page, find or fallback to an image file, then attach via SpineTexture
     for (const page of textureAtlas.pages) {
-      console.log(`[SpineDisplay] Looking for image for atlas page: "${page.name}"`);
-      console.log(`[SpineDisplay] Available image files:`, imageFiles.map(f => f.name));
+      log(`Looking for image for atlas page: "${page.name}"`);
+      if (SpineDisplay.spineLoadDebug) console.log(`[SpineDisplay] Available image files:`, imageFiles.map(f => f.name));
       
       // Extract base filename from page name (handle paths like "./images/a.png" or "a.png")
       const pageBaseName = page.name.split('/').pop() || page.name;
@@ -103,7 +111,7 @@ export class SpineDisplay extends Container {
         continue;
       }
 
-      console.log(`[SpineDisplay] Using image file: "${fileToUse.name}" for atlas page: "${page.name}"`);
+      log(`Using image file: "${fileToUse.name}" for atlas page: "${page.name}"`);
 
       try {
         const url = URL.createObjectURL(fileToUse);
@@ -111,7 +119,7 @@ export class SpineDisplay extends Container {
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => {
-            console.log(`[SpineDisplay] Image loaded successfully: ${fileToUse.name}`);
+            log(`Image decoded (CPU): ${fileToUse.name}`);
             resolve();
           };
           img.onerror = (err) => {
@@ -127,7 +135,7 @@ export class SpineDisplay extends Container {
         // If pma is false, PIXI should premultiply on upload (this is the default)
         // This is critical for correct blending of semi-transparent textures!
         const alphaMode = page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload';
-        console.log(`[SpineDisplay] Using alpha mode: ${alphaMode} (pma: ${page.pma})`);
+        log(`Alpha mode: ${alphaMode} (pma: ${page.pma})`);
 
         // Create ImageSource with correct alphaMode for proper blending
         const imageSource = new ImageSource({
@@ -137,7 +145,8 @@ export class SpineDisplay extends Container {
 
         const spineTex = SpineTexture.from(imageSource);
         page.setTexture(spineTex);
-        console.log(`[SpineDisplay] Texture set for atlas page: ${page.name}`);
+        textureSources.push(spineTex.texture.source);
+        log(`Texture set for atlas page: ${page.name} (GPU upload deferred until first render)`);
 
         URL.revokeObjectURL(url);
       } catch (err) {
@@ -145,24 +154,24 @@ export class SpineDisplay extends Container {
       }
     }
 
+    log('Creating atlas loader and parsing skeleton');
     const atlasLoader = new AtlasAttachmentLoader(textureAtlas);
 
     // Determine if input is binary (.skel) or JSON
     const isBinary = json instanceof ArrayBuffer || json instanceof Uint8Array;
 
+    let skeletonData: SkeletonData;
     if (isBinary) {
-      // Load binary .skel file
       const skeletonBinary = new SkeletonBinary(atlasLoader);
       const binaryData = json instanceof ArrayBuffer ? new Uint8Array(json) : json;
-      const skeletonData = skeletonBinary.readSkeletonData(binaryData);
-      return skeletonData;
+      skeletonData = skeletonBinary.readSkeletonData(binaryData);
     } else {
-      // Load JSON file
       const skeletonJson = new SkeletonJson(atlasLoader);
       const jsonData = typeof json === 'string' ? JSON.parse(json) : json;
-      const skeletonData = skeletonJson.readSkeletonData(jsonData);
-      return skeletonData;
+      skeletonData = skeletonJson.readSkeletonData(jsonData);
     }
+    log(`Skeleton parsed: ${skeletonData.animations.length} animations, ${textureSources.length} texture source(s)`);
+    return { skeletonData, textureSources };
   }
 
   /**
@@ -204,7 +213,7 @@ export class SpineDisplay extends Container {
       boundsHeight?: number;
     }
   ): Promise<Spine> {
-    const skeletonData = await this.loadSpineDataFromFiles(json, atlasText, imageFiles);
+    const { skeletonData } = await this.loadSpineDataFromFiles(json, atlasText, imageFiles);
 
     // Use darkTint option from parameter, fallback to static option, or undefined for auto-detect
     const darkTint = options?.darkTint ?? SpineDisplay.loadSpineOptions.darkTint;

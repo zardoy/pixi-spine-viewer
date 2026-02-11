@@ -1,5 +1,6 @@
 import { Spine as SpineInstance, Spine as SpineClass } from '@esotericsoftware/spine-pixi-v8';
 import { SkeletonData } from '@esotericsoftware/spine-core';
+import type { TextureSource } from 'pixi.js';
 import { SpineDisplay } from './SpineDisplay';
 
 /**
@@ -8,7 +9,11 @@ import { SpineDisplay } from './SpineDisplay';
  */
 export class FileSpineLoader {
   private skeletonDataCache: Map<string, SkeletonData> = new Map();
+  private textureSourcesCache: Map<string, TextureSource[]> = new Map();
   private loadingPromises: Map<string, Promise<void>> = new Map();
+
+  /** When true, logs load pipeline stages. Set before loadSpine. */
+  static debugLoad = false;
 
   constructor(
     private skeletonData: string | ArrayBuffer | Uint8Array,
@@ -31,24 +36,42 @@ export class FileSpineLoader {
       return existingPromise;
     }
 
+    if (FileSpineLoader.debugLoad) {
+      SpineDisplay.spineLoadDebug = true
+    }
+
     // Start loading
     const loadPromise = (async () => {
       try {
-        const skeletonData = await SpineDisplay.loadSpineDataFromFiles(
+        const result = await SpineDisplay.loadSpineDataFromFiles(
           this.skeletonData,
           this.atlasText,
           this.imageFiles
         );
-        this.skeletonDataCache.set(spineKey, skeletonData);
+        this.skeletonDataCache.set(spineKey, result.skeletonData);
+        this.textureSourcesCache.set(spineKey, result.textureSources);
         this.loadingPromises.delete(spineKey);
+        if (FileSpineLoader.debugLoad) {
+          console.log(`[FileSpineLoader] Cached ${result.textureSources.length} texture source(s) for preload`);
+        }
       } catch (error) {
         this.loadingPromises.delete(spineKey);
         throw error;
+      } finally {
+        SpineDisplay.spineLoadDebug = false
       }
     })();
 
     this.loadingPromises.set(spineKey, loadPromise);
     return loadPromise;
+  }
+
+  /**
+   * Get texture sources for preloading to GPU. Call app.prepare.upload(sources) before
+   * adding Spine to the stage to avoid first-frame delay (textures visible immediately).
+   */
+  getTextureSourcesForPreload(spineKey: string): TextureSource[] | undefined {
+    return this.textureSourcesCache.get(spineKey);
   }
 
   /**

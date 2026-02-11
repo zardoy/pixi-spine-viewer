@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { LandingPage } from "../components/LandingPage";
 import { SpineViewer } from "../components/SpineViewer";
 import { SpinesMapViewer } from "../components/SpinesMapViewer";
+import { SpineTester } from "../components/SpineTester";
+import { Playground } from "../components/Playground";
+import { OverridePlayground } from "../components/OverridePlayground";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { toast } from "sonner";
 
@@ -18,6 +21,16 @@ const Index = () => {
 
   const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
+    
+    // Check for tester, playground, or override playground first
+    const tester = params.get("tester");
+    const playground = params.get("playground");
+    const overridePlayground = params.get("overridePlayground");
+    if (tester !== null || playground !== null || overridePlayground !== null) {
+      // These are handled by the component render logic below
+      return;
+    }
+    
     const mapUrl = params.get("spinesMap");
     if (mapUrl) {
       setSpinesMapUrl(decodeURIComponent(mapUrl));
@@ -97,6 +110,24 @@ const Index = () => {
       window.history.pushState({}, "", window.location.pathname);
     }
   };
+
+  // Check URL params for tester, playground, or override playground
+  const params = new URLSearchParams(window.location.search);
+  const tester = params.get("tester");
+  const playground = params.get("playground");
+  const overridePlayground = params.get("overridePlayground");
+  
+  if (tester !== null) {
+    return <SpineTester />;
+  }
+  
+  if (playground !== null) {
+    return <Playground />;
+  }
+  
+  if (overridePlayground !== null) {
+    return <OverridePlayground />;
+  }
 
   // Show loading state while loading from URL
   if (loadingFromUrl) {

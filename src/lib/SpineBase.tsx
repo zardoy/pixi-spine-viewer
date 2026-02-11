@@ -1,5 +1,6 @@
-import { Container } from 'pixi.js'
-import { PixiReactElementProps, useTick } from '@pixi/react'
+import 'pixi.js/prepare' // Ensures prepare system is available for texture preload
+import { Container, type TextureSource } from 'pixi.js'
+import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
 import { useEffect, useRef, type Ref, type RefObject } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
 import { Physics } from '@esotericsoftware/spine-core'
@@ -11,6 +12,9 @@ import gsap from 'gsap'
 interface SpineLoader {
   loadSpine: (spineKey: string) => Promise<void>
   createSpine: (spineKey: string, options: any) => SpineInstance
+  /** Optional: return texture sources for GPU preload. When provided, SpineBase will call
+   * app.prepare.upload(sources) before onSpineLoaded so textures are visible on first frame. */
+  getTextureSourcesForPreload?: (spineKey: string) => TextureSource[] | undefined
 }
 
 function getAnimToUse(animation: string | undefined, spine: SpineInstance | null): string | null {
@@ -18,6 +22,11 @@ function getAnimToUse(animation: string | undefined, spine: SpineInstance | null
   if (!spine) return null
   const animations = spine.skeleton.data.animations
   return animations && animations.length > 0 ? animations[0].name : null
+}
+
+function wrapSpineError(error: unknown, operation: string, spineKey: string, debugKey?: string): Error {
+  const msg = `${operation} for spine '${spineKey}'${debugKey ? ` (debugKey: ${debugKey})` : ''}`
+  return new Error(msg, { cause: error })
 }
 
 /** Data for a single slot's attachment (world vertices, bone transform, etc.). Exported for consumers that need full data. */
@@ -132,6 +141,7 @@ export interface SpineProps
 }
 
 export const SpineBase = (props: SpineProps) => {
+  const app = useApplication()
   const {
     // Core
     spine: spineKey,
@@ -327,7 +337,7 @@ export const SpineBase = (props: SpineProps) => {
     if (!ref.current) return
 
     let destroyed = false
-    const loadSpine = () => {
+    const loadSpine = async () => {
       try {
         if (destroyed) {
           return
@@ -341,6 +351,18 @@ export const SpineBase = (props: SpineProps) => {
           } : {}),
         })
 
+        // Preload textures to GPU before adding to stage. PIXI uploads textures lazily on first
+        // render; without this, the first frame shows no textures. prepare.upload() resolves when
+        // all TextureSources are uploaded.
+        const sources = spineLoader.getTextureSourcesForPreload?.(spineKey)
+        const pixiApp = app?.app
+        const prepare = pixiApp?.renderer?.prepare
+        if (sources?.length && prepare) {
+          await prepare.upload(sources)
+        }
+
+        if (destroyed) return
+
         // Add spine to container
         ref.current.addChild(spine)
         spineRef.current = spine
@@ -352,18 +374,22 @@ export const SpineBase = (props: SpineProps) => {
 
         // Set animation with initial delay if provided
         const setAnimationWithDelay = () => {
-          // Set animation if provided, otherwise use first available
-          if (animation) {
-            spine.state.setAnimation(0, animation, loop)
-          } else {
-            // Get first animation name from skeleton data
-            const animations = spine.skeleton.data.animations
-            if (animations && animations.length > 0) {
-              const firstAnim = animations[0].name
-              spine.state.setAnimation(0, firstAnim, loop)
+          try {
+            // Set animation if provided, otherwise use first available
+            if (animation) {
+              spine.state.setAnimation(0, animation, loop)
             } else {
-              console.warn('[SpineBase] No animations available in skeleton data')
+              // Get first animation name from skeleton data
+              const animations = spine.skeleton.data.animations
+              if (animations && animations.length > 0) {
+                const firstAnim = animations[0].name
+                spine.state.setAnimation(0, firstAnim, loop)
+              } else {
+                console.warn('[SpineBase] No animations available in skeleton data')
+              }
             }
+          } catch (error) {
+            throw wrapSpineError(error, 'Failed to set animation', spineKey, debugKey)
           }
         }
 
@@ -402,10 +428,14 @@ export const SpineBase = (props: SpineProps) => {
 
         // Set skin if provided
         if (skin) {
-          const skinData = spine.skeleton.data.findSkin(skin)
-          if (skinData) {
-            spine.skeleton.setSkin(skinData)
-            spine.skeleton.setSlotsToSetupPose()
+          try {
+            const skinData = spine.skeleton.data.findSkin(skin)
+            if (skinData) {
+              spine.skeleton.setSkin(skinData)
+              spine.skeleton.setSlotsToSetupPose()
+            }
+          } catch (error) {
+            throw wrapSpineError(error, `Failed to set skin '${skin}'`, spineKey, debugKey)
           }
         }
 
@@ -414,29 +444,32 @@ export const SpineBase = (props: SpineProps) => {
         const listener = {
           complete: (trackEntry: any) => {
             // Only fire callback for the main track (track 0)
-            if (trackEntry.trackIndex === 0) {
-              // Fire completion callback
-              if (onCompleteRef.current) {
-                onCompleteRef.current()
+            if (trackEntry.trackIndex !== 0) return
+            // Skip completion for entries that are mixing out (were interrupted/reset).
+            // When resetCounter triggers setAnimation(same anim), the old entry becomes mixingFrom.
+            // Its trackTime still advances during mix; when it reaches animationEnd, Spine queues complete.
+            // We ignore that—the user intentionally reset, so we don't want completion for the abandoned anim.
+            if (trackEntry.mixingTo) return
+            if (onCompleteRef.current) {
+              onCompleteRef.current()
+            }
+
+            // Handle loop delay
+            if (loopDelayRef.current > 0 && spineRef.current) {
+              // Clear any existing loop timeout
+              if (loopTimeoutRef.current) {
+                clearTimeout(loopTimeoutRef.current)
               }
 
-              // Handle loop delay
-              if (loopDelayRef.current > 0 && spineRef.current) {
-                // Clear any existing loop timeout
-                if (loopTimeoutRef.current) {
-                  clearTimeout(loopTimeoutRef.current)
+              // Pause animation temporarily
+              spineRef.current.state.timeScale = 0
+
+              // Resume after loop delay
+              loopTimeoutRef.current = setTimeout(() => {
+                if (spineRef.current && isPlaying) {
+                  spineRef.current.state.timeScale = timeScaleRef.current
                 }
-
-                // Pause animation temporarily
-                spineRef.current.state.timeScale = 0
-
-                // Resume after loop delay
-                loopTimeoutRef.current = setTimeout(() => {
-                  if (spineRef.current && isPlaying) {
-                    spineRef.current.state.timeScale = timeScaleRef.current
-                  }
-                }, loopDelayRef.current * 1000) // Convert seconds to milliseconds
-              }
+              }, loopDelayRef.current * 1000) // Convert seconds to milliseconds
             }
           },
         }
@@ -454,7 +487,7 @@ export const SpineBase = (props: SpineProps) => {
       }
     }
 
-    loadSpine()
+    void loadSpine()
 
     return () => {
       destroyed = true
@@ -521,7 +554,11 @@ export const SpineBase = (props: SpineProps) => {
         clearTimeout(loopTimeoutRef.current)
         loopTimeoutRef.current = null
       }
-      spineRef.current.state.setAnimation(0, animToUse, loop)
+      try {
+        spineRef.current.state.setAnimation(0, animToUse, loop)
+      } catch (error) {
+        throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
+      }
       // set time scale
       spineRef.current.state.timeScale = timeScale
     } else {
@@ -529,7 +566,11 @@ export const SpineBase = (props: SpineProps) => {
       // Setting loop on track directly doesn't always work, so re-set the animation
       const currentLoop = track?.loop ?? false
       if (currentLoop !== loop) {
-        spineRef.current.state.setAnimation(0, animToUse, loop)
+        try {
+          spineRef.current.state.setAnimation(0, animToUse, loop)
+        } catch (error) {
+          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
+        }
       }
     }
   }, [animation, loop])
@@ -611,7 +652,11 @@ export const SpineBase = (props: SpineProps) => {
     const wasPlaying = isPlaying
 
     // Set the animation (this starts the mix transition)
-    spine.state.setAnimation(0, animToUse, loop)
+    try {
+      spine.state.setAnimation(0, animToUse, loop)
+    } catch (error) {
+      throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
+    }
 
     // If paused and mixTime > 0, manually advance the mix to complete smoothly
     if (!wasPlaying && mixTime > 0) {
@@ -689,7 +734,11 @@ export const SpineBase = (props: SpineProps) => {
 
       const animToUse = getAnimToUse(animation, spineRef.current)
       if (animToUse && (!track || track.getAnimationTime() === track.animationEnd || track.getAnimationTime() === 0 || !startPlayingNoReset)) {
-        spineRef.current.state.setAnimation(0, animToUse, loop)
+        try {
+          spineRef.current.state.setAnimation(0, animToUse, loop)
+        } catch (error) {
+          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
+        }
         spineRef.current.state.timeScale = timeScaleRef.current
       }
     }
@@ -704,10 +753,14 @@ export const SpineBase = (props: SpineProps) => {
   useEffect(() => {
     if (!spineRef.current || !skin) return
 
-    const skinData = spineRef.current.skeleton.data.findSkin(skin)
-    if (skinData) {
-      spineRef.current.skeleton.setSkin(skinData)
-      spineRef.current.skeleton.setSlotsToSetupPose()
+    try {
+      const skinData = spineRef.current.skeleton.data.findSkin(skin)
+      if (skinData) {
+        spineRef.current.skeleton.setSkin(skinData)
+        spineRef.current.skeleton.setSlotsToSetupPose()
+      }
+    } catch (error) {
+      throw wrapSpineError(error, `Failed to set skin '${skin}'`, spineKey, debugKey)
     }
   }, [skin])
 

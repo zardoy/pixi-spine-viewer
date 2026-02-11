@@ -28,6 +28,8 @@ const PixiAppContent = () => {
   const boundsGraphicsRef = useRef<Graphics | null>(null);
   const boundsTextRef = useRef<Text | null>(null);
   const attachmentTestGraphicsRef = useRef<Graphics | null>(null);
+  const wasSpineLoaded = useRef(false);
+  const lastAutocenterRef = useRef<boolean | undefined>(undefined);
 
   // Sync container ref to store (wrapped in ref() to prevent proxying)
   useEffect(() => {
@@ -52,18 +54,12 @@ const PixiAppContent = () => {
     }
   }, [state.files, isLoaderReady]);
 
-  // Initialize file loader and load files
+  // Initialize file loader and load files (re-runs when files change, e.g. synced dir reload)
   useEffect(() => {
-    console.log('[PixiApp] Init loader effect:', {
-      hasFiles: !!state.files,
-      isLoaderReady,
-      files: state.files ? 'present' : 'null'
-    });
+    if (!state.files) return;
 
-    if (!state.files || isLoaderReady) {
-      console.log('[PixiApp] Skipping init loader:', { hasFiles: !!state.files, isLoaderReady });
-      return;
-    }
+    wasSpineLoaded.current = false;
+    setIsLoaderReady(false);
 
     const initLoader = async () => {
       try {
@@ -108,12 +104,53 @@ const PixiAppContent = () => {
     };
 
     void initLoader();
-  }, [state.files, isLoaderReady]);
+  }, [state.files]);
 
-  // Sync spineRef to store - handled in handleSpineLoaded callback instead
+  // Poll for JSON changes when synced directory is open
+  useEffect(() => {
+    const synced = spineViewerStore.refs.syncedDirHandles;
+    if (!synced) return;
 
-  const wasSpineLoaded = useRef(false)
-  const lastAutocenterRef = useRef<boolean | undefined>(undefined)
+    let lastJsonHash = "";
+    const pollMs = 1000;
+
+    const poll = async () => {
+      try {
+        const jsonFile = await synced.jsonHandle.getFile();
+        const isSkel = jsonFile.name.toLowerCase().endsWith(".skel");
+        let hash: string;
+        if (isSkel) {
+          hash = `${(await jsonFile.arrayBuffer()).byteLength}:binary`;
+        } else {
+          const text = await jsonFile.text();
+          hash = `${text.length}:${text.slice(0, 200)}`;
+        }
+        if (lastJsonHash && lastJsonHash !== hash) {
+          const currentAnim = spineViewerStore.ui.selectedAnimation;
+          spineViewerStore.reloadPreserveAnimation = currentAnim || null;
+
+          const jsonFileFresh = await synced.jsonHandle.getFile();
+          const atlasFile = await synced.atlasHandle.getFile();
+          const imageFiles = await Promise.all(
+            synced.imageHandles.map((h) => h.getFile())
+          );
+          spineViewerStore.files = ref({
+            jsonFile: jsonFileFresh,
+            atlasFile,
+            imageFiles,
+          });
+          toast.success("Spine reloaded (JSON changed)");
+        }
+        lastJsonHash = hash;
+      } catch (err) {
+        console.warn("[Synced dir] Read error:", err);
+      }
+    };
+
+    const id = setInterval(poll, pollMs);
+    poll(); // Initial read to set lastJsonHash
+    return () => clearInterval(id);
+  }, [state.syncedDir]);
 
   // Handle spine loaded - extract animations/skins and do initial setup
   const handleSpineLoaded = (spine: SpineInstance) => {
@@ -160,10 +197,15 @@ const PixiAppContent = () => {
       const urlSkin = params.get('skin');
       const urlTime = params.get('time');
 
-      // Use URL animation if valid, otherwise use first
-      const initialAnimation = urlAnimation && availableAnimations.includes(urlAnimation)
-        ? urlAnimation
-        : availableAnimations[0];
+      // Use preserved animation (synced reload), URL, or first
+      const preserve = spineViewerStore.reloadPreserveAnimation;
+      const initialAnimation =
+        preserve && availableAnimations.includes(preserve)
+          ? preserve
+          : urlAnimation && availableAnimations.includes(urlAnimation)
+            ? urlAnimation
+            : availableAnimations[0];
+      spineViewerStore.reloadPreserveAnimation = null;
 
       if (availableAnimations.length > 0 && initialAnimation) {
         const anim = data.findAnimation?.(initialAnimation);
@@ -633,9 +675,25 @@ const PixiAppContent = () => {
     };
   }, [app.app, state.ui.debugBounds]);
 
-  // Handle animation complete (fires even when looping) - memoized to prevent re-renders
-  const handleAnimationComplete = () => {
-    console.log('Animation complete');
+  // Handle animation complete (fires even when looping). resetCounterAtComplete lets us ignore stale completions from before a reset.
+  const handleAnimationComplete = (animationName: string, resetCounterAtComplete: number) => {
+    const currentResetCounter = spineViewerStore.ui.resetCounter;
+    const currentAnimation = spineViewerStore.ui.selectedAnimation;
+
+    if (resetCounterAtComplete !== currentResetCounter) {
+      // Stale completion from before a reset – ignore
+      console.log(`[PixiApp] Ignoring stale completion: resetCounter ${resetCounterAtComplete} != ${currentResetCounter}`);
+      return;
+    }
+
+    // Ignore completions from old animations (due to mix transitions)
+    if (animationName !== currentAnimation) {
+      console.log(`[PixiApp] Ignoring completion from old animation: ${animationName} (current: ${currentAnimation})`);
+      return;
+    }
+
+    console.log('animation complete', resetCounterAtComplete);
+
     if (!spineViewerStore.ui.loop) {
       spineViewerStore.ui.isPlaying = false;
     }

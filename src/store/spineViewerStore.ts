@@ -1,8 +1,14 @@
-import { proxy } from 'valtio';
+import { proxy, ref } from 'valtio';
 import { Container, Application as PIXIApplication } from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { AnimationViewport } from '../lib/SpineDisplay';
 import { SpineFiles } from '../pages/Index';
+
+export interface SyncedDirHandles {
+  jsonHandle: FileSystemFileHandle;
+  atlasHandle: FileSystemFileHandle;
+  imageHandles: FileSystemFileHandle[];
+}
 
 export interface SpineViewerState {
   refs: {
@@ -16,6 +22,8 @@ export interface SpineViewerState {
     currentViewport: AnimationViewport | null;
     previousViewport: AnimationViewport | null;
     viewportTransitionStart: number;
+    /** Raw handles (ref-wrapped to avoid proxy breaking getFile() this context) */
+    syncedDirHandles: SyncedDirHandles | null;
   };
 
   ui: {
@@ -46,6 +54,10 @@ export interface SpineViewerState {
   };
 
   files: SpineFiles | null;
+  /** When true, we poll for JSON changes and reload on change (handles in refs.syncedDirHandles) */
+  syncedDir: boolean | null;
+  /** When reloading from synced dir, preserve this animation */
+  reloadPreserveAnimation: string | null;
 }
 
 export const initialState: SpineViewerState = {
@@ -60,6 +72,7 @@ export const initialState: SpineViewerState = {
     currentViewport: null,
     previousViewport: null,
     viewportTransitionStart: 0,
+    syncedDirHandles: null,
   },
   ui: {
     isPlaying: true,
@@ -88,6 +101,8 @@ export const initialState: SpineViewerState = {
     resetCounter: 0,
   },
   files: null,
+  syncedDir: null,
+  reloadPreserveAnimation: null,
 };
 
 export const spineViewerStore = proxy<SpineViewerState>(structuredClone(initialState));
@@ -97,6 +112,8 @@ export function resetSpineViewerState(): void {
   Object.assign(spineViewerStore.refs, fresh.refs);
   Object.assign(spineViewerStore.ui, fresh.ui);
   spineViewerStore.files = fresh.files;
+  spineViewerStore.syncedDir = fresh.syncedDir;
+  spineViewerStore.reloadPreserveAnimation = fresh.reloadPreserveAnimation;
 }
 
 (window as any).spineViewerStore = spineViewerStore;

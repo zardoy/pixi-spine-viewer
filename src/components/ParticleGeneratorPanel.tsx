@@ -100,6 +100,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
   const pointerLockDragStartRef = useRef<{ x: number; y: number; timestamp: number } | null>(null);
   const DRAG_THRESHOLD = 5; // pixels
   const DRAG_TIME_THRESHOLD = 100; // ms
+  const ENABLE_POINTER_LOCK = false; // Flag to disable pointer lock movement handlers
 
   const pos = state.ui.particleGeneratorPanelPos ?? { x: 0, y: 0 };
   const draggingRef = useRef(false);
@@ -163,6 +164,11 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
     isMinMax: boolean,
     minMaxIndex?: number
   ) => {
+    // Early return if pointer lock is disabled
+    if (!ENABLE_POINTER_LOCK) {
+      return;
+    }
+
     // Don't prevent default - allow normal input focus/selection
     // Track mouse down position to detect dragging
     pointerLockDragStartRef.current = {
@@ -223,6 +229,11 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
 
   // Handle pointer lock movement and release
   useEffect(() => {
+    // Early return if pointer lock is disabled
+    if (!ENABLE_POINTER_LOCK) {
+      return;
+    }
+
     const handlePointerLockChange = () => {
       if (!document.pointerLockElement) {
         pointerLockActiveRef.current = null;

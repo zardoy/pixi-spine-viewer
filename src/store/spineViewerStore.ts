@@ -1,4 +1,4 @@
-import { proxy, ref } from 'valtio';
+import { proxy } from 'valtio';
 import { Container, Application as PIXIApplication } from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { AnimationViewport } from '../lib/SpineDisplay';
@@ -50,7 +50,11 @@ export interface SpineViewerState {
     backgroundColor: string;
     mixTime: number;
     spinePosition: { x: number; y: number };
-    autocenter: boolean;
+    /** Positioning mode: 'auto' or 'manual' */
+    positioningMode: 'auto' | 'manual';
+    /** Manual mode settings */
+    manualPosition: { x: number; y: number };
+    manualGuideSize: { width: number; height: number };
     attachmentTestPanelVisible: boolean;
     attachmentTestPanelPos: { x: number; y: number };
     selectedAttachmentSlot: string;
@@ -111,7 +115,9 @@ export const initialState: SpineViewerState = {
     backgroundColor: '#1a1625',
     mixTime: 0.25,
     spinePosition: { x: 0, y: 0 },
-    autocenter: true,
+    positioningMode: 'auto',
+    manualPosition: { x: 100, y: 100 },
+    manualGuideSize: { width: 800, height: 600 },
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },
     selectedAttachmentSlot: '',

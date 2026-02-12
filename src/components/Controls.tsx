@@ -209,17 +209,108 @@ export const Controls = ({
                 Debug bounds
               </Label>
             </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="autocenter"
-                checked={ui.autocenter}
-                onCheckedChange={(val: boolean) => { spineViewerStore.ui.autocenter = Boolean(val); }}
-              />
-              <Label htmlFor="autocenter" className="cursor-pointer text-xs">
-                Auto center
-              </Label>
+            {/* Positioning Mode */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Positioning</Label>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="positioning-auto"
+                    name="positioning"
+                    checked={ui.positioningMode === 'auto'}
+                    onChange={() => { spineViewerStore.ui.positioningMode = 'auto'; }}
+                    className="cursor-pointer"
+                  />
+                  <Label htmlFor="positioning-auto" className="cursor-pointer text-xs">
+                    Auto
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="positioning-manual"
+                    name="positioning"
+                    checked={ui.positioningMode === 'manual'}
+                    onChange={() => { spineViewerStore.ui.positioningMode = 'manual'; }}
+                    className="cursor-pointer"
+                  />
+                  <Label htmlFor="positioning-manual" className="cursor-pointer text-xs">
+                    Manual
+                  </Label>
+                </div>
+              </div>
             </div>
+
+          {/* Manual positioning controls */}
+          {ui.positioningMode === 'manual' && (
+            <div className="space-y-2 pl-4 border-l-2 border-border">
+              <div className="grid grid-cols-4 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="manual-x" className="text-xs text-muted-foreground">X</Label>
+                  <Input
+                    id="manual-x"
+                    type="number"
+                    value={ui.manualPosition.x}
+                    onChange={(e) => { spineViewerStore.ui.manualPosition.x = Number(e.target.value); }}
+                    className="h-8 text-xs w-20"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="manual-y" className="text-xs text-muted-foreground">Y</Label>
+                  <Input
+                    id="manual-y"
+                    type="number"
+                    value={ui.manualPosition.y}
+                    onChange={(e) => { spineViewerStore.ui.manualPosition.y = Number(e.target.value); }}
+                    className="h-8 text-xs w-20"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="guide-width" className="text-xs text-muted-foreground">Width</Label>
+                  <Input
+                    id="guide-width"
+                    type="number"
+                    value={ui.manualGuideSize.width}
+                    onChange={(e) => { spineViewerStore.ui.manualGuideSize.width = Number(e.target.value); }}
+                    className="h-8 text-xs w-20"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="guide-height" className="text-xs text-muted-foreground">Height</Label>
+                  <Input
+                    id="guide-height"
+                    type="number"
+                    value={ui.manualGuideSize.height}
+                    onChange={(e) => { spineViewerStore.ui.manualGuideSize.height = Number(e.target.value); }}
+                    className="h-8 text-xs w-20"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
           </div>
+
+          {/* Unload second spine button */}
+          {state.secondFiles && (
+            <div className="space-y-2">
+              <Button
+                onClick={() => {
+                  spineViewerStore.secondFiles = null;
+                  spineViewerStore.secondSpineOffset = { x: 0, y: 0, scale: 1 };
+                  spineViewerStore.secondSpineOpacity = 1;
+                  spineViewerStore.ui.secondSelectedAnimation = null;
+                  spineViewerStore.ui.secondAnimations = [];
+                }}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                <X className="w-3 h-3 mr-2" />
+                Unload Second Spine
+              </Button>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">

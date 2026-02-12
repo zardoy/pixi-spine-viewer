@@ -22,6 +22,7 @@ const PixiAppContent = () => {
   const app = useApplication();
   const state = useSnapshot(spineViewerStore);
   const containerRef = useRef<Container>(null);
+  const spinesContainerRef = useRef<Container>(null); // Shared container for both spines (scale applied here)
   const spineRef = useRef<SpineInstance | null>(null);
   const fileSpineLoaderRef = useRef<FileSpineLoader | null>(null);
   const secondFileSpineLoaderRef = useRef<FileSpineLoader | null>(null);
@@ -31,9 +32,10 @@ const PixiAppContent = () => {
   const boundsGraphicsRef = useRef<Graphics | null>(null);
   const boundsTextRef = useRef<Text | null>(null);
   const spawnBoundsGraphicsRef = useRef<Graphics | null>(null);
+  const guideGraphicsRef = useRef<Graphics | null>(null);
   const attachmentTestGraphicsRef = useRef<Graphics | null>(null);
   const wasSpineLoaded = useRef(false);
-  const lastAutocenterRef = useRef<boolean | undefined>(undefined);
+  const lastPositioningModeRef = useRef<'auto' | 'manual' | undefined>(undefined);
   const fpsCounterRef = useRef<number>(0);
   const fpsLastSecondRef = useRef<number>(performance.now());
 
@@ -225,8 +227,8 @@ const PixiAppContent = () => {
 
   // Handle spine loaded - extract animations/skins and do initial setup
   const handleSpineLoaded = (spine: SpineInstance) => {
-    // Reset if autocenter changed
-    if (lastAutocenterRef.current !== undefined && lastAutocenterRef.current !== state.ui.autocenter) {
+    // Reset if positioning mode changed
+    if (lastPositioningModeRef.current !== undefined && lastPositioningModeRef.current !== state.ui.positioningMode) {
       wasSpineLoaded.current = false;
     }
 
@@ -234,7 +236,7 @@ const PixiAppContent = () => {
       return;
     }
     wasSpineLoaded.current = true;
-    lastAutocenterRef.current = state.ui.autocenter;
+    lastPositioningModeRef.current = state.ui.positioningMode;
 
     console.log('[PixiApp] handleSpineLoaded called', {
       hasApp: !!app.app,
@@ -282,7 +284,7 @@ const PixiAppContent = () => {
         const anim = data.findAnimation?.(initialAnimation);
 
         if (anim) {
-          if (state.ui.autocenter) {
+          if (state.ui.positioningMode === 'auto') {
             // Calculate viewport for first animation
             const viewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
             spineViewerStore.refs.currentViewport = viewport;
@@ -317,11 +319,14 @@ const PixiAppContent = () => {
               };
             }
           } else {
-            // Autocenter disabled - simple positioning at x=100, y=100
+            // Manual mode - use manual position and default scale
             spineViewerStore.ui.scale = 1.0;
-            spineViewerStore.ui.spinePosition = { x: 100, y: 100 };
+            spineViewerStore.ui.spinePosition = { 
+              x: state.ui.manualPosition.x, 
+              y: state.ui.manualPosition.y 
+            };
             spineViewerStore.refs.currentViewport = null;
-            console.log('Autocenter disabled - spine positioned at (100, 100)');
+            console.log('Manual positioning mode - spine positioned at', state.ui.manualPosition);
           }
 
           console.log('[PixiApp] Setting selectedAnimation to:', initialAnimation);
@@ -401,9 +406,9 @@ const PixiAppContent = () => {
 
       // FPS is updated via ref in separate effect (see below)
 
-      // Handle smooth viewport transitions on animation change (only when autocenter is enabled)
-      if (!spineViewerStore.ui.autocenter) {
-        return; // Skip viewport logic when autocenter is disabled
+      // Handle smooth viewport transitions on animation change (only when auto mode is enabled)
+      if (spineViewerStore.ui.positioningMode !== 'auto') {
+        return; // Skip viewport logic when in manual mode
       }
 
       const currentViewport = spineViewerStore.refs.currentViewport;
@@ -487,7 +492,7 @@ const PixiAppContent = () => {
         app.app.ticker.remove(update);
       }
     };
-  }, [app.app, state.refs.spine, state.ui.autocenter]); // Watch for spine changes and autocenter
+  }, [app.app, state.refs.spine, state.ui.positioningMode]); // Watch for spine changes and positioning mode
 
   // FPS updates: use ref for frequent updates, state every second
   useEffect(() => {
@@ -553,8 +558,8 @@ const PixiAppContent = () => {
       spineViewerStore.ui.timelineDuration = anim.duration ?? 0;
       spineViewerStore.ui.timeline = 0;
 
-      // Only calculate viewport if autocenter is enabled
-      if (state.ui.autocenter) {
+      // Only calculate viewport if auto mode is enabled
+      if (state.ui.positioningMode === 'auto') {
         // Calculate viewport BEFORE setting animation (official Spine player approach)
         // This temporarily modifies the skeleton, but setAnimation will restore it
         const newViewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
@@ -574,11 +579,11 @@ const PixiAppContent = () => {
           spineViewerStore.refs.currentViewport = newViewport;
           spineViewerStore.refs.viewportTransitionStart = performance.now();
 
-          // Update position immediately (ticker will handle smooth interpolation)
+          // Update position immediately (ticker will handle smooth interpolation) - only in auto mode
           const viewportCenterX = newViewport.x + newViewport.width / 2;
           const viewportCenterY = newViewport.y + newViewport.height / 2;
           const scale = spineViewerStore.ui.scale;
-          if (app.app) {
+          if (app.app && spineViewerStore.ui.positioningMode === 'auto') {
             spineViewerStore.ui.spinePosition = {
               x: app.app.screen.width / 2 - viewportCenterX * scale,
               y: app.app.screen.height / 2 - viewportCenterY * scale,
@@ -591,7 +596,7 @@ const PixiAppContent = () => {
           // Keep current viewport, don't transition
         }
       } else {
-        // Autocenter disabled - keep simple position at (100, 100)
+        // Manual mode - don't update viewport
         spineViewerStore.refs.currentViewport = null;
         spineViewerStore.refs.previousViewport = null;
       }
@@ -606,7 +611,7 @@ const PixiAppContent = () => {
     }
     // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ui.selectedAnimation, state.ui.loop, state.ui.autocenter]);
+  }, [state.ui.selectedAnimation, state.ui.loop, state.ui.positioningMode]);
 
   // Update skin when selected skin changes - handled by SpineBase via skin prop
 
@@ -948,10 +953,20 @@ const PixiAppContent = () => {
     }
   }, [state.refs.spine]);
 
-  // Use position from store (updated in ticker for smooth transitions when autocenter is enabled)
+  // Sync manual position to spinePosition when in manual mode
+  useEffect(() => {
+    if (state.ui.positioningMode === 'manual') {
+      spineViewerStore.ui.spinePosition = { 
+        x: state.ui.manualPosition.x, 
+        y: state.ui.manualPosition.y 
+      };
+    }
+  }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y]);
+
+  // Use position from store (updated in ticker for smooth transitions when auto mode is enabled)
   const position = state.ui.spinePosition;
 
-  // Force spine recreation when autocenter changes
+  // Force spine recreation when positioning mode changes
   useEffect(() => {
     if (wasSpineLoaded.current) {
       wasSpineLoaded.current = false;
@@ -964,7 +979,7 @@ const PixiAppContent = () => {
         }
       }, 100);
     }
-  }, [state.ui.autocenter]);
+  }, [state.ui.positioningMode]);
 
   // const [count, setCount] = useState(0)
   // useEffect(() => {
@@ -982,43 +997,19 @@ const PixiAppContent = () => {
     return <pixiContainer ref={containerRef} />;
   }
 
-  // Calculate second spine position with offset
-  const secondPosition = {
-    x: position.x + state.secondSpineOffset.x,
-    y: position.y + state.secondSpineOffset.y,
-  };
-  const secondScale = state.ui.scale * state.secondSpineOffset.scale;
-
   return (
     <>
       <pixiContainer ref={containerRef}>
-        <SpineBase
-        spine={SPINE_KEY}
-        animation={state.ui.selectedAnimation}
-        loop={state.ui.loop}
-        timeScale={state.ui.speed}
-        playing={state.ui.isPlaying}
-        startPlaying={state.ui.isPlaying}
-        startPlayingNoReset={true}
-        skin={state.ui.selectedSkin}
-        mixTime={state.ui.mixTime}
-        resetCounter={state.ui.resetCounter}
-        scale={{ x: state.ui.scale, y: state.ui.scale }}
-        scaleAnimationDuration={0}
-        x={position.x}
-        y={position.y}
-        spineLoader={fileSpineLoaderRef.current}
-        spineRef={spineRef}
-        onSpineLoaded={handleSpineLoaded}
-        onCurrentAnimComplete={handleAnimationComplete}
-        attachmentsFollow={state.ui.selectedAttachmentSlot ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }] : []}
-        layout={undefined}
-        />
-        {/* Second spine - syncs all props from first spine, but can override animation */}
-        {secondFileSpineLoaderRef.current && isSecondLoaderReady && (
+        {/* Shared container for both spines - scale is applied here */}
+        <pixiContainer
+          ref={spinesContainerRef}
+          x={position.x}
+          y={position.y}
+          scale={{ x: state.ui.scale, y: state.ui.scale }}
+        >
           <SpineBase
-            spine={SECOND_SPINE_KEY}
-            animation={state.ui.secondSelectedAnimation || state.ui.selectedAnimation}
+            spine={SPINE_KEY}
+            animation={state.ui.selectedAnimation}
             loop={state.ui.loop}
             timeScale={state.ui.speed}
             playing={state.ui.isPlaying}
@@ -1027,21 +1018,63 @@ const PixiAppContent = () => {
             skin={state.ui.selectedSkin}
             mixTime={state.ui.mixTime}
             resetCounter={state.ui.resetCounter}
-            scale={{ x: secondScale, y: secondScale }}
+            scale={{ x: 1, y: 1 }}
             scaleAnimationDuration={0}
-            x={secondPosition.x}
-            y={secondPosition.y}
-            alpha={state.secondSpineOpacity}
-            spineLoader={secondFileSpineLoaderRef.current}
-            onSpineLoaded={(spine) => {
-              // Extract animations from second spine when it loads
-              const data: any = spine.skeleton.data;
-              const secondAnimations = data.animations.map((anim: any) => anim.name);
-              spineViewerStore.ui.secondAnimations = secondAnimations;
-              console.log('[PixiApp] Second spine loaded, animations:', secondAnimations);
-            }}
+            x={0}
+            y={0}
+            spineLoader={fileSpineLoaderRef.current}
+            spineRef={spineRef}
+            onSpineLoaded={handleSpineLoaded}
             onCurrentAnimComplete={handleAnimationComplete}
+            attachmentsFollow={state.ui.selectedAttachmentSlot ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }] : []}
             layout={undefined}
+          />
+          {/* Second spine - positioned with offset from first spine */}
+          {secondFileSpineLoaderRef.current && isSecondLoaderReady && (
+            <pixiContainer alpha={state.secondSpineOpacity}>
+              <SpineBase
+                spine={SECOND_SPINE_KEY}
+                animation={state.ui.secondSelectedAnimation || state.ui.selectedAnimation}
+                loop={state.ui.loop}
+                timeScale={state.ui.speed}
+                playing={state.ui.isPlaying}
+                startPlaying={state.ui.isPlaying}
+                startPlayingNoReset={true}
+                skin={state.ui.selectedSkin}
+                mixTime={state.ui.mixTime}
+                resetCounter={state.ui.resetCounter}
+                scale={{ x: state.secondSpineOffset.scale, y: state.secondSpineOffset.scale }}
+                scaleAnimationDuration={0}
+                x={state.secondSpineOffset.x}
+                y={state.secondSpineOffset.y}
+                spineLoader={secondFileSpineLoaderRef.current}
+                onSpineLoaded={(spine) => {
+                  // Extract animations from second spine when it loads
+                  const data: any = spine.skeleton.data;
+                  const secondAnimations = data.animations.map((anim: any) => anim.name);
+                  spineViewerStore.ui.secondAnimations = secondAnimations;
+                  console.log('[PixiApp] Second spine loaded, animations:', secondAnimations);
+                }}
+                onCurrentAnimComplete={handleAnimationComplete}
+                layout={undefined}
+              />
+            </pixiContainer>
+          )}
+        </pixiContainer>
+        {/* Yellow guide border for manual mode */}
+        {state.ui.positioningMode === 'manual' && (
+          <pixiGraphics
+            ref={guideGraphicsRef}
+            draw={(g) => {
+              g.clear();
+              g.lineStyle(2, 0xffff00, 1); // Yellow border
+              g.drawRect(
+                position.x,
+                position.y,
+                state.ui.manualGuideSize.width * state.ui.scale,
+                state.ui.manualGuideSize.height * state.ui.scale
+              );
+            }}
           />
         )}
       </pixiContainer>

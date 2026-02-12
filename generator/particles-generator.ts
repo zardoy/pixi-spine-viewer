@@ -58,9 +58,9 @@ function snapTime(time: number, evenTimeKeyframes: number | undefined): number {
   return Math.round(time / evenTimeKeyframes) * evenTimeKeyframes;
 }
 
-/** Build particle instances from config. When loop is true, adds pre-spawn particles (spawnTime < 0)
- * so the start isn't empty, and uses timelineDuration as the loop period for seamless wrap.
- * For seamless loops, particles that end before totalDuration wrap around to continue from start. */
+/** Build particle instances from config. When loop is true, distributes particles evenly within
+ * the loop period to ensure seamless looping - particles visible at t=0 match those at t=duration.
+ * Strategy: spawn particles across the period, and particles extending past will wrap to start. */
 export function buildParticleInstances(
   areas: GenerateArea[],
   config: GeneratorConfig,
@@ -102,13 +102,10 @@ export function buildParticleInstances(
 
       let spawnTime: number;
       if (loop) {
-        // For seamless loop: distribute spawn times to ensure particles are visible at both start and end
-        // Strategy: ensure some particles extend past period so they wrap to t=0
-        // This creates particles visible at totalDuration that match the state at t=0
-        spawnTime = rand(-period, period);
-        
-        // Ensure some particles wrap: if spawnTime is close to period, particle will extend past it
-        // This ensures we have particles wrapping from end to start
+        // For seamless loop: distribute spawn times uniformly across [0, period)
+        // Particles that would end after period will wrap around to continue from start
+        // This ensures the particle density at t=0 matches t=period (seamless loop)
+        spawnTime = rand(0, period);
       } else {
         spawnTime = rand(0, period);
       }
@@ -192,10 +189,8 @@ export function generateSpineJson(
     const t0 = inst.spawnTime;
     const t1 = inst.spawnTime + inst.duration;
     
-    // For seamless loop: particles need to wrap around
-    // If particle ends before totalDuration, it should wrap and continue from t=0
-    // If particle ends after totalDuration, it wraps at totalDuration and continues from t=0
-    const needsWrap = loop && totalDuration > 0 && t1 > 0;
+    // For seamless loop: particles that extend past totalDuration wrap to continue from start
+    const needsWrap = loop && t1 > totalDuration;
 
     const fadeStart = t0 + inst.duration * 0.7;
     const visibleStart = Math.max(0, t0);
@@ -206,79 +201,49 @@ export function generateSpineJson(
     const translateFrames: { time: number; x: number; y: number }[] = [];
     
     // Start position
-    if (t0 < 0) {
-      // Pre-spawn particle: interpolate position at t=0
-      const progress = -t0 / inst.duration;
-      const x0 = inst.startX + (inst.endX - inst.startX) * progress;
-      const y0 = inst.startY + (inst.endY - inst.startY) * progress;
-      translateFrames.push({ time: snap(0), x: x0, y: y0 });
-    } else {
-      translateFrames.push({ time: snap(t0), x: inst.startX, y: inst.startY });
-    }
+    translateFrames.push({ time: snap(t0), x: inst.startX, y: inst.startY });
     
     // End position (or wrap position for loop)
     if (needsWrap) {
-      if (t1 > totalDuration) {
-        // Particle extends past totalDuration: add wrap keyframe at totalDuration
-        const wrapProgress = (totalDuration - t0) / inst.duration;
-        const wrapX = inst.startX + (inst.endX - inst.startX) * wrapProgress;
-        const wrapY = inst.startY + (inst.endY - inst.startY) * wrapProgress;
-        translateFrames.push({ time: snap(totalDuration), x: wrapX, y: wrapY });
-        // Continue from t=0 (wrapped)
-        translateFrames.push({ time: snap(0), x: inst.startX, y: inst.startY });
-        // End position (wrapped)
-        const remainingProgress = (t1 - totalDuration) / inst.duration;
-        const endX = inst.startX + (inst.endX - inst.startX) * remainingProgress;
-        const endY = inst.startY + (inst.endY - inst.startY) * remainingProgress;
-        translateFrames.push({ time: snap(t1 - totalDuration), x: endX, y: endY });
-      } else {
-        // Particle ends before totalDuration: add end keyframe
-        translateFrames.push({ time: snap(t1), x: inst.endX, y: inst.endY });
-        // For seamless loop: at totalDuration, particle should be in same state as at t=0
-        // Since this particle ends before totalDuration, we don't add wrap keyframes here
-        // Instead, we rely on particles that wrap from end to start to fill the gap
-      }
+      // Particle extends past totalDuration: interpolate position at totalDuration, then wrap
+      const progressAtEnd = (totalDuration - t0) / inst.duration;
+      const xAtEnd = inst.startX + (inst.endX - inst.startX) * progressAtEnd;
+      const yAtEnd = inst.startY + (inst.endY - inst.startY) * progressAtEnd;
+      translateFrames.push({ time: snap(totalDuration), x: xAtEnd, y: yAtEnd });
+      
+      // Wrapped portion: calculate final position at (t1 - totalDuration)
+      const wrappedDuration = t1 - totalDuration;
+      const finalProgress = wrappedDuration / inst.duration;
+      const finalX = inst.startX + (inst.endX - inst.startX) * finalProgress;
+      const finalY = inst.startY + (inst.endY - inst.startY) * finalProgress;
+      translateFrames.push({ time: snap(wrappedDuration), x: finalX, y: finalY });
     } else {
-      // Non-loop: just add end position
-      if (t1 > 0 && t1 <= totalDuration) {
-        translateFrames.push({ time: snap(t1), x: inst.endX, y: inst.endY });
-      }
+      // Particle ends within totalDuration or non-loop: just add end position
+      const endTime = Math.min(t1, totalDuration);
+      translateFrames.push({ time: snap(endTime), x: inst.endX, y: inst.endY });
     }
 
-    const progress0 = t0 < 0 ? -t0 / inst.duration : 0;
-    const rot0 = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * progress0;
     const rotateFrames: { time: number; angle: number }[] = [];
     
     // Start rotation
-    if (visibleStart > 0) {
-      rotateFrames.push({ time: snap(visibleStart), angle: inst.rotationStart });
-    } else {
-      rotateFrames.push({ time: snap(0), angle: rot0 });
-    }
+    rotateFrames.push({ time: snap(t0), angle: inst.rotationStart });
     
     // End rotation (or wrap rotation for loop)
     if (needsWrap) {
-      if (t1 > totalDuration) {
-        // Particle extends past totalDuration: add wrap rotation at totalDuration
-        const wrapProgress = (totalDuration - t0) / inst.duration;
-        const wrapRot = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * wrapProgress;
-        rotateFrames.push({ time: snap(totalDuration), angle: wrapRot });
-        // Continue from t=0 (wrapped)
-        rotateFrames.push({ time: snap(0), angle: inst.rotationStart });
-        // End rotation (wrapped)
-        const remainingProgress = (t1 - totalDuration) / inst.duration;
-        const endRot = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * remainingProgress;
-        rotateFrames.push({ time: snap(t1 - totalDuration), angle: endRot });
-      } else {
-        // Particle ends before totalDuration: add end rotation
-        rotateFrames.push({ time: snap(t1), angle: inst.rotationEnd });
-        // For seamless loop: rotation ends here, wrap handled by particles extending past totalDuration
-      }
+      // Particle extends past totalDuration: interpolate rotation at totalDuration, then wrap
+      const progressAtEnd = (totalDuration - t0) / inst.duration;
+      const rotAtEnd = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * progressAtEnd;
+      rotateFrames.push({ time: snap(totalDuration), angle: rotAtEnd });
+      
+      // Wrapped portion: calculate final rotation at (t1 - totalDuration)
+      const wrappedDuration = t1 - totalDuration;
+      const finalProgress = wrappedDuration / inst.duration;
+      const finalRot = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * finalProgress;
+      rotateFrames.push({ time: snap(wrappedDuration), angle: finalRot });
     } else {
-      // Non-loop: just add end rotation
-      if (t1 > 0 && t1 <= totalDuration) {
-        rotateFrames.push({ time: snap(t1), angle: inst.rotationEnd });
-      }
+      // Particle ends within totalDuration or non-loop: just add end rotation
+      const endTime = Math.min(t1, totalDuration);
+      rotateFrames.push({ time: snap(endTime), angle: inst.rotationEnd });
     }
 
     animBones[boneName] = {
@@ -287,55 +252,42 @@ export function generateSpineJson(
     };
 
     const rgbaFrames: { time: number; color: string; curve?: string }[] = [];
-    rgbaFrames.push({ time: snap(visibleStart), color: 'ffa500ff', curve: 'stepped' });
-    rgbaFrames.push({ time: snap(Math.max(visibleStart, fadeStart)), color: 'ffa500ff' });
+    rgbaFrames.push({ time: snap(t0), color: 'ffa500ff', curve: 'stepped' });
+    rgbaFrames.push({ time: snap(Math.max(t0, fadeStart)), color: 'ffa500ff' });
     
     // End fade (or wrap fade for loop)
     if (needsWrap) {
-      if (t1 > totalDuration) {
-        // Particle extends past totalDuration: fade at totalDuration, then fade in at t=0 (wrap)
-        rgbaFrames.push({ time: snap(totalDuration), color: 'ffa50000' });
-        rgbaFrames.push({ time: snap(0), color: 'ffa500ff', curve: 'stepped' });
-        // Fade out at wrapped end time
-        const fadeStartWrap = (t1 - totalDuration) + inst.duration * 0.7;
-        rgbaFrames.push({ time: snap(Math.max(0, fadeStartWrap)), color: 'ffa500ff' });
-        rgbaFrames.push({ time: snap(t1 - totalDuration), color: 'ffa50000' });
-      } else {
-        // Particle ends before totalDuration: fade at end
-        rgbaFrames.push({ time: snap(t1), color: 'ffa50000' });
-        // For seamless loop: particle fades out, wrap handled by particles extending past totalDuration
-      }
+      // Particle extends past totalDuration: fade at totalDuration, then continue fading after wrap
+      rgbaFrames.push({ time: snap(totalDuration), color: 'ffa50000' });
+      
+      // Wrapped portion: fade in at start, then fade out at end
+      const wrappedDuration = t1 - totalDuration;
+      const wrappedFadeStart = wrappedDuration * 0.7;
+      rgbaFrames.push({ time: snap(0), color: 'ffa500ff', curve: 'stepped' });
+      rgbaFrames.push({ time: snap(wrappedFadeStart), color: 'ffa500ff' });
+      rgbaFrames.push({ time: snap(wrappedDuration), color: 'ffa50000' });
     } else {
-      // Non-loop: just fade out at end
-      if (t1 > 0 && t1 <= totalDuration) {
-        rgbaFrames.push({ time: snap(t1), color: 'ffa50000' });
-      }
+      // Particle ends within totalDuration or non-loop: just fade out at end
+      const endTime = Math.min(t1, totalDuration);
+      rgbaFrames.push({ time: snap(endTime), color: 'ffa50000' });
     }
 
     const attachmentFrames: { time: number; name?: string }[] = [];
-    if (visibleStart > 0) {
-      attachmentFrames.push({ time: snap(Math.max(0, visibleStart - 0.05)) });
+    if (t0 > 0) {
+      attachmentFrames.push({ time: snap(Math.max(0, t0 - 0.05)) });
     }
-    attachmentFrames.push({ time: snap(visibleStart), name: attName });
+    attachmentFrames.push({ time: snap(t0), name: attName });
     
     // End attachment (or wrap attachment for loop)
     if (needsWrap) {
-      if (t1 > totalDuration) {
-        // Particle extends past totalDuration: hide at totalDuration, show at t=0 (wrap)
-        attachmentFrames.push({ time: snap(totalDuration) });
-        attachmentFrames.push({ time: snap(0), name: attName });
-        // Hide at wrapped end time
-        attachmentFrames.push({ time: snap(t1 - totalDuration) });
-      } else {
-        // Particle ends before totalDuration: hide at end
-        attachmentFrames.push({ time: snap(t1) });
-        // For seamless loop: particle hides, wrap handled by particles extending past totalDuration
-      }
+      // Particle extends past totalDuration: hide at totalDuration, show at t=0 (wrap), hide at wrapped end
+      attachmentFrames.push({ time: snap(totalDuration) });
+      attachmentFrames.push({ time: snap(0), name: attName });
+      attachmentFrames.push({ time: snap(t1 - totalDuration) });
     } else {
-      // Non-loop: just hide at end
-      if (t1 > 0 && t1 <= totalDuration) {
-        attachmentFrames.push({ time: snap(t1) });
-      }
+      // Particle ends within totalDuration or non-loop: just hide at end
+      const endTime = Math.min(t1, totalDuration);
+      attachmentFrames.push({ time: snap(endTime) });
     }
 
     animSlots[slotName] = {

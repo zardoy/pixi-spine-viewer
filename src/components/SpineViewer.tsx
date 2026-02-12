@@ -235,7 +235,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     };
   }, [state.files]);
 
-  // Keyboard handlers for second spine offset controls
+  // Keyboard handlers for spine positioning and scaling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if Ctrl/Cmd is pressed or if typing in input
@@ -243,45 +243,76 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
-      // Only handle if second spine is loaded
-      if (!state.secondFiles) return;
-
-      const step = e.shiftKey ? 10 : 1; // Shift for larger steps
+      const step = e.altKey ? 10 : 1; // Alt for larger steps
       const scaleStep = e.shiftKey ? 0.1 : 0.01;
 
       let changed = false;
-      if (e.code === "ArrowLeft") {
-        e.preventDefault();
-        spineViewerStore.secondSpineOffset.x -= step;
-        changed = true;
-      } else if (e.code === "ArrowRight") {
-        e.preventDefault();
-        spineViewerStore.secondSpineOffset.x += step;
-        changed = true;
-      } else if (e.code === "ArrowUp") {
-        e.preventDefault();
-        spineViewerStore.secondSpineOffset.y -= step;
-        changed = true;
-      } else if (e.code === "ArrowDown") {
-        e.preventDefault();
-        spineViewerStore.secondSpineOffset.y += step;
-        changed = true;
-      } else if (e.code === "BracketLeft") { // [ key
-        e.preventDefault();
-        spineViewerStore.secondSpineOffset.scale = Math.max(0.01, spineViewerStore.secondSpineOffset.scale - scaleStep);
-        changed = true;
-      } else if (e.code === "BracketRight") { // ] key
-        e.preventDefault();
-        spineViewerStore.secondSpineOffset.scale = Math.min(10, spineViewerStore.secondSpineOffset.scale + scaleStep);
-        changed = true;
-      } else if (e.code === "Slash") { // / key
-        e.preventDefault();
-        // Toggle opacity between 1.0 and 0.5
-        spineViewerStore.secondSpineOpacity = spineViewerStore.secondSpineOpacity === 0.5 ? 1.0 : 0.5;
-        console.log(`Second spine opacity: ${spineViewerStore.secondSpineOpacity}`);
-      }
-      if (changed) {
-        console.log(`x:${spineViewerStore.secondSpineOffset.x}, y:${spineViewerStore.secondSpineOffset.y}, scale:${spineViewerStore.secondSpineOffset.scale} opacity:${spineViewerStore.secondSpineOpacity}`);
+
+      if (state.secondFiles) {
+        // Second spine is loaded - control second spine offset
+        if (e.code === "ArrowLeft") {
+          e.preventDefault();
+          spineViewerStore.secondSpineOffset.x -= step;
+          changed = true;
+        } else if (e.code === "ArrowRight") {
+          e.preventDefault();
+          spineViewerStore.secondSpineOffset.x += step;
+          changed = true;
+        } else if (e.code === "ArrowUp") {
+          e.preventDefault();
+          spineViewerStore.secondSpineOffset.y -= step;
+          changed = true;
+        } else if (e.code === "ArrowDown") {
+          e.preventDefault();
+          spineViewerStore.secondSpineOffset.y += step;
+          changed = true;
+        } else if (e.code === "BracketLeft") { // [ key
+          e.preventDefault();
+          spineViewerStore.secondSpineOffset.scale = Math.max(0.01, spineViewerStore.secondSpineOffset.scale - scaleStep);
+          changed = true;
+        } else if (e.code === "BracketRight") { // ] key
+          e.preventDefault();
+          spineViewerStore.secondSpineOffset.scale = Math.min(10, spineViewerStore.secondSpineOffset.scale + scaleStep);
+          changed = true;
+        } else if (e.code === "Slash") { // / key
+          e.preventDefault();
+          // Toggle opacity between 1.0 and 0.5
+          spineViewerStore.secondSpineOpacity = spineViewerStore.secondSpineOpacity === 0.5 ? 1.0 : 0.5;
+          console.log(`Second spine opacity: ${spineViewerStore.secondSpineOpacity}`);
+        }
+        if (changed) {
+          console.log(`[Second Spine] x:${spineViewerStore.secondSpineOffset.x}, y:${spineViewerStore.secondSpineOffset.y}, scale:${spineViewerStore.secondSpineOffset.scale}`);
+        }
+      } else {
+        // No second spine - control first spine container position/scale
+        if (e.code === "ArrowLeft") {
+          e.preventDefault();
+          spineViewerStore.ui.spinePosition.x -= step;
+          changed = true;
+        } else if (e.code === "ArrowRight") {
+          e.preventDefault();
+          spineViewerStore.ui.spinePosition.x += step;
+          changed = true;
+        } else if (e.code === "ArrowUp") {
+          e.preventDefault();
+          spineViewerStore.ui.spinePosition.y -= step;
+          changed = true;
+        } else if (e.code === "ArrowDown") {
+          e.preventDefault();
+          spineViewerStore.ui.spinePosition.y += step;
+          changed = true;
+        } else if (e.code === "BracketLeft") { // [ key
+          e.preventDefault();
+          spineViewerStore.ui.scale = Math.max(0.01, spineViewerStore.ui.scale - scaleStep);
+          changed = true;
+        } else if (e.code === "BracketRight") { // ] key
+          e.preventDefault();
+          spineViewerStore.ui.scale = Math.min(10, spineViewerStore.ui.scale + scaleStep);
+          changed = true;
+        }
+        if (changed) {
+          console.log(`[First Spine] x:${spineViewerStore.ui.spinePosition.x}, y:${spineViewerStore.ui.spinePosition.y}, scale:${spineViewerStore.ui.scale}`);
+        }
       }
     };
 

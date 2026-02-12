@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFloating, autoUpdate, offset, shift, flip } from '@floating-ui/react-dom';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { NumericField } from './NumericField';
 import type { GenerateArea, ConfigOptionMeta } from '../../generator/config';
 import { PreviewCanvas } from './PreviewCanvas';
 
@@ -11,8 +12,6 @@ interface MinMaxFieldWithPreviewProps {
   value: [number, number];
   config: GenerateArea;
   onValueChange: (value: [number, number]) => void;
-  onMinMouseDown?: (e: React.MouseEvent<HTMLInputElement>) => void;
-  onMaxMouseDown?: (e: React.MouseEvent<HTMLInputElement>) => void;
 }
 
 export function MinMaxFieldWithPreview({
@@ -20,8 +19,6 @@ export function MinMaxFieldWithPreview({
   value,
   config,
   onValueChange,
-  onMinMouseDown,
-  onMaxMouseDown,
 }: MinMaxFieldWithPreviewProps) {
   const [isHovered, setIsHovered] = useState(false);
   const { refs, floatingStyles } = useFloating({
@@ -34,48 +31,38 @@ export function MinMaxFieldWithPreview({
 
   return (
     <div className="relative">
-      <Label className="text-xs">{meta.label || meta.key}</Label>
-      {meta.description && <div className="text-[10px] text-muted-foreground mb-1">{meta.description}</div>}
       <div
         ref={refs.setReference}
         onMouseEnter={() => hasPreview && setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className="flex gap-1 relative"
+        className="relative"
       >
-        <Input
-          type="number"
-          min={meta.min}
-          max={meta.max}
-          step={meta.step}
-          value={value[0]}
-          onChange={(e) => {
-            const parsed = meta.step && meta.step < 1 
-              ? parseFloat(e.target.value) 
-              : parseInt(e.target.value);
-            const newVal = isNaN(parsed) ? value[0] : parsed;
-            onValueChange([newVal, value[1]]);
-          }}
-          onMouseDown={onMinMouseDown}
-          className="h-8 text-xs cursor-ew-resize"
-          title="Click and drag left/right to adjust min value"
-        />
-        <Input
-          type="number"
-          min={meta.min}
-          max={meta.max}
-          step={meta.step}
-          value={value[1]}
-          onChange={(e) => {
-            const parsed = meta.step && meta.step < 1 
-              ? parseFloat(e.target.value) 
-              : parseInt(e.target.value);
-            const newVal = isNaN(parsed) ? value[1] : parsed;
-            onValueChange([value[0], newVal]);
-          }}
-          onMouseDown={onMaxMouseDown}
-          className="h-8 text-xs cursor-ew-resize"
-          title="Click and drag left/right to adjust max value"
-        />
+        <Label className="text-xs">{meta.label || meta.key}</Label>
+        {meta.description && <div className="text-[10px] text-muted-foreground mb-1">{meta.description}</div>}
+        <div className="flex gap-1">
+          <NumericField
+            id={`${meta.key}-min`}
+            label="Min"
+            value={value[0]}
+            onChange={(val) => onValueChange([val, value[1]])}
+            min={meta.min}
+            max={meta.max}
+            step={meta.step}
+            sensitivity={meta.step ? meta.step * 10 : 1}
+            className="flex-1"
+          />
+          <NumericField
+            id={`${meta.key}-max`}
+            label="Max"
+            value={value[1]}
+            onChange={(val) => onValueChange([value[0], val])}
+            min={meta.min}
+            max={meta.max}
+            step={meta.step}
+            sensitivity={meta.step ? meta.step * 10 : 1}
+            className="flex-1"
+          />
+        </div>
         {hasPreview && isHovered && (
           <div
             ref={refs.setFloating}
@@ -95,8 +82,6 @@ interface ConfigFieldWithPreviewProps {
   value: number;
   config: GenerateArea;
   onValueChange: (value: number) => void;
-  onMouseDown?: (e: React.MouseEvent<HTMLInputElement>) => void;
-  title?: string;
 }
 
 export function ConfigFieldWithPreview({
@@ -104,8 +89,6 @@ export function ConfigFieldWithPreview({
   value,
   config,
   onValueChange,
-  onMouseDown,
-  title,
 }: ConfigFieldWithPreviewProps) {
   const [isHovered, setIsHovered] = useState(false);
   const { refs, floatingStyles } = useFloating({
@@ -118,29 +101,22 @@ export function ConfigFieldWithPreview({
 
   return (
     <div className="relative">
-      <Label className="text-xs">{meta.label || meta.key}</Label>
-      {meta.description && <div className="text-[10px] text-muted-foreground mb-1">{meta.description}</div>}
       <div
         ref={refs.setReference}
         onMouseEnter={() => hasPreview && setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className="relative"
       >
-        <Input
-          type="number"
+        <NumericField
+          id={meta.key}
+          label={meta.label || meta.key}
+          value={value}
+          onChange={onValueChange}
           min={meta.min}
           max={meta.max}
           step={meta.step}
-          value={value}
-          onChange={(e) => {
-            const parsed = meta.step && meta.step < 1 
-              ? parseFloat(e.target.value) 
-              : parseInt(e.target.value);
-            onValueChange(isNaN(parsed) ? (meta.default ?? 0) : parsed);
-          }}
-          onMouseDown={onMouseDown}
-          className="h-8 text-xs cursor-ew-resize"
-          title={title || "Click and drag left/right to adjust value"}
+          description={meta.description}
+          sensitivity={meta.step ? meta.step * 10 : 1}
         />
         {hasPreview && isHovered && (
           <div

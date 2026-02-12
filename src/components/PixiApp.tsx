@@ -321,9 +321,9 @@ const PixiAppContent = () => {
           } else {
             // Manual mode - use manual position and default scale
             spineViewerStore.ui.scale = 1.0;
-            spineViewerStore.ui.spinePosition = { 
-              x: state.ui.manualPosition.x, 
-              y: state.ui.manualPosition.y 
+            spineViewerStore.ui.spinePosition = {
+              x: state.ui.manualPosition.x,
+              y: state.ui.manualPosition.y
             };
             spineViewerStore.refs.currentViewport = null;
             console.log('Manual positioning mode - spine positioned at', state.ui.manualPosition);
@@ -394,7 +394,7 @@ const PixiAppContent = () => {
     const update = () => {
       const spine = spineViewerStore.refs.spine;
       if (!spine || !app.app) return;
-      
+
       // Skip if spine is destroyed
       if ((spine as any).destroyed) return;
 
@@ -500,15 +500,15 @@ const PixiAppContent = () => {
 
     const updateFps = () => {
       if (!app.app?.ticker) return;
-      
+
       const currentFps = app.app.ticker.FPS ?? 0;
-      
+
       // Update ref for frequent DOM updates (no React re-render)
       const fpsElement = (window as any).__fpsRef;
       if (fpsElement) {
         fpsElement.textContent = currentFps.toFixed(1);
       }
-      
+
       // Count frames for UI state update (every second)
       fpsCounterRef.current++;
       const now = performance.now();
@@ -532,7 +532,7 @@ const PixiAppContent = () => {
   useEffect(() => {
     const spine = spineViewerStore.refs.spine;
     if (!spine || !state.ui.selectedAnimation || !app.app) return;
-    
+
     // Skip if spine is destroyed
     if ((spine as any).destroyed) return;
 
@@ -637,10 +637,10 @@ const PixiAppContent = () => {
   useEffect(() => {
     const spine = spineViewerStore.refs.spine;
     if (!spine) return;
-    
+
     // Skip if spine is destroyed
     if ((spine as any).destroyed) return;
-    
+
     let cancelled = false;
 
     (async () => {
@@ -727,7 +727,7 @@ const PixiAppContent = () => {
       const text = boundsTextRef.current;
 
       if (!spine || !graphics || !text || !containerRef.current) return;
-      
+
       // Skip if spine is destroyed
       if ((spine as any).destroyed) {
         graphics.clear();
@@ -902,7 +902,7 @@ const PixiAppContent = () => {
     if (showPanel && spine) {
       // Skip if spine is destroyed
       if ((spine as any).destroyed) return;
-      
+
       const container = spine.parent;
       if (container && !attachmentTestGraphicsRef.current) {
         const graphics = new Graphics();
@@ -956,9 +956,9 @@ const PixiAppContent = () => {
   // Sync manual position to spinePosition when in manual mode
   useEffect(() => {
     if (state.ui.positioningMode === 'manual') {
-      spineViewerStore.ui.spinePosition = { 
-        x: state.ui.manualPosition.x, 
-        y: state.ui.manualPosition.y 
+      spineViewerStore.ui.spinePosition = {
+        x: state.ui.manualPosition.x,
+        y: state.ui.manualPosition.y
       };
     }
   }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y]);
@@ -1008,6 +1008,7 @@ const PixiAppContent = () => {
           scale={{ x: state.ui.scale, y: state.ui.scale }}
         >
           <SpineBase
+            key={`spine-${state.ui.mountCount}`}
             spine={SPINE_KEY}
             animation={state.ui.selectedAnimation}
             loop={state.ui.loop}
@@ -1033,6 +1034,7 @@ const PixiAppContent = () => {
           {secondFileSpineLoaderRef.current && isSecondLoaderReady && (
             <pixiContainer alpha={state.secondSpineOpacity}>
               <SpineBase
+                key={`spine-2-${state.ui.mountCount}`}
                 spine={SECOND_SPINE_KEY}
                 animation={state.ui.secondSelectedAnimation || state.ui.selectedAnimation}
                 loop={state.ui.loop}
@@ -1067,13 +1069,13 @@ const PixiAppContent = () => {
             ref={guideGraphicsRef}
             draw={(g) => {
               g.clear();
-              g.lineStyle(2, 0xffff00, 1); // Yellow border
-              g.drawRect(
+              g.rect(
                 position.x,
                 position.y,
                 state.ui.manualGuideSize.width * state.ui.scale,
                 state.ui.manualGuideSize.height * state.ui.scale
               );
+              g.stroke({ color: 0xffff00, width: 2 });
             }}
           />
         )}

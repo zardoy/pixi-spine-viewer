@@ -60,6 +60,7 @@ export interface SpineViewerState {
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
     resetCounter: number;
+    mountCount: number;
     particleGeneratorPanelVisible: boolean;
     particleGeneratorPanelPos: { x: number; y: number } | null;
     showSpawnBounds: boolean;
@@ -123,6 +124,7 @@ export const initialState: SpineViewerState = {
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
     resetCounter: 0,
+    mountCount: 0,
     particleGeneratorPanelVisible: false,
     particleGeneratorPanelPos: null,
     showSpawnBounds: false,

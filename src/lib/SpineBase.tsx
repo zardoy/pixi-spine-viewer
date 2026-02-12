@@ -10,8 +10,12 @@ import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/s
 import gsap from 'gsap'
 
 interface SpineLoader {
-  loadSpine: (spineKey: string) => Promise<void>
-  createSpine: (spineKey: string, options: any) => SpineInstance
+  createSpine: (spineKey: string, options: any) => {
+    spine: SpineInstance
+    x?: number
+    y?: number
+    scale?: number
+  }
   /** Optional: return texture sources for GPU preload. When provided, SpineBase will call
    * app.prepare.upload(sources) before onSpineLoaded so textures are visible on first frame. */
   getTextureSourcesForPreload?: (spineKey: string) => TextureSource[] | undefined
@@ -236,6 +240,13 @@ export const SpineBase = (props: SpineProps) => {
   const prevResetCounterRef = useRef<number>(resetCounter ?? 0)
   const mixAnimationFrameRef = useRef<number | null>(null)
 
+  // Debug tracking refs
+  const mountTimeRef = useRef<string>('')
+  const allAnimationsStartCountRef = useRef<number>(0)
+  const currentAnimationStartCountRef = useRef<number>(0)
+  const currentAnimationNameRef = useRef<string | null>(null)
+  const setAnimationCallCountRef = useRef<number>(0)
+
   // Subscribe to global spine overrides
   const spineOverrides = useSnapshot(globalSpineOverrides).overrides[spineKey]
 
@@ -295,9 +306,34 @@ export const SpineBase = (props: SpineProps) => {
     }
   }, [spineKey, refProp, itemRef])
 
+  // Track animation starts for debug
+  const trackAnimationStart = (animName: string) => {
+    if (!debugKey) return
+
+    allAnimationsStartCountRef.current++
+
+    // Reset current animation count if animation changed
+    if (currentAnimationNameRef.current !== animName) {
+      currentAnimationNameRef.current = animName
+      currentAnimationStartCountRef.current = 0
+    }
+
+    currentAnimationStartCountRef.current++
+  }
+
+  // Helper to track setAnimation calls
+  const trackedSetAnimation = (spine: SpineInstance, trackIndex: number, animationName: string, loop: boolean) => {
+    setAnimationCallCountRef.current++
+    spine.state.setAnimation(trackIndex, animationName, loop)
+  }
+
   // Expose ref + live state on globalThis.spineDebug[debugKey] via getters (no extra state)
   useEffect(() => {
     if (!debugKey) return
+
+    // Set mount time
+    mountTimeRef.current = new Date().toISOString()
+
     const global = globalThis as any
     if (!global.spineDebug) {
       global.spineDebug = {}
@@ -326,6 +362,23 @@ export const SpineBase = (props: SpineProps) => {
         const applied = (s?.skeleton as { skin?: { name?: string } } | undefined)?.skin?.name
         return applied ?? skin ?? null
       },
+      get mountTime() {
+        return mountTimeRef.current
+      },
+      get setAnimationCallCount() {
+        return setAnimationCallCountRef.current
+      },
+      get debugString() {
+        const s = spineRef.current
+        const track = s?.state?.tracks?.[0]
+        const animName = (track as { animation?: { name?: string } } | undefined)?.animation?.name ?? 'none'
+        const appliedSkin = (s?.skeleton as { skin?: { name?: string } } | undefined)?.skin?.name
+        const skinName = appliedSkin ?? skin ?? 'default'
+        const ts = s?.state?.timeScale ?? 0
+        const timeScaleStr = ts === 0 ? '0' : ts.toString()
+
+        return `[${allAnimationsStartCountRef.current}/${currentAnimationStartCountRef.current}] [a:${animName}] [s:${skinName}] (${timeScaleStr}) [setAnim:${setAnimationCallCountRef.current}]`
+      },
     }
     return () => {
       const d = global.spineDebug
@@ -345,11 +398,18 @@ export const SpineBase = (props: SpineProps) => {
 
         // Create a new Spine instance from the cached skeleton data
         // This ensures each component gets its own independent instance
-        const spine = spineLoader.createSpine(spineKey, {
+        const { spine, x: spineX = 0, y: spineY = 0, scale: spineScale = 0 } = spineLoader.createSpine(spineKey, {
           ...(xBounds && yBounds && widthBounds && heightBounds ? {
             boundsProvider: new AABBRectangleBoundsProvider(xBounds, yBounds, widthBounds, heightBounds),
           } : {}),
         })
+
+        // Apply x, y, and scale from createSpine to the spine instance itself
+        spine.x = spineX
+        spine.y = spineY
+        if (spineScale !== 0) {
+          spine.scale.set(spineScale, spineScale)
+        }
 
         // Preload textures to GPU before adding to stage. PIXI uploads textures lazily on first
         // render; without this, the first frame shows no textures. prepare.upload() resolves when
@@ -364,7 +424,6 @@ export const SpineBase = (props: SpineProps) => {
         if (destroyed) return
 
         // Add spine to container
-        ref.current.addChild(spine)
         spineRef.current = spine
 
         // Sync spineRef prop immediately
@@ -377,13 +436,15 @@ export const SpineBase = (props: SpineProps) => {
           try {
             // Set animation if provided, otherwise use first available
             if (animation) {
-              spine.state.setAnimation(0, animation, loop)
+              trackedSetAnimation(spine, 0, animation, loop)
+              trackAnimationStart(animation)
             } else {
               // Get first animation name from skeleton data
               const animations = spine.skeleton.data.animations
               if (animations && animations.length > 0) {
                 const firstAnim = animations[0].name
-                spine.state.setAnimation(0, firstAnim, loop)
+                trackedSetAnimation(spine, 0, firstAnim, loop)
+                trackAnimationStart(firstAnim)
               } else {
                 console.warn('[SpineBase] No animations available in skeleton data')
               }
@@ -477,6 +538,31 @@ export const SpineBase = (props: SpineProps) => {
         spine.state.addListener(listener)
 
 
+        ref.current.addChild(spine)
+
+        // Explicitly update spine state and skeleton to ensure first frame is rendered correctly
+        // This is especially important when there are multiple images in the atlas or when
+        // attachments need to be validated and transformed
+        if (spine.state.tracks.length > 0) {
+          // Update state (advances time, processes events)
+          spine.state.update(0)
+          // Apply state to skeleton (updates bone transforms, slot attachments)
+          spine.state.apply(spine.skeleton)
+          // Update skeleton (updates bone world transforms)
+          spine.skeleton.update(0)
+          // Update world transforms (finalizes bone positions)
+          spine.skeleton.updateWorldTransform(Physics.update)
+          // Validate and transform attachments (ensures attachments are correctly positioned)
+          spine._validateAndTransformAttachments()
+        }
+
+        // await new Promise<void>(resolve => {
+        //   requestAnimationFrame(() => {
+        //   requestAnimationFrame(() => {
+        //     resolve()
+        //   })
+        //   })
+        // })
         // Call onSpineLoaded callback
         if (onSpineLoaded) {
           onSpineLoaded(spine)
@@ -555,7 +641,8 @@ export const SpineBase = (props: SpineProps) => {
         loopTimeoutRef.current = null
       }
       try {
-        spineRef.current.state.setAnimation(0, animToUse, loop)
+        trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+        trackAnimationStart(animToUse)
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
       }
@@ -567,7 +654,8 @@ export const SpineBase = (props: SpineProps) => {
       const currentLoop = track?.loop ?? false
       if (currentLoop !== loop) {
         try {
-          spineRef.current.state.setAnimation(0, animToUse, loop)
+          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+          trackAnimationStart(animToUse)
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
@@ -653,7 +741,8 @@ export const SpineBase = (props: SpineProps) => {
 
     // Set the animation (this starts the mix transition)
     try {
-      spine.state.setAnimation(0, animToUse, loop)
+      trackedSetAnimation(spine, 0, animToUse, loop)
+      trackAnimationStart(animToUse)
     } catch (error) {
       throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
     }
@@ -735,7 +824,8 @@ export const SpineBase = (props: SpineProps) => {
       const animToUse = getAnimToUse(animation, spineRef.current)
       if (animToUse && (!track || track.getAnimationTime() === track.animationEnd || track.getAnimationTime() === 0 || !startPlayingNoReset)) {
         try {
-          spineRef.current.state.setAnimation(0, animToUse, loop)
+          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+          trackAnimationStart(animToUse)
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }

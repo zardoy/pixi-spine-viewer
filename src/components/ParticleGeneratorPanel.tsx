@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { NumericField } from './NumericField';
 import type { GenerateArea, GeneratorConfig, ConfigOptionMeta } from '../../generator/config';
 import { DEFAULT_CONFIG, CONFIG_OPTIONS_META } from '../../generator/config';
 import { buildParticleInstances, generateSpineJson, generateAtlas } from '../../generator/particles-generator';
@@ -95,13 +96,6 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
   const [gradientFadeSpeed, setGradientFadeSpeed] = useState(0.5); // 0 = slow/soft, 1 = fast/sharp
   const [evenTimeKeyframes, setEvenTimeKeyframes] = useState<number>(0); // 0 = disabled
   const generateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pointerLockActiveRef = useRef<string | null>(null);
-  const pointerLockValueRef = useRef<{ key: string; startValue: number; sensitivity: number; minMaxIndex?: number } | null>(null);
-  const pointerLockDragStartRef = useRef<{ x: number; y: number; timestamp: number } | null>(null);
-  const DRAG_THRESHOLD = 5; // pixels
-  const DRAG_TIME_THRESHOLD = 100; // ms
-  const ENABLE_POINTER_LOCK = false; // Flag to disable pointer lock movement handlers
-
   const pos = state.ui.particleGeneratorPanelPos ?? { x: 0, y: 0 };
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -156,145 +150,6 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
     window.removeEventListener('pointerup', handleMouseUp);
   };
 
-  // Pointer lock for numeric field dragging
-  const handleNumericFieldMouseDown = useCallback((
-    e: React.MouseEvent<HTMLInputElement>,
-    meta: ConfigOptionMeta,
-    currentValue: number,
-    isMinMax: boolean,
-    minMaxIndex?: number
-  ) => {
-    // Early return if pointer lock is disabled
-    if (!ENABLE_POINTER_LOCK) {
-      return;
-    }
-
-    // Don't prevent default - allow normal input focus/selection
-    // Track mouse down position to detect dragging
-    pointerLockDragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      timestamp: Date.now(),
-    };
-    
-    const input = e.currentTarget;
-    const sensitivity = meta.step ? meta.step * 10 : 1;
-    
-    // Store initial state for potential pointer lock
-    pointerLockValueRef.current = {
-      key: meta.key,
-      startValue: currentValue,
-      sensitivity,
-    };
-    
-    if (isMinMax && minMaxIndex !== undefined) {
-      const arrValue = getConfigValue(meta.key) as [number, number];
-      pointerLockValueRef.current.startValue = arrValue[minMaxIndex];
-      pointerLockValueRef.current.minMaxIndex = minMaxIndex;
-    }
-    
-    // Handle mouse move to detect drag
-    const handleMouseMoveForDrag = (moveEvent: MouseEvent) => {
-      if (!pointerLockDragStartRef.current) return;
-      
-      const dx = Math.abs(moveEvent.clientX - pointerLockDragStartRef.current.x);
-      const dy = Math.abs(moveEvent.clientY - pointerLockDragStartRef.current.y);
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const timeElapsed = Date.now() - pointerLockDragStartRef.current.timestamp;
-      
-      // If mouse moved enough, request pointer lock
-      if (distance > DRAG_THRESHOLD || timeElapsed > DRAG_TIME_THRESHOLD) {
-        const inputEl = input as any;
-        if (inputEl.requestPointerLock && !document.pointerLockElement) {
-          inputEl.requestPointerLock().then(() => {
-            pointerLockActiveRef.current = meta.key;
-          }).catch((err: any) => {
-            console.error('Pointer lock failed:', err);
-          });
-        }
-        window.removeEventListener('mousemove', handleMouseMoveForDrag);
-        window.removeEventListener('mouseup', handleMouseUpForDrag);
-      }
-    };
-    
-    const handleMouseUpForDrag = () => {
-      pointerLockDragStartRef.current = null;
-      window.removeEventListener('mousemove', handleMouseMoveForDrag);
-      window.removeEventListener('mouseup', handleMouseUpForDrag);
-    };
-    
-    window.addEventListener('mousemove', handleMouseMoveForDrag);
-    window.addEventListener('mouseup', handleMouseUpForDrag);
-  }, [getConfigValue]);
-
-  // Handle pointer lock movement and release
-  useEffect(() => {
-    // Early return if pointer lock is disabled
-    if (!ENABLE_POINTER_LOCK) {
-      return;
-    }
-
-    const handlePointerLockChange = () => {
-      if (!document.pointerLockElement) {
-        pointerLockActiveRef.current = null;
-        pointerLockValueRef.current = null;
-        pointerLockDragStartRef.current = null;
-      }
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!pointerLockValueRef.current || !pointerLockActiveRef.current) return;
-      if (!document.pointerLockElement) return;
-      
-      const { key, startValue, sensitivity, minMaxIndex } = pointerLockValueRef.current;
-      const meta = AREA_CONFIG_META.find(m => m.key === key);
-      if (!meta) return;
-
-      const delta = e.movementX * sensitivity;
-      const newValue = Math.max(
-        meta.min ?? -Infinity,
-        Math.min(meta.max ?? Infinity, startValue + delta)
-      );
-
-      if (key === 'spawnAreaX' || key === 'spawnAreaY') {
-        const arrValue = getConfigValue(key) as [number, number];
-        const index = key === 'spawnAreaX' ? 0 : 1;
-        const newArr = [...arrValue] as [number, number];
-        newArr[index] = newValue;
-        setConfigValue(key, newArr);
-        pointerLockValueRef.current.startValue = newValue;
-      } else if (meta.type === 'minMax') {
-        const arrValue = getConfigValue(key) as [number, number];
-        const index = minMaxIndex ?? 0;
-        const newArr = [...arrValue] as [number, number];
-        newArr[index] = newValue;
-        setConfigValue(key, newArr);
-        pointerLockValueRef.current.startValue = newValue;
-      } else {
-        setConfigValue(key, newValue);
-        pointerLockValueRef.current.startValue = newValue;
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (document.pointerLockElement) {
-        document.exitPointerLock();
-      }
-    };
-
-    document.addEventListener('pointerlockchange', handlePointerLockChange);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('pointerlockchange', handlePointerLockChange);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      if (document.pointerLockElement) {
-        document.exitPointerLock();
-      }
-    };
-  }, [config, getConfigValue, setConfigValue]); // Include config and helpers to access latest values
 
   const generateParticles = useCallback(async () => {
     try {
@@ -412,8 +267,6 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
             value={numValue}
             config={config}
             onValueChange={(val) => setConfigValue(meta.key, val)}
-            onMouseDown={(e) => handleNumericFieldMouseDown(e, meta, numValue, false)}
-            title="Click and drag left/right to adjust value"
           />
         );
       }
@@ -455,8 +308,6 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
             value={arrValue as [number, number]}
             config={config}
             onValueChange={(val) => setConfigValue(meta.key, val)}
-            onMinMouseDown={(e) => handleNumericFieldMouseDown(e, meta, arrValue[0], true, 0)}
-            onMaxMouseDown={(e) => handleNumericFieldMouseDown(e, meta, arrValue[1], true, 1)}
           />
         );
       }
@@ -557,40 +408,26 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
         })}
 
         {/* Gradient Fade Speed Control */}
-        <div>
-          <Label className="text-xs">Gradient Fade Speed</Label>
-          <div className="text-[10px] text-muted-foreground mb-1">0 = slow/soft, 1 = fast/sharp</div>
-          <Input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            value={gradientFadeSpeed}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              setGradientFadeSpeed(isNaN(val) ? 0.5 : Math.max(0, Math.min(1, val)));
-            }}
-            className="h-8 text-xs"
-          />
-        </div>
+        <NumericField
+          label="Gradient Fade Speed"
+          value={gradientFadeSpeed}
+          onChange={(val) => setGradientFadeSpeed(Math.max(0, Math.min(1, val)))}
+          min={0}
+          max={1}
+          step={0.01}
+          description="0 = slow/soft, 1 = fast/sharp"
+        />
 
         {/* Even Time Keyframes Control */}
-        <div>
-          <Label className="text-xs">Even Time Keyframes (seconds)</Label>
-          <div className="text-[10px] text-muted-foreground mb-1">Snap keyframes to grid (0 = disabled)</div>
-          <Input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            value={evenTimeKeyframes}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              setEvenTimeKeyframes(isNaN(val) ? 0 : Math.max(0, Math.min(1, val)));
-            }}
-            className="h-8 text-xs"
-          />
-        </div>
+        <NumericField
+          label="Even Time Keyframes (seconds)"
+          value={evenTimeKeyframes}
+          onChange={(val) => setEvenTimeKeyframes(Math.max(0, Math.min(1, val)))}
+          min={0}
+          max={1}
+          step={0.01}
+          description="Snap keyframes to grid (0 = disabled)"
+        />
 
         <div className="flex items-center gap-2">
           <Checkbox

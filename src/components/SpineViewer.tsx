@@ -75,7 +75,13 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       }
       if (e.code === "KeyR") {
         e.preventDefault();
-        onBack();
+        if (e.shiftKey) {
+          // Shift+R: Remount SpineBase components
+          spineViewerStore.ui.mountCount = (spineViewerStore.ui.mountCount || 0) + 1;
+        } else {
+          // R (without shift): Go back
+          onBack();
+        }
       } else if (e.code === "KeyT") {
         e.preventDefault();
         spineViewerStore.ui.debugBones = !spineViewerStore.ui.debugBones;

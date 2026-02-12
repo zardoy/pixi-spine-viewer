@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Card } from "./ui/card";
+import { NumericField } from "./NumericField";
 import {
   Select,
   SelectContent,
@@ -246,46 +247,38 @@ export const Controls = ({
           {ui.positioningMode === 'manual' && (
             <div className="space-y-2 pl-4 border-l-2 border-border">
               <div className="grid grid-cols-4 gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="manual-x" className="text-xs text-muted-foreground">X</Label>
-                  <Input
-                    id="manual-x"
-                    type="number"
-                    value={ui.manualPosition.x}
-                    onChange={(e) => { spineViewerStore.ui.manualPosition.x = Number(e.target.value); }}
-                    className="h-8 text-xs w-20"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="manual-y" className="text-xs text-muted-foreground">Y</Label>
-                  <Input
-                    id="manual-y"
-                    type="number"
-                    value={ui.manualPosition.y}
-                    onChange={(e) => { spineViewerStore.ui.manualPosition.y = Number(e.target.value); }}
-                    className="h-8 text-xs w-20"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="guide-width" className="text-xs text-muted-foreground">Width</Label>
-                  <Input
-                    id="guide-width"
-                    type="number"
-                    value={ui.manualGuideSize.width}
-                    onChange={(e) => { spineViewerStore.ui.manualGuideSize.width = Number(e.target.value); }}
-                    className="h-8 text-xs w-20"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="guide-height" className="text-xs text-muted-foreground">Height</Label>
-                  <Input
-                    id="guide-height"
-                    type="number"
-                    value={ui.manualGuideSize.height}
-                    onChange={(e) => { spineViewerStore.ui.manualGuideSize.height = Number(e.target.value); }}
-                    className="h-8 text-xs w-20"
-                  />
-                </div>
+                <NumericField
+                  id="manual-x"
+                  label="X"
+                  value={ui.manualPosition.x}
+                  onChange={(val) => { spineViewerStore.ui.manualPosition.x = val; }}
+                  className="space-y-1"
+                  inputClassName="w-20"
+                />
+                <NumericField
+                  id="manual-y"
+                  label="Y"
+                  value={ui.manualPosition.y}
+                  onChange={(val) => { spineViewerStore.ui.manualPosition.y = val; }}
+                  className="space-y-1"
+                  inputClassName="w-20"
+                />
+                <NumericField
+                  id="guide-width"
+                  label="Width"
+                  value={ui.manualGuideSize.width}
+                  onChange={(val) => { spineViewerStore.ui.manualGuideSize.width = val; }}
+                  className="space-y-1"
+                  inputClassName="w-20"
+                />
+                <NumericField
+                  id="guide-height"
+                  label="Height"
+                  value={ui.manualGuideSize.height}
+                  onChange={(val) => { spineViewerStore.ui.manualGuideSize.height = val; }}
+                  className="space-y-1"
+                  inputClassName="w-20"
+                />
               </div>
             </div>
           )}

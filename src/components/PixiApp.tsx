@@ -13,6 +13,7 @@ import { FileSpineLoader } from "../lib/FileSpineLoader";
 import { Spine as SpineInstance } from "@esotericsoftware/spine-pixi-v8";
 
 const SPINE_KEY = 'viewer-spine'; // Single key for the viewer
+const SECOND_SPINE_KEY = 'viewer-spine-2'; // Key for second spine
 
 const PixiAppContent = () => {
   // useExtend must be used within Application context
@@ -23,7 +24,9 @@ const PixiAppContent = () => {
   const containerRef = useRef<Container>(null);
   const spineRef = useRef<SpineInstance | null>(null);
   const fileSpineLoaderRef = useRef<FileSpineLoader | null>(null);
+  const secondFileSpineLoaderRef = useRef<FileSpineLoader | null>(null);
   const [isLoaderReady, setIsLoaderReady] = useState(false);
+  const [isSecondLoaderReady, setIsSecondLoaderReady] = useState(false);
   const viewportTransitionTime = 0.25;
   const boundsGraphicsRef = useRef<Graphics | null>(null);
   const boundsTextRef = useRef<Text | null>(null);
@@ -56,6 +59,15 @@ const PixiAppContent = () => {
       fileSpineLoaderRef.current = null;
     }
   }, [state.files, isLoaderReady]);
+
+  // Reset second loader when secondFiles become null
+  useEffect(() => {
+    if (!state.secondFiles && isSecondLoaderReady) {
+      console.log('[PixiApp] Second files cleared, resetting second loader');
+      setIsSecondLoaderReady(false);
+      secondFileSpineLoaderRef.current = null;
+    }
+  }, [state.secondFiles, isSecondLoaderReady]);
 
   // Initialize file loader and load files (re-runs when files change, e.g. synced dir reload)
   useEffect(() => {
@@ -108,6 +120,62 @@ const PixiAppContent = () => {
 
     void initLoader();
   }, [state.files]);
+
+  // Initialize second file loader and load second files
+  useEffect(() => {
+    if (!state.secondFiles) return;
+
+    setIsSecondLoaderReady(false);
+
+    const initSecondLoader = async () => {
+      try {
+        console.log('[PixiApp] Starting second loader initialization...');
+        const files = spineViewerStore.secondFiles!;
+
+        // Read atlas and skeleton file (JSON or binary .skel)
+        console.log('[PixiApp] Reading second files...');
+        const atlasText = await files.atlasFile.text();
+
+        // Detect if skeleton file is binary (.skel) or JSON
+        const isSkelFile = files.jsonFile.name.toLowerCase().endsWith('.skel');
+        let skeletonData: string | ArrayBuffer;
+
+        if (isSkelFile) {
+          skeletonData = await files.jsonFile.arrayBuffer();
+          console.log('[PixiApp] Detected .skel binary file for second spine');
+        } else {
+          skeletonData = await files.jsonFile.text();
+          console.log('[PixiApp] Detected .json text file for second spine');
+        }
+
+        // Create file-based spine loader for second spine
+        console.log('[PixiApp] Creating second FileSpineLoader...');
+        const loader = new FileSpineLoader(skeletonData, atlasText, files.imageFiles);
+        secondFileSpineLoaderRef.current = loader;
+
+        // Load skeleton data
+        console.log('[PixiApp] Loading second skeleton data...');
+        await loader.loadSpine(SECOND_SPINE_KEY);
+        console.log('[PixiApp] Second skeleton data loaded, setting isSecondLoaderReady to true');
+
+        // Extract animations from second spine
+        const secondSkeletonData = loader.getSkeletonData(SECOND_SPINE_KEY);
+        if (secondSkeletonData) {
+          const secondAnimations = secondSkeletonData.animations.map((anim: any) => anim.name);
+          spineViewerStore.ui.secondAnimations = secondAnimations;
+          console.log('[PixiApp] Second spine animations:', secondAnimations);
+        }
+
+        setIsSecondLoaderReady(true);
+        console.log('[PixiApp] Second loader initialization complete');
+      } catch (error) {
+        console.error('[PixiApp] Error initializing second spine loader:', error);
+        toast.error('Failed to load second Spine files: ' + (error as Error).message);
+      }
+    };
+
+    void initSecondLoader();
+  }, [state.secondFiles]);
 
   // Poll for JSON changes when synced directory is open
   useEffect(() => {
@@ -914,12 +982,17 @@ const PixiAppContent = () => {
     return <pixiContainer ref={containerRef} />;
   }
 
+  // Calculate second spine position with offset
+  const secondPosition = {
+    x: position.x + state.secondSpineOffset.x,
+    y: position.y + state.secondSpineOffset.y,
+  };
+  const secondScale = state.ui.scale * state.secondSpineOffset.scale;
+
   return (
     <>
       <pixiContainer ref={containerRef}>
         <SpineBase
-      // key={count}
-
         spine={SPINE_KEY}
         animation={state.ui.selectedAnimation}
         loop={state.ui.loop}
@@ -941,6 +1014,36 @@ const PixiAppContent = () => {
         attachmentsFollow={state.ui.selectedAttachmentSlot ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }] : []}
         layout={undefined}
         />
+        {/* Second spine - syncs all props from first spine, but can override animation */}
+        {secondFileSpineLoaderRef.current && isSecondLoaderReady && (
+          <SpineBase
+            spine={SECOND_SPINE_KEY}
+            animation={state.ui.secondSelectedAnimation || state.ui.selectedAnimation}
+            loop={state.ui.loop}
+            timeScale={state.ui.speed}
+            playing={state.ui.isPlaying}
+            startPlaying={state.ui.isPlaying}
+            startPlayingNoReset={true}
+            skin={state.ui.selectedSkin}
+            mixTime={state.ui.mixTime}
+            resetCounter={state.ui.resetCounter}
+            scale={{ x: secondScale, y: secondScale }}
+            scaleAnimationDuration={0}
+            x={secondPosition.x}
+            y={secondPosition.y}
+            alpha={state.secondSpineOpacity}
+            spineLoader={secondFileSpineLoaderRef.current}
+            onSpineLoaded={(spine) => {
+              // Extract animations from second spine when it loads
+              const data: any = spine.skeleton.data;
+              const secondAnimations = data.animations.map((anim: any) => anim.name);
+              spineViewerStore.ui.secondAnimations = secondAnimations;
+              console.log('[PixiApp] Second spine loaded, animations:', secondAnimations);
+            }}
+            onCurrentAnimComplete={handleAnimationComplete}
+            layout={undefined}
+          />
+        )}
       </pixiContainer>
     </>
   );

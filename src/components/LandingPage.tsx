@@ -99,6 +99,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     toast.success(`Loaded: ${skeletonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
     spineViewerStore.syncedDir = null;
     spineViewerStore.refs.syncedDirHandles = null;
+    spineViewerStore.ui.particleGeneratorPanelVisible = false;
     onFilesSelect({
       jsonFile: skeletonFile, // Keep the prop name as jsonFile for compatibility
       atlasFile,
@@ -199,6 +200,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         imageHandles,
       });
       spineViewerStore.reloadPreserveAnimation = null;
+      spineViewerStore.ui.particleGeneratorPanelVisible = false;
 
       onFilesSelect({
         jsonFile,
@@ -255,6 +257,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
         toast.success(`Downloaded: ${files.jsonFile.name}, ${files.atlasFile.name}, and ${files.imageFiles.length} image(s)`);
         spineViewerStore.syncedDir = null;
         spineViewerStore.refs.syncedDirHandles = null;
+        spineViewerStore.ui.particleGeneratorPanelVisible = false;
         onFilesSelect(files);
       } catch (error) {
         toast.dismiss();
@@ -307,6 +310,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               toast.success(`Loaded ${firstExample.name}`);
               spineViewerStore.syncedDir = null;
               spineViewerStore.refs.syncedDirHandles = null;
+              spineViewerStore.ui.particleGeneratorPanelVisible = false;
               onFilesSelect(files);
             })
             .catch((error) => {
@@ -338,6 +342,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
       toast.success(`Loaded ${example.name}`);
       spineViewerStore.syncedDir = null;
       spineViewerStore.refs.syncedDirHandles = null;
+      spineViewerStore.ui.particleGeneratorPanelVisible = false;
       onFilesSelect(files);
     } catch (error) {
       toast.dismiss();
@@ -365,6 +370,8 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
       atlasFile: new File([''], 'particles.atlas', { type: 'text/plain' }),
       imageFiles: [],
     };
+    // Set flag to show particle generator panel
+    spineViewerStore.ui.particleGeneratorPanelVisible = true;
     onFilesSelect(blankFiles);
   };
 

@@ -30,7 +30,7 @@ export const Controls = ({
   const { ui } = state;
   return (
     <Card className="p-6 rounded-none border-x-0 border-t-0 border-b border-border relative">
-      <div className="flex flex-wrap gap-6 items-center justify-between">
+      <div className="flex flex-col gap-6">
         <div className="flex items-center gap-4">
           <Button
             onClick={onBack}
@@ -92,6 +92,29 @@ export const Controls = ({
             <Copy className="w-4 h-4" />
             Copy URL
           </Button>
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              Scale: {Math.round(ui.scale * 100)}%
+            </Label>
+            <div className="flex items-center gap-2 min-w-48">
+              <Slider
+                value={[ui.scale]}
+                onValueChange={(value) => { spineViewerStore.ui.scale = value[0]; }}
+                min={0.1}
+                max={5.0}
+                step={0.1}
+                className="flex-1"
+              />
+              <Input
+                type="number"
+                value={Math.round(ui.scale * 100)}
+                onChange={(e) => { spineViewerStore.ui.scale = Number(e.target.value) / 100; }}
+                className="w-20"
+                min={10}
+                max={500}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-6">
@@ -127,6 +150,37 @@ export const Controls = ({
                   {ui.skins.map((skin) => (
                     <SelectItem key={skin} value={skin}>
                       {skin}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {state.secondFiles && ui.secondAnimations.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Second Animation</Label>
+              <Select 
+                value={ui.secondSelectedAnimation || ui.selectedAnimation} 
+                onValueChange={(val) => { 
+                  // If selecting the same as first, set to null to follow first
+                  if (val === ui.selectedAnimation) {
+                    spineViewerStore.ui.secondSelectedAnimation = null;
+                  } else {
+                    spineViewerStore.ui.secondSelectedAnimation = val;
+                  }
+                }}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select animation" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ui.selectedAnimation}>
+                    Follow First ({ui.selectedAnimation})
+                  </SelectItem>
+                  {ui.secondAnimations.map((anim, index) => (
+                    <SelectItem key={anim} value={anim}>
+                      {index < 9 ? `${index + 1}. ` : ""}{anim}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -209,30 +263,6 @@ export const Controls = ({
                 step={ui.timelineDuration ? ui.timelineDuration / 200 : 0.01}
                 className="flex-1"
                 disabled={ui.timelineDuration <= 0}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">
-              Scale: {Math.round(ui.scale * 100)}%
-            </Label>
-            <div className="flex items-center gap-2 min-w-48">
-              <Slider
-                value={[ui.scale]}
-                onValueChange={(value) => { spineViewerStore.ui.scale = value[0]; }}
-                min={0.1}
-                max={5.0}
-                step={0.1}
-                className="flex-1"
-              />
-              <Input
-                type="number"
-                value={Math.round(ui.scale * 100)}
-                onChange={(e) => { spineViewerStore.ui.scale = Number(e.target.value) / 100; }}
-                className="w-20"
-                min={10}
-                max={500}
               />
             </div>
           </div>

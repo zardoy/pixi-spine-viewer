@@ -38,6 +38,10 @@ export interface SpineViewerState {
     selectedAnimation: string;
     previousAnimation: string;
     animations: string[];
+    /** Second spine animations */
+    secondAnimations: string[];
+    /** Second spine animation (null = follow first spine) */
+    secondSelectedAnimation: string | null;
     selectedSkin: string;
     skins: string[];
     infoPanelPos: { x: number; y: number };
@@ -52,12 +56,19 @@ export interface SpineViewerState {
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
     resetCounter: number;
+    particleGeneratorPanelVisible: boolean;
     particleGeneratorPanelPos: { x: number; y: number } | null;
     showSpawnBounds: boolean;
     spawnBounds: { x: [number, number]; y: [number, number] } | null;
   };
 
   files: SpineFiles | null;
+  /** Second spine files for comparison */
+  secondFiles: SpineFiles | null;
+  /** Offset for second spine (x, y, scale) */
+  secondSpineOffset: { x: number; y: number; scale: number };
+  /** Opacity for second spine (0-1) */
+  secondSpineOpacity: number;
   /** When true, we poll for JSON changes and reload on change (handles in refs.syncedDirHandles) */
   syncedDir: boolean | null;
   /** When reloading from synced dir, preserve this animation */
@@ -90,6 +101,8 @@ export const initialState: SpineViewerState = {
     selectedAnimation: '',
     previousAnimation: '',
     animations: [],
+    secondAnimations: [],
+    secondSelectedAnimation: null,
     selectedSkin: '',
     skins: [],
     infoPanelPos: { x: 0, y: 0 },
@@ -104,11 +117,15 @@ export const initialState: SpineViewerState = {
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
     resetCounter: 0,
+    particleGeneratorPanelVisible: false,
     particleGeneratorPanelPos: null,
     showSpawnBounds: false,
     spawnBounds: null,
   },
   files: null,
+  secondFiles: null,
+  secondSpineOffset: { x: 0, y: 0, scale: 1 },
+  secondSpineOpacity: 1,
   syncedDir: null,
   reloadPreserveAnimation: null,
 };
@@ -120,6 +137,9 @@ export function resetSpineViewerState(): void {
   Object.assign(spineViewerStore.refs, fresh.refs);
   Object.assign(spineViewerStore.ui, fresh.ui);
   spineViewerStore.files = fresh.files;
+  spineViewerStore.secondFiles = fresh.secondFiles;
+  spineViewerStore.secondSpineOffset = fresh.secondSpineOffset;
+  spineViewerStore.secondSpineOpacity = fresh.secondSpineOpacity;
   spineViewerStore.syncedDir = fresh.syncedDir;
   spineViewerStore.reloadPreserveAnimation = fresh.reloadPreserveAnimation;
 }

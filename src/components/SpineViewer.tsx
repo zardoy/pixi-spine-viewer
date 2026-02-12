@@ -23,6 +23,12 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   // Set files in store on mount, wrapped in ref() to prevent proxying (File objects need proper this context)
   useEffect(() => {
     spineViewerStore.files = ref(files);
+    // Clear second files when first files change
+    spineViewerStore.secondFiles = null;
+    spineViewerStore.secondSpineOffset = { x: 0, y: 0, scale: 1 };
+    spineViewerStore.secondSpineOpacity = 1;
+    spineViewerStore.ui.secondSelectedAnimation = null;
+    spineViewerStore.ui.secondAnimations = [];
     return () => {
       resetSpineViewerState();
     };
@@ -131,6 +137,158 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     });
   };
 
+  // Handle drag and drop for second spine
+  useEffect(() => {
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dataTransfer = e.dataTransfer;
+      if (!dataTransfer) return;
+      const files = Array.from(dataTransfer.files);
+
+      if (files.length === 0) return;
+
+      // Check if we already have a first spine loaded
+      if (!state.files) {
+        toast.warning('Please load first spine before dropping second one');
+        return;
+      }
+
+      // Process files for second spine
+      try {
+        // Extract ZIP files if any
+        const zipFiles = files.filter(f => f.name.endsWith('.zip'));
+        let allFiles = [...files];
+
+        for (const zipFile of zipFiles) {
+          try {
+            toast.loading(`Extracting ${zipFile.name}...`);
+            const zip = new JSZip();
+            const zipContent = await zip.loadAsync(zipFile);
+            const extractedFiles: File[] = [];
+
+            for (const filename in zipContent.files) {
+              const zipEntry = zipContent.files[filename];
+              if (zipEntry.dir) continue;
+              const blob = await zipEntry.async("blob");
+              const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+              extractedFiles.push(file);
+            }
+
+            allFiles = allFiles.filter(f => f !== zipFile);
+            allFiles.push(...extractedFiles);
+            toast.dismiss();
+          } catch (error) {
+            toast.dismiss();
+            toast.error(error instanceof Error ? error.message : 'Failed to extract ZIP file');
+            return;
+          }
+        }
+
+        // Find skeleton, atlas, and image files
+        const skeletonFile = allFiles.find(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
+        const atlasFile = allFiles.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
+        const imageFiles = allFiles.filter(f =>
+          f.type.startsWith("image/") ||
+          f.name.match(/\.(png|jpg|jpeg|webp)$/i)
+        );
+
+        if (!skeletonFile) {
+          toast.error("No .json or .skel file found in dropped files.");
+          return;
+        }
+
+        if (!atlasFile) {
+          toast.error("No .atlas file found in dropped files.");
+          return;
+        }
+
+        if (imageFiles.length === 0) {
+          toast.error("No image files found in dropped files.");
+          return;
+        }
+
+        const secondFiles: SpineFiles = {
+          jsonFile: skeletonFile,
+          atlasFile,
+          imageFiles,
+        };
+
+        spineViewerStore.secondFiles = ref(secondFiles);
+        toast.success(`Second spine loaded: ${skeletonFile.name}`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to process dropped files');
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    window.addEventListener('drop', handleDrop);
+    window.addEventListener('dragover', handleDragOver);
+
+    return () => {
+      window.removeEventListener('drop', handleDrop);
+      window.removeEventListener('dragover', handleDragOver);
+    };
+  }, [state.files]);
+
+  // Keyboard handlers for second spine offset controls
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if Ctrl/Cmd is pressed or if typing in input
+      if (e.ctrlKey || e.metaKey) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+      // Only handle if second spine is loaded
+      if (!state.secondFiles) return;
+
+      const step = e.shiftKey ? 10 : 1; // Shift for larger steps
+      const scaleStep = e.shiftKey ? 0.1 : 0.01;
+
+      let changed = false;
+      if (e.code === "ArrowLeft") {
+        e.preventDefault();
+        spineViewerStore.secondSpineOffset.x -= step;
+        changed = true;
+      } else if (e.code === "ArrowRight") {
+        e.preventDefault();
+        spineViewerStore.secondSpineOffset.x += step;
+        changed = true;
+      } else if (e.code === "ArrowUp") {
+        e.preventDefault();
+        spineViewerStore.secondSpineOffset.y -= step;
+        changed = true;
+      } else if (e.code === "ArrowDown") {
+        e.preventDefault();
+        spineViewerStore.secondSpineOffset.y += step;
+        changed = true;
+      } else if (e.code === "BracketLeft") { // [ key
+        e.preventDefault();
+        spineViewerStore.secondSpineOffset.scale = Math.max(0.01, spineViewerStore.secondSpineOffset.scale - scaleStep);
+        changed = true;
+      } else if (e.code === "BracketRight") { // ] key
+        e.preventDefault();
+        spineViewerStore.secondSpineOffset.scale = Math.min(10, spineViewerStore.secondSpineOffset.scale + scaleStep);
+        changed = true;
+      } else if (e.code === "Slash") { // / key
+        e.preventDefault();
+        // Toggle opacity between 1.0 and 0.5
+        spineViewerStore.secondSpineOpacity = spineViewerStore.secondSpineOpacity === 0.5 ? 1.0 : 0.5;
+        console.log(`Second spine opacity: ${spineViewerStore.secondSpineOpacity}`);
+      }
+      if (changed) {
+        console.log(`x:${spineViewerStore.secondSpineOffset.x}, y:${spineViewerStore.secondSpineOffset.y}, scale:${spineViewerStore.secondSpineOffset.scale} opacity:${spineViewerStore.secondSpineOpacity}`);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [state.secondFiles]);
+
   return (
     <div className="min-h-screen flex flex-col bg-background relative">
       <Controls
@@ -145,10 +303,12 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       {/* Draggable attachment test panel */}
       <AttachmentTestPanel />
 
-      {/* Particle generator panel */}
-      <ParticleGeneratorPanel onFilesGenerated={(files) => {
-        spineViewerStore.files = ref(files);
-      }} />
+      {/* Particle generator panel - only show when opened from landing page */}
+      {state.ui.particleGeneratorPanelVisible && (
+        <ParticleGeneratorPanel onFilesGenerated={(files) => {
+          spineViewerStore.files = ref(files);
+        }} />
+      )}
     </div>
   );
 };

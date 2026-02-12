@@ -7,6 +7,7 @@ import { Playground } from "../components/Playground";
 import { OverridePlayground } from "../components/OverridePlayground";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { toast } from "sonner";
+import { spineViewerStore } from "../store/spineViewerStore";
 
 export interface SpineFiles {
   jsonFile: File;
@@ -62,6 +63,7 @@ const Index = () => {
 
           toast.dismiss();
           toast.success("Spine loaded from URL");
+          spineViewerStore.ui.particleGeneratorPanelVisible = false;
           setSpineFiles(spineFiles);
           setSpinesMapUrl(null); // Clear map URL when showing spine
         } catch (err) {

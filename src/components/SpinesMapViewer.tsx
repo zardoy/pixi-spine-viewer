@@ -6,6 +6,7 @@ import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { SpineFiles } from "../pages/Index";
 import { Sparkles, Loader2 } from "lucide-react";
 import { SpinePreview } from "./SpinePreview";
+import { spineViewerStore } from "../store/spineViewerStore";
 
 export interface SpineEntry {
   name: string;
@@ -76,6 +77,7 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
       params.set("pngUrl", encodeURIComponent(spine.png));
       window.history.pushState({}, "", `?${params.toString()}`);
       
+      spineViewerStore.ui.particleGeneratorPanelVisible = false;
       onSpineSelect(spineFiles);
     } catch (err) {
       toast.dismiss();

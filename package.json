@@ -6,7 +6,7 @@
     "description": "Web based tool for viewing Spine animations with PIXI.js",
     "scripts": {
         "dev": "vite",
-        "build": "vite build",
+        "build": "tsc -p tsconfig.app.json && vite build",
         "build:dev": "vite build --mode development",
         "lint": "eslint .",
         "preview": "vite preview"

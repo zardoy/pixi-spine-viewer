@@ -16,7 +16,6 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, className }: SpinePrev
   const [loader, setLoader] = useState<FileSpineLoader | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<Container>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +53,7 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, className }: SpinePrev
 
         // Read skeleton data
         const isSkelFile = jsonUrl.toLowerCase().endsWith('.skel');
-        const skeletonData = isSkelFile 
+        const skeletonData = isSkelFile
           ? await jsonFile.arrayBuffer()
           : await jsonFile.text();
         const atlasText = await atlasFile.text();

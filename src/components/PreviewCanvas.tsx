@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import type { GenerateArea, ConfigOptionMeta, PreviewValueResult } from '../../generator/config';
+import type { GenerateArea, ConfigOptionMeta } from '../../generator/config';
 
 export function PreviewCanvas({ 
   meta, 
@@ -11,7 +11,7 @@ export function PreviewCanvas({
   isVisible: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | undefined>(undefined);
   const timeRef = useRef<number>(0);
   const previewSizeRef = useRef<{ width: number; height: number }>({ width: 200, height: 100 });
 

@@ -77,7 +77,12 @@ export class FileSpineLoader {
   /**
    * Create a new Spine instance from cached skeleton data
    */
-  createSpine(spineKey: string, options?: any): SpineInstance {
+  createSpine(spineKey: string, options?: any): {
+    spine: SpineInstance
+    x?: number
+    y?: number
+    scale?: number
+  } {
     const skeletonData = this.skeletonDataCache.get(spineKey);
     if (!skeletonData) {
       throw new Error(`Skeleton data not loaded for key: ${spineKey}. Call loadSpine() first.`);
@@ -88,7 +93,7 @@ export class FileSpineLoader {
       ...options,
     });
 
-    return spine;
+    return { spine };
   }
 
   /**

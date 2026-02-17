@@ -193,7 +193,6 @@ export function generateSpineJson(
     const needsWrap = loop && t1 > totalDuration;
 
     const fadeStart = t0 + inst.duration * 0.7;
-    const visibleStart = Math.max(0, t0);
 
     // Helper to snap time if evenTimeKeyframes is enabled
     const snap = (t: number) => snapTime(t, evenTimeKeyframes);

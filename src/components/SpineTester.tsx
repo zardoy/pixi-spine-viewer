@@ -34,13 +34,13 @@ export const SpineTester = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [fileSpineLoader, setFileSpineLoader] = useState<FileSpineLoader | null>(null);
   const [isLoaderReady, setIsLoaderReady] = useState(false);
-  
+
   // Test 1 state
   const [test1Mounted, setTest1Mounted] = useState(false);
   const [test1Progress, setTest1Progress] = useState<number | undefined>(undefined);
   const test1FinishedCalledRef = useRef(false);
   const test1MountedRef = useRef(true);
-  
+
   // Test 2 state
   const [test2Mounted, setTest2Mounted] = useState(false);
   const [test2Progress, setTest2Progress] = useState<number | undefined>(undefined);
@@ -56,16 +56,16 @@ export const SpineTester = () => {
         setIsLoading(true);
         toast.loading('Loading owl example...');
         const files = await fetchSpineFilesFromUrl(OWL_EXAMPLE.jsonUrl, OWL_EXAMPLE.atlasUrl);
-        
+
         const atlasText = await files.atlasFile.text();
         const isSkelFile = files.jsonFile.name.toLowerCase().endsWith('.skel');
-        const skeletonData = isSkelFile 
+        const skeletonData = isSkelFile
           ? await files.jsonFile.arrayBuffer()
           : await files.jsonFile.text();
 
         const loader = new FileSpineLoader(skeletonData, atlasText, files.imageFiles);
         await loader.loadSpine(SPINE_KEY);
-        
+
         setFileSpineLoader(loader);
         setIsLoaderReady(true);
         setIsLoading(false);
@@ -91,7 +91,7 @@ export const SpineTester = () => {
     if (!fileSpineLoader || !isLoaderReady || !firstAnim) return;
 
     setCurrentTest(0);
-    setTestResults(prev => prev.map((t, i) => 
+    setTestResults(prev => prev.map((t, i) =>
       i === 0 ? { ...t, status: 'running' } : t
     ));
 
@@ -107,16 +107,16 @@ export const SpineTester = () => {
     setTimeout(() => {
       test1MountedRef.current = false;
       setTest1Mounted(false);
-      
+
       // Wait 200ms more to check if callback fires after unmount
       setTimeout(() => {
         const callbackFiredAfterUnmount = test1FinishedCalledRef.current && !test1MountedRef.current;
-        
-        setTestResults(prev => prev.map((t, i) => 
-          i === 0 ? { 
-            ...t, 
+
+        setTestResults(prev => prev.map((t, i) =>
+          i === 0 ? {
+            ...t,
             status: callbackFiredAfterUnmount ? 'failed' : 'passed',
-            message: callbackFiredAfterUnmount 
+            message: callbackFiredAfterUnmount
               ? 'Finished callback was called after unmount (should not happen)'
               : 'Component unmounted without callback firing after unmount (correct behavior)'
           } : t
@@ -132,7 +132,7 @@ export const SpineTester = () => {
     if (!fileSpineLoader || !isLoaderReady || !firstAnim) return;
 
     setCurrentTest(1);
-    setTestResults(prev => prev.map((t, i) => 
+    setTestResults(prev => prev.map((t, i) =>
       i === 1 ? { ...t, status: 'running' } : t
     ));
 
@@ -142,6 +142,7 @@ export const SpineTester = () => {
     test2FinishedCalledRef.current = false;
     test2ResetCounterAtCallbackRef.current = null;
     setTest2Progress(animationProgress);
+    test2FinishedCalledRef.current = false;
     setTest2ResetCounter(0);
     setTest2Paused(false);
     setTest2Mounted(true);
@@ -150,27 +151,25 @@ export const SpineTester = () => {
     setTimeout(() => {
       // Reset counter (increment it)
       setTest2ResetCounter(1);
-      
+
       // Pause immediately after reset
       setTimeout(() => {
         setTest2Paused(true);
-        
+
         // Wait to see if callback fires
         setTimeout(() => {
           const callbackFired = test2FinishedCalledRef.current;
-          const resetCounterAtCallback = test2ResetCounterAtCallbackRef.current;
-          const currentResetCounter = 1;
-          
-          // Callback should not fire, or if it does, it should be from before the reset
-          const shouldPass = !callbackFired || (resetCounterAtCallback !== null && resetCounterAtCallback < currentResetCounter);
-          
-          setTestResults(prev => prev.map((t, i) => 
-            i === 1 ? { 
-              ...t, 
+
+          // Callback should not fire after reset and pause
+          const shouldPass = !callbackFired;
+
+          setTestResults(prev => prev.map((t, i) =>
+            i === 1 ? {
+              ...t,
               status: shouldPass ? 'passed' : 'failed',
               message: shouldPass
                 ? 'Finished callback was not called after reset and pause (correct behavior)'
-                : `Finished callback was called after reset (resetCounter: ${resetCounterAtCallback}, current: ${currentResetCounter})`
+                : 'Finished callback was called after reset (unexpected)'
             } : t
           ));
           setCurrentTest(null);
@@ -181,15 +180,15 @@ export const SpineTester = () => {
     }, 100);
   };
 
-  const handleFinished1 = (animationName: string, resetCounterAtComplete: number) => {
+  const handleFinished1 = () => {
     if (test1MountedRef.current) {
       test1FinishedCalledRef.current = true;
     }
   };
 
-  const handleFinished2 = (animationName: string, resetCounterAtComplete: number) => {
+  const handleFinished2 = () => {
     test2FinishedCalledRef.current = true;
-    test2ResetCounterAtCallbackRef.current = resetCounterAtComplete;
+    // Note: resetCounterAtComplete not available in SpineBase.tsx callback signature
   };
 
   const handleBack = () => {
@@ -311,15 +310,15 @@ const TesterPixiContent = ({
   animName: string;
   test1Mounted: boolean;
   test1Progress?: number;
-  onTest1Finished: (resetCounter: number) => void;
+  onTest1Finished: () => void;
   test2Mounted: boolean;
   test2Progress?: number;
   test2ResetCounter: number;
   test2Paused: boolean;
-  onTest2Finished: (resetCounter: number) => void;
+  onTest2Finished: () => void;
 }) => {
   useExtend({ Container });
-  
+
   return (
     <>
       {test1Mounted && test1Progress !== undefined && (

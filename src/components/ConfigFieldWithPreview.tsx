@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useFloating, autoUpdate, offset, shift, flip } from '@floating-ui/react-dom';
-import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NumericField } from './NumericField';
 import type { GenerateArea, ConfigOptionMeta } from '../../generator/config';

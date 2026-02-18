@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFloating, autoUpdate, offset, shift, flip } from '@floating-ui/react-dom';
 import { Label } from './ui/label';
 import { NumericField } from './NumericField';
+import { PairedField } from './PairedField';
 import type { GenerateArea, ConfigOptionMeta } from '../../generator/config';
 import { PreviewCanvas } from './PreviewCanvas';
 
@@ -36,32 +37,19 @@ export function MinMaxFieldWithPreview({
         onMouseLeave={() => setIsHovered(false)}
         className="relative"
       >
-        <Label className="text-xs">{meta.label || meta.key}</Label>
-        {meta.description && <div className="text-[10px] text-muted-foreground mb-1">{meta.description}</div>}
-        <div className="flex gap-1">
-          <NumericField
-            id={`${meta.key}-min`}
-            label="Min"
-            value={value[0]}
-            onChange={(val) => onValueChange([val, value[1]])}
-            min={meta.min}
-            max={meta.max}
-            step={meta.step}
-            sensitivity={meta.step ? meta.step * 10 : 1}
-            className="flex-1"
-          />
-          <NumericField
-            id={`${meta.key}-max`}
-            label="Max"
-            value={value[1]}
-            onChange={(val) => onValueChange([value[0], val])}
-            min={meta.min}
-            max={meta.max}
-            step={meta.step}
-            sensitivity={meta.step ? meta.step * 10 : 1}
-            className="flex-1"
-          />
-        </div>
+        <PairedField
+          label={meta.label || meta.key}
+          startValue={value[0]}
+          endValue={value[1]}
+          onStartChange={(val) => onValueChange([val, value[1]])}
+          onEndChange={(val) => onValueChange([value[0], val])}
+          min={meta.min}
+          max={meta.max}
+          step={meta.step}
+          description={meta.description}
+          isRandom={true}
+          sensitivity={meta.step ? meta.step * 10 : 1}
+        />
         {hasPreview && isHovered && (
           <div
             ref={refs.setFloating}

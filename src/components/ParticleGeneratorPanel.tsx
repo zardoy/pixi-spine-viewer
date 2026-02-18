@@ -13,6 +13,7 @@ import { buildParticleInstances, generateSpineJson, generateAtlas } from '../../
 import { toast } from 'sonner';
 import { SpineFiles } from '../pages/Index';
 import { ConfigFieldWithPreview, MinMaxFieldWithPreview } from './ConfigFieldWithPreview';
+import { PairedField } from './PairedField';
 
 // Remove unused PreviewCanvas import - it's used in ConfigFieldWithPreview
 
@@ -20,6 +21,10 @@ const DEFAULT_PARTICLE_IMAGE_SIZE = 44; // Default particle image size
 
 interface ParticleGeneratorPanelProps {
   onFilesGenerated: (files: SpineFiles) => void;
+  /** When true, render as inline content (no fixed position, no drag). Used in split view. */
+  embedded?: boolean;
+  /** When set, show a close button that calls this (e.g. for modal on mobile). */
+  onClose?: () => void;
 }
 
 // Filter metadata to only include GenerateArea fields (exclude GeneratorConfig-only fields)
@@ -69,15 +74,15 @@ function generateParticleImage(size: number, gradientFadeSpeed: number = 0.5): H
 
 // PreviewCanvas is now in a separate file
 
-export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPanelProps) => {
+export const ParticleGeneratorPanel = ({ onFilesGenerated, embedded = false, onClose }: ParticleGeneratorPanelProps) => {
   const state = useSnapshot(spineViewerStore);
 
-  // Initialize panel position if not set
+  // Initialize panel position if not set (only when floating)
   useEffect(() => {
-    if (state.ui.particleGeneratorPanelPos === null) {
+    if (!embedded && state.ui.particleGeneratorPanelPos === null) {
       spineViewerStore.ui.particleGeneratorPanelPos = { x: 0, y: 0 };
     }
-  }, []);
+  }, [embedded]);
 
   // Use default config from generator/config.ts
   const [config, setConfig] = useState<GenerateArea>(
@@ -95,6 +100,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
   const [showSpawnBounds, setShowSpawnBounds] = useState(false);
   const [gradientFadeSpeed, setGradientFadeSpeed] = useState(0.5); // 0 = slow/soft, 1 = fast/sharp
   const [evenTimeKeyframes, setEvenTimeKeyframes] = useState<number>(0); // 0 = disabled
+  const [atlasImageCount, setAtlasImageCount] = useState<number>(1); // 1 = single region; >1 = duplicate regions, particles pick randomly
   const generateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pos = state.ui.particleGeneratorPanelPos ?? { x: 0, y: 0 };
   const draggingRef = useRef(false);
@@ -119,7 +125,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
   }, []);
 
   const handleMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Don't start panel drag if clicking on input fields
+    if (embedded) return;
     const target = e.target as any;
     if (target?.tagName === 'INPUT' || target?.closest?.('input')) {
       return;
@@ -159,6 +165,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
         defaultTimelineDuration: 5,
         defaultTravelDistance: [400, 1200],
         evenTimeKeyframes: evenTimeKeyframes > 0 ? evenTimeKeyframes : undefined,
+        atlasImageCount: Math.max(1, atlasImageCount),
       };
 
       const imageWidth = DEFAULT_PARTICLE_IMAGE_SIZE;
@@ -180,7 +187,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
         evenTimeKeyframes > 0 ? evenTimeKeyframes : undefined
       );
 
-      const atlasText = generateAtlas('particle.png', imageWidth, imageHeight);
+      const atlasText = generateAtlas('particle.png', imageWidth, imageHeight, Math.max(1, atlasImageCount));
 
       // Generate particle image: circle with shadow/opacity fading
       const particleCanvas = generateParticleImage(imageWidth, gradientFadeSpeed);
@@ -216,7 +223,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
       console.error('Particle generation error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate particles');
     }
-  }, [config, showSpawnBounds, gradientFadeSpeed, evenTimeKeyframes, onFilesGenerated]);
+  }, [config, showSpawnBounds, gradientFadeSpeed, evenTimeKeyframes, atlasImageCount, onFilesGenerated]);
 
   // Auto-generate with throttling
   useEffect(() => {
@@ -233,7 +240,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
         clearTimeout(generateTimeoutRef.current);
       }
     };
-  }, [config, autoGenerate, generateParticles]);
+  }, [config, autoGenerate, generateParticles, atlasImageCount]);
 
 
   // Render a config field based on metadata
@@ -362,13 +369,16 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
     }
   };
 
-  return (
-    <div
-      className="fixed z-30 bg-card/95 text-xs text-card-foreground border border-border rounded-md shadow-lg p-4 space-y-3 cursor-move min-w-[300px] max-w-[400px]"
-      style={{ bottom: 16, left: 16, transform: `translate(${pos.x}px, ${pos.y}px)` }}
-      onPointerDown={handleMouseDown}
-    >
-      <div className="font-semibold text-sm mb-2">Particle Generator</div>
+  const content = (
+    <>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="font-semibold text-sm">Particle Generator</div>
+        {onClose && (
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} className="h-7 w-7 p-0 shrink-0">
+            ×
+          </Button>
+        )}
+      </div>
 
       <div className="space-y-2">
         {AREA_CONFIG_META.map((meta, index) => {
@@ -384,6 +394,33 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
           }
           // Skip spawnAreaY as it's rendered with spawnAreaX
           if (meta.key === 'spawnAreaY') {
+            return null;
+          }
+          // Group rotationStart and rotationEnd together
+          if (meta.key === 'rotationStart') {
+            const rotationEndMeta = AREA_CONFIG_META.find(m => m.key === 'rotationEnd');
+            const startValue = getConfigValue('rotationStart') ?? 0;
+            const endValue = getConfigValue('rotationEnd') ?? 0;
+            return (
+              <div key="rotationPair" className="relative">
+                <PairedField
+                  label="Rotation (degrees)"
+                  startValue={startValue}
+                  endValue={endValue}
+                  onStartChange={(val) => setConfigValue('rotationStart', val)}
+                  onEndChange={(val) => setConfigValue('rotationEnd', val)}
+                  min={rotationEndMeta?.min ?? -360}
+                  max={rotationEndMeta?.max ?? 360}
+                  step={meta.step ?? 1}
+                  description={meta.description}
+                  isRandom={false}
+                  sensitivity={meta.step ? meta.step * 10 : 1}
+                />
+              </div>
+            );
+          }
+          // Skip rotationEnd as it's rendered with rotationStart
+          if (meta.key === 'rotationEnd') {
             return null;
           }
           // Group minMax fields in pairs when possible (skip if already paired)
@@ -429,6 +466,17 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
           description="Snap keyframes to grid (0 = disabled)"
         />
 
+        {/* Atlas images: duplicate regions so particles randomly use 1..N */}
+        <NumericField
+          label="Atlas images"
+          value={atlasImageCount}
+          onChange={(val) => setAtlasImageCount(Math.max(1, Math.min(16, Math.round(val))))}
+          min={1}
+          max={16}
+          step={1}
+          description="Same image, N regions; particles pick randomly (1 or 2, etc.)"
+        />
+
         <div className="flex items-center gap-2">
           <Checkbox
             id="showBounds"
@@ -461,6 +509,27 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated }: ParticleGeneratorPa
           Generate
         </Button>
       </div>
+    </>
+  );
+
+  const panelClassName = "bg-card text-xs text-card-foreground border border-border rounded-md shadow-lg p-4 space-y-3 min-w-[280px] max-w-[400px] overflow-y-auto " +
+    (embedded ? "" : "fixed z-30 cursor-move");
+
+  if (embedded) {
+    return (
+      <div className={panelClassName}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={panelClassName}
+      style={{ bottom: 16, left: 16, transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      onPointerDown={handleMouseDown}
+    >
+      {content}
     </div>
   );
-};
+}

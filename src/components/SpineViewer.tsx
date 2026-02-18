@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controls } from "./Controls";
 import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
@@ -10,15 +10,25 @@ import { spineViewerStore, resetSpineViewerState } from "../store/spineViewerSto
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
 import JSZip from "jszip";
-import { Download } from "lucide-react";
+import { Download, Sparkles } from "lucide-react";
 
 interface SpineViewerProps {
   files: SpineFiles;
   onBack: () => void;
 }
 
+const GENERATOR_BREAKPOINT_PX = 768;
+
 export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   const state = useSnapshot(spineViewerStore);
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < GENERATOR_BREAKPOINT_PX);
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${GENERATOR_BREAKPOINT_PX - 1}px)`);
+    const handler = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   // Set files in store on mount, wrapped in ref() to prevent proxying (File objects need proper this context)
   useEffect(() => {
@@ -326,13 +336,73 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [state.secondFiles]);
 
+  const showGenerator = state.ui.particleGeneratorPanelVisible;
+  const showGeneratorInline = showGenerator && !isNarrow;
+  const showGeneratorModal = showGenerator && isNarrow;
+
+  const openGenerator = () => {
+    spineViewerStore.ui.particleGeneratorPanelVisible = true;
+    const params = new URLSearchParams(window.location.search);
+    params.set("generator", "1");
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  };
+
+  const closeGenerator = () => {
+    spineViewerStore.ui.particleGeneratorPanelVisible = false;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("generator");
+    const qs = params.toString();
+    window.history.replaceState({}, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  };
+
+  const previewArea = (
+    <div className="flex flex-col flex-1 min-h-0 relative">
+      <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
+      <div className="flex-1 min-h-0 relative">
+        <PixiApp />
+      </div>
+    </div>
+  );
+
+  const previewWithFab = (
+    <>
+      <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
+      <div className="flex-1 min-h-0 relative">
+        <PixiApp />
+        {isNarrow && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); openGenerator(); }}
+            className="absolute bottom-4 left-4 z-20 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90"
+            title="Open particle generator"
+          >
+            <Sparkles className="w-6 h-6" />
+          </button>
+        )}
+      </div>
+    </>
+  );
+
   return (
-    <div className="min-h-screen flex flex-col bg-background relative">
-      <Controls
-        onCopyUrl={handleCopyUrl}
-        onBack={onBack}
-      />
-      <PixiApp />
+    <div className="min-h-screen flex flex-col md:flex-row bg-background relative">
+      {/* Split: left = generator (desktop), right = preview */}
+      {showGeneratorInline && (
+        <aside className="hidden md:flex md:flex-col md:w-[380px] md:shrink-0 md:border-r md:border-border md:bg-card/50 md:overflow-y-auto">
+          <div className="p-3 sticky top-0 bg-card/95 border-b border-border z-10">
+            <span className="font-semibold text-sm">Particle Generator</span>
+          </div>
+          <div className="p-3 flex-1">
+            <ParticleGeneratorPanel
+              embedded
+              onFilesGenerated={(f) => { spineViewerStore.files = ref(f); }}
+            />
+          </div>
+        </aside>
+      )}
+
+      <div className="flex flex-col flex-1 min-w-0">
+        {showGeneratorInline ? previewArea : previewWithFab}
+      </div>
 
       {/* Draggable info panel */}
       <InfoPanel />
@@ -340,11 +410,29 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       {/* Draggable attachment test panel */}
       <AttachmentTestPanel />
 
-      {/* Particle generator panel - only show when opened from landing page */}
-      {state.ui.particleGeneratorPanelVisible && (
-        <ParticleGeneratorPanel onFilesGenerated={(files) => {
-          spineViewerStore.files = ref(files);
-        }} />
+      {/* Mobile: generator in modal */}
+      {showGeneratorModal && (
+        <div
+          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden flex items-stretch justify-end"
+          onClick={closeGenerator}
+        >
+          <div
+            className="w-full max-w-md bg-card border-l border-border shadow-xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-3 border-b border-border flex items-center justify-between">
+              <span className="font-semibold">Particle Generator</span>
+              <Button variant="ghost" size="sm" onClick={closeGenerator}>×</Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              <ParticleGeneratorPanel
+                embedded
+                onClose={closeGenerator}
+                onFilesGenerated={(f) => { spineViewerStore.files = ref(f); }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

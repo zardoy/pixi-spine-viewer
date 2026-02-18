@@ -55,6 +55,10 @@ export interface GenerateArea {
   rotationEnd?: number;
   /** [min, max] degrees per second - random rotation speed per particle. Overrides rotationStart/End if both set. */
   rotationSpeed?: [number, number];
+  /** When 'allAtOnce', all particles fade in at the same time (spawnTimeOffset seconds from start). */
+  spawnMode?: 'random' | 'allAtOnce';
+  /** Seconds from start when all particles appear (used when spawnMode is 'allAtOnce'). Default 0.5 */
+  spawnTimeOffset?: number;
 }
 
 export interface GeneratorConfig {
@@ -69,6 +73,10 @@ export interface GeneratorConfig {
   defaultRotationSpeed?: [number, number];
   /** Snap all keyframe times to nearest grid step (seconds). 0 or undefined = no snapping. */
   evenTimeKeyframes?: number;
+  /** Number of duplicate images in atlas (same image, N regions). Particles randomly use 1..N. Default 1. */
+  atlasImageCount?: number;
+  defaultSpawnMode?: 'random' | 'allAtOnce';
+  defaultSpawnTimeOffset?: number;
   /** Atlas and image paths */
   imageName?: string;
   /** Output paths */
@@ -83,26 +91,26 @@ function previewParticleLife(config: GenerateArea, time: number, ctx: CanvasRend
   const height = 100;
   ctx.fillStyle = '#1a1a1a';
   ctx.fillRect(0, 0, width, height);
-  
+
   const lifeRange = config.maxParticleLife || [0.3, 0.7];
   const maxLife = lifeRange[1];
   const normalizedTime = (time % maxLife) / maxLife;
-  
+
   // Draw particle life bar
   ctx.fillStyle = '#3b82f6';
   ctx.fillRect(10, 40, width - 20, 20);
-  
+
   // Draw current time indicator
   ctx.fillStyle = '#ffffff';
   const x = 10 + (normalizedTime * (width - 20));
   ctx.fillRect(x - 2, 35, 4, 30);
-  
+
   // Draw text
   ctx.fillStyle = '#ffffff';
   ctx.font = '12px monospace';
   ctx.fillText(`Life: ${lifeRange[0]}-${lifeRange[1]}s`, 10, 20);
   ctx.fillText(`Time: ${time.toFixed(2)}s`, 10, height - 10);
-  
+
   return { done: false, width, height };
 }
 
@@ -112,12 +120,12 @@ function previewTravelDistance(config: GenerateArea, time: number, ctx: CanvasRe
   const height = 100;
   ctx.fillStyle = '#1a1a1a';
   ctx.fillRect(0, 0, width, height);
-  
-  const travelRange = Array.isArray(config.travelDistance) 
-    ? config.travelDistance 
+
+  const travelRange = Array.isArray(config.travelDistance)
+    ? config.travelDistance
     : [config.travelDistance || 400, config.travelDistance || 1000];
   const normalizedTime = Math.min(time / 2, 1); // 2 second preview
-  
+
   // Draw distance visualization
   ctx.strokeStyle = '#3b82f6';
   ctx.lineWidth = 2;
@@ -126,18 +134,18 @@ function previewTravelDistance(config: GenerateArea, time: number, ctx: CanvasRe
   const endX = 10 + (normalizedTime * (width - 20));
   ctx.lineTo(endX, height / 2);
   ctx.stroke();
-  
+
   // Draw particle at current position
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.arc(endX, height / 2, 4, 0, Math.PI * 2);
   ctx.fill();
-  
+
   // Draw text
   ctx.fillStyle = '#ffffff';
   ctx.font = '12px monospace';
   ctx.fillText(`Distance: ${travelRange[0]}-${travelRange[1]}px`, 10, 20);
-  
+
   return { done: normalizedTime >= 1, width, height };
 }
 
@@ -146,17 +154,17 @@ export const CONFIG_OPTIONS_META: ConfigOptionMeta[] = [
   { key: 'particleCount', type: 'number', label: 'Particle Count', min: 1, max: 10000, step: 1 },
   { key: 'spawnAreaX', type: 'minMax', label: 'Spawn Area X', min: -5000, max: 5000, step: 10, description: 'X coordinate range [min, max]' },
   { key: 'spawnAreaY', type: 'minMax', label: 'Spawn Area Y', min: -5000, max: 5000, step: 10, description: 'Y coordinate range [min, max]' },
-  { key: 'maxParticleLife', type: 'minMax', label: 'Particle Life (seconds)', min: 0.1, max: 10, step: 0.1, previewValue: previewParticleLife },
+  { key: 'maxParticleLife', type: 'minMax', label: 'Particle Life (seconds)', min: 0.1, max: 10, step: 0.5, previewValue: previewParticleLife },
   { key: 'travelDistance', type: 'minMax', label: 'Travel Distance (px)', min: 0, max: 5000, step: 10, previewValue: previewTravelDistance },
-  { key: 'timelineDuration', type: 'number', label: 'Timeline Duration (seconds)', min: 0.1, max: 60, step: 0.1 },
+  { key: 'timelineDuration', type: 'number', label: 'Timeline Duration (seconds)', min: 0.1, max: 60, step: 1 },
   { key: 'loop', type: 'checkbox', label: 'Seamless Loop', disabled: true },
-  { key: 'particleSize', type: 'minMax', label: 'Particle Size (scale)', min: 0.1, max: 10, step: 0.1 },
+  { key: 'particleSize', type: 'minMax', label: 'Particle Size (scale)', min: 0.1, max: 10, step: 0.5 },
   { key: 'rotationStart', type: 'number', label: 'Rotation Start (degrees)', min: -360, max: 360, step: 1 },
   { key: 'rotationEnd', type: 'number', label: 'Rotation End (degrees)', min: -360, max: 360, step: 1 },
   { key: 'rotationSpeed', type: 'minMax', label: 'Rotation Speed (deg/sec)', min: -720, max: 720, step: 1 },
-  { 
-    key: 'direction', 
-    type: 'select', 
+  {
+    key: 'direction',
+    type: 'select',
     label: 'Direction',
     options: [
       { value: 'random', label: 'Random' },
@@ -167,6 +175,18 @@ export const CONFIG_OPTIONS_META: ConfigOptionMeta[] = [
     ],
     default: 'random'
   },
+  {
+    key: 'spawnMode',
+    type: 'select',
+    label: 'Spawn',
+    options: [
+      { value: 'random', label: 'Random over time' },
+      { value: 'allAtOnce', label: 'All at once' },
+    ],
+    default: 'random',
+    description: 'All at once: every particle fades in at the same time'
+  },
+  { key: 'spawnTimeOffset', type: 'number', label: 'Spawn time (s)', min: 0, max: 10, step: 0.1, description: 'When "All at once", seconds from start when particles appear' },
   { key: 'evenTimeKeyframes', type: 'number', label: 'Even Time Keyframes (seconds)', min: 0, max: 1, step: 0.01, description: 'Snap all keyframe times to grid (0 = disabled)' },
 ];
 
@@ -205,6 +225,8 @@ export function resolveAreaConfig(
   const defRotStart = area.rotationStart ?? defaults.defaultRotationStart ?? 0;
   const defRotEnd = area.rotationEnd ?? defaults.defaultRotationEnd ?? 0;
   const defRotSpeed = area.rotationSpeed ?? defaults.defaultRotationSpeed;
+  const spawnMode = area.spawnMode ?? defaults.defaultSpawnMode ?? 'random';
+  const spawnTimeOffset = area.spawnTimeOffset ?? defaults.defaultSpawnTimeOffset ?? 0.5;
 
   return {
     spawnArea: area.spawnArea,
@@ -218,5 +240,7 @@ export function resolveAreaConfig(
     rotationStart: defRotStart,
     rotationEnd: defRotEnd,
     rotationSpeed: defRotSpeed,
+    spawnMode,
+    spawnTimeOffset,
   };
 }

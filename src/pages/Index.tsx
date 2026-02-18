@@ -15,6 +15,22 @@ export interface SpineFiles {
   imageFiles: File[];
 }
 
+/** Blank spine files used when opening particle generator; shared for QS restore. */
+export function getBlankParticleFiles(): SpineFiles {
+  const blankJson = JSON.stringify({
+    skeleton: { hash: 'particles', spine: '4.2', x: 0, y: 0, width: 12000, height: 12000, images: './' },
+    bones: [{ name: 'root' }],
+    slots: [],
+    skins: [{ name: 'default', attachments: {} }],
+    animations: {},
+  });
+  return {
+    jsonFile: new File([blankJson], 'particles.json', { type: 'application/json' }),
+    atlasFile: new File([''], 'particles.atlas', { type: 'text/plain' }),
+    imageFiles: [],
+  };
+}
+
 const Index = () => {
   const [spineFiles, setSpineFiles] = useState<SpineFiles | null>(null);
   const [spinesMapUrl, setSpinesMapUrl] = useState<string | null>(null);
@@ -44,6 +60,14 @@ const Index = () => {
     const atlasUrl = params.get("atlasUrl");
     const pngUrl = params.get("pngUrl");
     
+    const generator = params.get("generator");
+    if (generator === "1") {
+      setSpineFiles(getBlankParticleFiles());
+      setSpinesMapUrl(null);
+      spineViewerStore.ui.particleGeneratorPanelVisible = true;
+      return;
+    }
+
     if (jsonUrl && atlasUrl && pngUrl) {
       setLoadingFromUrl(true);
       const loadSpineFromUrls = async () => {
@@ -103,6 +127,7 @@ const Index = () => {
 
   const handleBack = () => {
     setSpineFiles(null);
+    spineViewerStore.ui.particleGeneratorPanelVisible = false;
     // Restore spinesMap URL if it was there (pushState for browser back/forward)
     if (spinesMapUrl) {
       const params = new URLSearchParams();

@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SpineFiles } from "../pages/Index";
+import { SpineFiles, getBlankParticleFiles } from "../pages/Index";
 import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
 import { SPINE_EXAMPLES } from "../lib/spineExamples";
 import { ref } from "valtio";
@@ -355,24 +355,10 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
   };
 
   const handleOpenParticleGenerator = () => {
-    // Set a flag to show particle generator mode
-    // We'll handle this by opening with empty files, but the panel will generate particles
-    // For now, just open with empty files - the panel will handle generation
-    const blankJson = JSON.stringify({
-      skeleton: { hash: 'particles', spine: '4.2', x: 0, y: 0, width: 12000, height: 12000, images: './' },
-      bones: [{ name: 'root' }],
-      slots: [],
-      skins: [{ name: 'default', attachments: {} }],
-      animations: {},
-    });
-    const blankFiles: SpineFiles = {
-      jsonFile: new File([blankJson], 'particles.json', { type: 'application/json' }),
-      atlasFile: new File([''], 'particles.atlas', { type: 'text/plain' }),
-      imageFiles: [],
-    };
-    // Set flag to show particle generator panel
+    // Sync URL so reload restores generator view
+    window.history.replaceState({}, "", `${window.location.pathname}?generator=1`);
     spineViewerStore.ui.particleGeneratorPanelVisible = true;
-    onFilesSelect(blankFiles);
+    onFilesSelect(getBlankParticleFiles());
   };
 
   return (

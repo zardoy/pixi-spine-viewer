@@ -22,6 +22,8 @@ export interface ParticleInstance {
   scale: number;
   rotationStart: number;
   rotationEnd: number;
+  /** Atlas region name for this particle (e.g. 'particle' or 'particle_2') when atlasImageCount > 1 */
+  attachmentPath: string;
 }
 
 function rand(min: number, max: number): number {
@@ -58,6 +60,11 @@ function snapTime(time: number, evenTimeKeyframes: number | undefined): number {
   return Math.round(time / evenTimeKeyframes) * evenTimeKeyframes;
 }
 
+/** Attachment path for atlas region index (0 = 'particle', 1 = 'particle_2', 2 = 'particle_3', ...) */
+export function getAttachmentPathForIndex(index: number): string {
+  return index === 0 ? ATTACHMENT_PATH : `${ATTACHMENT_PATH}_${index + 1}`;
+}
+
 /** Build particle instances from config. When loop is true, distributes particles evenly within
  * the loop period to ensure seamless looping - particles visible at t=0 match those at t=duration.
  * Strategy: spawn particles across the period, and particles extending past will wrap to start. */
@@ -67,6 +74,7 @@ export function buildParticleInstances(
   _evenTimeKeyframes?: number
 ): ParticleInstance[] {
   const instances: ParticleInstance[] = [];
+  const atlasImageCount = Math.max(1, config.atlasImageCount ?? 1);
 
   for (const area of areas) {
     const resolved = resolveAreaConfig(area, config);
@@ -82,6 +90,8 @@ export function buildParticleInstances(
     const [syMin, syMax] = resolved.spawnArea.y;
     const loop = resolved.loop ?? false;
     const period = resolved.timelineDuration;
+    const spawnMode = area.spawnMode ?? config.defaultSpawnMode ?? 'random';
+    const spawnTimeOffset = area.spawnTimeOffset ?? config.defaultSpawnTimeOffset ?? 0.5;
 
     // Rotation: either rotationStart/End (linear interpolate) or rotationSpeed (degrees/sec)
     const rotSpeed = resolved.rotationSpeed;
@@ -101,10 +111,9 @@ export function buildParticleInstances(
       const rot = getRotation(duration);
 
       let spawnTime: number;
-      if (loop) {
-        // For seamless loop: distribute spawn times uniformly across [0, period)
-        // Particles that would end after period will wrap around to continue from start
-        // This ensures the particle density at t=0 matches t=period (seamless loop)
+      if (spawnMode === 'allAtOnce') {
+        spawnTime = spawnTimeOffset;
+      } else if (loop) {
         spawnTime = rand(0, period);
       } else {
         spawnTime = rand(0, period);
@@ -117,6 +126,8 @@ export function buildParticleInstances(
       const endX = startX + dir.x * distance;
       const endY = startY + dir.y * distance;
       const scale = rand(scaleMin, scaleMax);
+      const attachmentIndex = Math.floor(rand(0, atlasImageCount));
+      const attachmentPath = getAttachmentPathForIndex(attachmentIndex);
 
       instances.push({
         spawnTime,
@@ -128,6 +139,7 @@ export function buildParticleInstances(
         scale,
         rotationStart: rot.start,
         rotationEnd: rot.end,
+        attachmentPath,
       });
     }
   }
@@ -183,7 +195,7 @@ export function generateSpineJson(
       rotation: 0,
       width: imageWidth,
       height: imageHeight,
-      path: ATTACHMENT_PATH,
+      path: inst.attachmentPath,
     };
 
     const t0 = inst.spawnTime;
@@ -317,15 +329,18 @@ export function generateSpineJson(
   };
 }
 
-/** Generate atlas file content from image dimensions - single region covering full image */
-export function generateAtlas(imageName: string, width: number, height: number): string {
-  return [
-    '',
-    imageName,
-    `size:${width},${height}`,
-    'filter:Linear,Linear',
-    ATTACHMENT_PATH,
-    `bounds:0,0,${width},${height}`,
-    `offsets:0,0,${width},${height}`,
-  ].join('\n');
+/** Generate atlas file content: one image, optional multiple regions (same bounds) so particles can pick randomly. */
+export function generateAtlas(
+  imageName: string,
+  width: number,
+  height: number,
+  regionCount: number = 1
+): string {
+  const lines: string[] = ['', imageName, `size:${width},${height}`, 'filter:Linear,Linear'];
+  const count = Math.max(1, regionCount);
+  for (let i = 0; i < count; i++) {
+    const name = getAttachmentPathForIndex(i);
+    lines.push(name, `bounds:0,0,${width},${height}`, `offsets:0,0,${width},${height}`);
+  }
+  return lines.join('\n');
 }

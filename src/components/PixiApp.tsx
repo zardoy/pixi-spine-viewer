@@ -607,12 +607,6 @@ const PixiAppContent = () => {
       }
 
       spineState.setAnimation(0, state.ui.selectedAnimation, state.ui.loop);
-
-      // Immediately apply the new animation state to prevent visual glitch
-      // Update with delta 0 to just apply the initial pose of the new animation
-      spineState.update(0);
-      spineState.apply(spine.skeleton);
-      spine.skeleton.updateWorldTransform(Physics.update);
     }
     // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1014,6 +1008,7 @@ const PixiAppContent = () => {
         >
           <SpineBase
             key={`spine-${state.ui.mountCount}`}
+            instantReset={(globalThis as any).doReset}
             spine={SPINE_KEY}
             animation={state.ui.selectedAnimation}
             loop={state.ui.loop}

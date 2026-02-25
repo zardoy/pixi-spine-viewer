@@ -680,19 +680,27 @@ export const SpineBase = (props: SpineProps) => {
       try {
         trackedSetAnimation(spineRef.current, 0, animToUse, loop)
         trackAnimationStart(animToUse)
-        if (instantReset) immediateUpdate(spineRef.current)
+        if (instantReset) {
+          const track = spineRef.current.state.tracks[0]
+          if (track) track.mixDuration = 0
+          immediateUpdate(spineRef.current)
+        }
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
       }
       // Do not set timeScale here — play/pause effect owns it so paused state is preserved on animation switch
-    } else {
-      // Animation unchanged, but loop might have changed - need to update it
-      const currentLoop = track?.loop ?? false
-      if (currentLoop !== loop) {
-        try {
-          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
-          trackAnimationStart(animToUse)
-          if (instantReset) immediateUpdate(spineRef.current)
+      } else {
+        // Animation unchanged, but loop might have changed - need to update it
+        const currentLoop = track?.loop ?? false
+        if (currentLoop !== loop) {
+          try {
+            trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+            trackAnimationStart(animToUse)
+            if (instantReset) {
+              const t = spineRef.current.state.tracks[0]
+              if (t) t.mixDuration = 0
+              immediateUpdate(spineRef.current)
+            }
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
@@ -785,7 +793,10 @@ export const SpineBase = (props: SpineProps) => {
 
     if (instantReset) {
       const track = spine.state.tracks[0]
-      if (track) track.trackTime = 0
+      if (track) {
+        track.mixDuration = 0
+        track.trackTime = 0
+      }
       immediateUpdate(spine)
       // eslint-disable-next-line react-hooks/exhaustive-deps
       return

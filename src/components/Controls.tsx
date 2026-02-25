@@ -71,6 +71,19 @@ export const Controls = ({
             </Label>
           </div>
           <div className="flex items-center gap-2">
+            <Checkbox
+              id="increaseResetOnAnimSwitch"
+              checked={ui.increaseResetCounterOnAnimSwitch}
+              onCheckedChange={(val) => { spineViewerStore.ui.increaseResetCounterOnAnimSwitch = Boolean(val); }}
+            />
+            <Label htmlFor="increaseResetOnAnimSwitch" className="cursor-pointer flex items-center gap-1.5">
+              Increase reset on anim switch
+              {ui.increaseResetCounterOnAnimSwitch && (
+                <span className="text-xs text-muted-foreground font-mono">({ui.resetCounter})</span>
+              )}
+            </Label>
+          </div>
+          <div className="flex items-center gap-2">
             <Label htmlFor="bgColor" className="text-xs text-muted-foreground whitespace-nowrap">
               BG:
             </Label>

@@ -247,6 +247,7 @@ const PixiAppContent = () => {
 
     // Sync spine to store (use the spine instance directly from callback)
     spineViewerStore.refs.spine = ref(spine);
+    (globalThis as any).spine = spine;
 
     if (!app.app) {
       console.warn('[PixiApp] handleSpineLoaded: app.app is null, returning early');
@@ -551,8 +552,12 @@ const PixiAppContent = () => {
       // Track previous animation before switching (only if different)
       const currentTrack = spineState.tracks[0];
       const currentAnimName = currentTrack?.animation?.name;
-      if (currentAnimName && currentAnimName !== state.ui.selectedAnimation) {
+      const isAnimSwitch = currentAnimName && currentAnimName !== state.ui.previousAnimation;
+      if (isAnimSwitch) {
         spineViewerStore.ui.previousAnimation = currentAnimName;
+        if (state.ui.increaseResetCounterOnAnimSwitch) {
+          spineViewerStore.ui.resetCounter += 1;
+        }
       }
 
       spineViewerStore.ui.timelineDuration = anim.duration ?? 0;

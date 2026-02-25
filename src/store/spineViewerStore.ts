@@ -60,6 +60,8 @@ export interface SpineViewerState {
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
     resetCounter: number;
+    /** When true, increment resetCounter whenever the selected animation changes (so animation starts from beginning with mix). */
+    increaseResetCounterOnAnimSwitch: boolean;
     mountCount: number;
     particleGeneratorPanelVisible: boolean;
     particleGeneratorPanelPos: { x: number; y: number } | null;
@@ -124,6 +126,7 @@ export const initialState: SpineViewerState = {
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
     resetCounter: 0,
+    increaseResetCounterOnAnimSwitch: true,
     mountCount: 0,
     particleGeneratorPanelVisible: false,
     particleGeneratorPanelPos: null,

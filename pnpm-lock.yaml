@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@esotericsoftware/spine-core':
-        specifier: ^4.2.95
-        version: 4.2.95
+        specifier: ^4.2.103
+        version: 4.2.103
       '@esotericsoftware/spine-pixi-v8':
-        specifier: ^4.2.95
-        version: 4.2.95(pixi.js@8.14.1)
+        specifier: ^4.2.103
+        version: 4.2.103(pixi.js@8.14.1)
       '@floating-ui/react-dom':
         specifier: ^2.1.7
         version: 2.1.7(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -330,13 +330,16 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@esotericsoftware/spine-core@4.2.95':
-    resolution: {integrity: sha512-5YrlUxeH+wemDVzQogiOKHaBdnLRnyQcb3FOC59g2payoE1636pGB6GZIW5MV9cmMV+MaEIpSrAg26MrnGaQlw==}
+  '@esotericsoftware/spine-canvas@4.2.103':
+    resolution: {integrity: sha512-VhGeU8TVtPgE2jj1GnXqfr9JvoJ292NQvIoQcbYr561AWYjqTQrMnw3LLHnPLRuggO4bws3U8zuexW2uyGZfTg==}
 
-  '@esotericsoftware/spine-pixi-v8@4.2.95':
-    resolution: {integrity: sha512-2ATWw/2DcdOvc3RKHu3tSBU5YirM5xFbT5f1zBGxJvi5DJbydLymvGPPRJtq4kd6bSacnundYQBkO7jMpisGYQ==}
+  '@esotericsoftware/spine-core@4.2.103':
+    resolution: {integrity: sha512-WhPaiz0PQXGcuW8onO3D5pH5NRuZf0N6DNXI19IcuCctdCC+/vDcR5CU6jAUcm7ak6dw3AJSgumnTj7iR1KWNA==}
+
+  '@esotericsoftware/spine-pixi-v8@4.2.103':
+    resolution: {integrity: sha512-B4YTcBrv10djJ3L3dPPkvPPaUsxwP5xAPUJVP70ao/tXvqjNMUW/9T/PP2znwswE5kO9jMP4phSyN/FofA/NBA==}
     peerDependencies:
-      pixi.js: ^8.12.0
+      pixi.js: ^8.16.0
 
   '@floating-ui/core@1.7.4':
     resolution: {integrity: sha512-C3HlIdsBxszvm5McXlB8PeOEWfBhcGBTZGkGlWc2U0KFY5IwG5OQEuQ8rq52DZmcHDlPLd+YFBK+cZcytwIFWg==}
@@ -1444,6 +1447,7 @@ packages:
 
   glob@10.4.5:
     resolution: {integrity: sha512-7Bv8RF0k6xjo7d4A/PxYLbUCfb6c+Vpd2/mB2yRDlew7Jb5hEXiCD9ibfO7wpk8i4sevK6DFny9h7EYbM3/sHg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   globals@14.0.0:
@@ -2219,11 +2223,15 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@esotericsoftware/spine-core@4.2.95': {}
-
-  '@esotericsoftware/spine-pixi-v8@4.2.95(pixi.js@8.14.1)':
+  '@esotericsoftware/spine-canvas@4.2.103':
     dependencies:
-      '@esotericsoftware/spine-core': 4.2.95
+      '@esotericsoftware/spine-core': 4.2.103
+
+  '@esotericsoftware/spine-core@4.2.103': {}
+
+  '@esotericsoftware/spine-pixi-v8@4.2.103(pixi.js@8.14.1)':
+    dependencies:
+      '@esotericsoftware/spine-canvas': 4.2.103
       pixi.js: 8.14.1
 
   '@floating-ui/core@1.7.4':

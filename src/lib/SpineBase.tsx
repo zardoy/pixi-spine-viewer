@@ -33,6 +33,16 @@ function wrapSpineError(error: unknown, operation: string, spineKey: string, deb
   return new Error(msg, { cause: error })
 }
 
+/** Apply spine state with delta 0 and flush to skeleton (no time advance). Use after setAnimation when you want the first frame visible immediately. */
+function immediateUpdate(spine: SpineInstance): void {
+  if (spine.state.tracks.length === 0) return
+  spine.state.update(0)
+  spine.state.apply(spine.skeleton)
+  spine.skeleton.update(0)
+  spine.skeleton.updateWorldTransform(Physics.update)
+  spine._validateAndTransformAttachments()
+}
+
 /** Data for a single slot's attachment (world vertices, bone transform, etc.). Exported for consumers that need full data. */
 export interface AttachmentUpdateData {
   slotName: string
@@ -57,6 +67,16 @@ export interface AttachmentsFollowTarget {
 export interface AttachmentsFollowItem {
   slotName: string
   ref: RefObject<AttachmentsFollowTarget | null>
+}
+
+/** Payload for animation track events (Spine editor events). Generic TName narrows event.name for typed callbacks. */
+export interface SpineEvent<TName extends string = string> {
+  name: TName
+  intValue?: number
+  floatValue?: number
+  stringValue?: string
+  time: number
+  trackIndex: number
 }
 
 function getAttachmentFollowTransform(spine: SpineInstance, slotName: string): { x: number; y: number; scaleX: number; scaleY: number } | null {
@@ -107,6 +127,8 @@ export interface SpineProps
   startPlayingNoReset?: boolean
   /** Increment to reset current animation to start (uses mix time). SpineBase reacts when this increases. */
   resetCounter?: number
+  /** When true, animation switch and counter reset apply immediately (no mix transition). */
+  instantReset?: boolean
 
   // === Layout ===
   x?: number
@@ -124,6 +146,8 @@ export interface SpineProps
   onCurrentAnimComplete?: () => void
   /** Callback fired when spine is loaded and ready */
   onSpineLoaded?: (spine: SpineInstance) => void
+  /** Callback fired when an animation track emits an event (e.g., events defined in Spine editor). With typed SpineTypes, event.name is narrowed to that spine's event names. */
+  onAnimationEvent?: (event: SpineEvent) => void
 
   // === Debug ===
   /** When set, exposes ref and live state on globalThis.spineDebug[key] (getters, no extra code paths) */
@@ -167,6 +191,7 @@ export const SpineBase = (props: SpineProps) => {
     startPlaying,
     startPlayingNoReset,
     resetCounter,
+    instantReset = false,
 
     // Layout
     x = 0,
@@ -188,6 +213,7 @@ export const SpineBase = (props: SpineProps) => {
     // Callbacks
     onCurrentAnimComplete,
     onSpineLoaded,
+    onAnimationEvent,
 
     // Debug
     debugKey,
@@ -233,7 +259,8 @@ export const SpineBase = (props: SpineProps) => {
   const ref = useRef<Container>(null!)
   const spineRef = useRef<SpineInstance | null>(null)
   const onCompleteRef = useRef(onCurrentAnimComplete)
-  const listenerRef = useRef<{ complete: (trackEntry: any) => void } | null>(null)
+  const onEventRef = useRef(onAnimationEvent)
+  const listenerRef = useRef<{ complete: (trackEntry: any) => void; event?: (trackEntry: any, event: any) => void } | null>(null)
   const previousPlayingRef = useRef<boolean>(isPlaying)
   const loopDelayRef = useRef<number>(loopDelay)
   const loopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -323,8 +350,12 @@ export const SpineBase = (props: SpineProps) => {
 
   // Helper to track setAnimation calls
   const trackedSetAnimation = (spine: SpineInstance, trackIndex: number, animationName: string, loop: boolean) => {
-    setAnimationCallCountRef.current++
-    spine.state.setAnimation(trackIndex, animationName, loop)
+    try {
+      setAnimationCallCountRef.current++
+      spine.state.setAnimation(trackIndex, animationName, loop)
+    } catch (err) {
+      throw err
+    }
   }
 
   // Expose ref + live state on globalThis.spineDebug[debugKey] via getters (no extra state)
@@ -502,7 +533,8 @@ export const SpineBase = (props: SpineProps) => {
 
         // Set up animation complete listener
         onCompleteRef.current = onCurrentAnimComplete
-        const listener = {
+        onEventRef.current = onAnimationEvent
+        const listener: { complete: (trackEntry: any) => void; event?: (trackEntry: any, event: any) => void } = {
           complete: (trackEntry: any) => {
             // Only fire callback for the main track (track 0)
             if (trackEntry.trackIndex !== 0) return
@@ -534,6 +566,22 @@ export const SpineBase = (props: SpineProps) => {
             }
           },
         }
+
+        // Add event listener if callback is provided
+        if (onAnimationEvent) {
+          listener.event = (trackEntry: any, event: any) => {
+            if (onEventRef.current) {
+              onEventRef.current({
+                name: event.data.name,
+                intValue: event.intValue,
+                floatValue: event.floatValue,
+                stringValue: event.stringValue,
+                time: event.time,
+                trackIndex: trackEntry.trackIndex,
+              })
+            }
+          }
+        }
         listenerRef.current = listener
         spine.state.addListener(listener)
 
@@ -541,19 +589,8 @@ export const SpineBase = (props: SpineProps) => {
         ref.current.addChild(spine)
 
         // Explicitly update spine state and skeleton to ensure first frame is rendered correctly
-        // This is especially important when there are multiple images in the atlas or when
-        // attachments need to be validated and transformed
         if (spine.state.tracks.length > 0) {
-          // Update state (advances time, processes events)
-          spine.state.update(0)
-          // Apply state to skeleton (updates bone transforms, slot attachments)
-          spine.state.apply(spine.skeleton)
-          // Update skeleton (updates bone world transforms)
-          spine.skeleton.update(0)
-          // Update world transforms (finalizes bone positions)
-          spine.skeleton.updateWorldTransform(Physics.update)
-          // Validate and transform attachments (ensures attachments are correctly positioned)
-          spine._validateAndTransformAttachments()
+          immediateUpdate(spine)
         }
 
         // await new Promise<void>(resolve => {
@@ -643,25 +680,25 @@ export const SpineBase = (props: SpineProps) => {
       try {
         trackedSetAnimation(spineRef.current, 0, animToUse, loop)
         trackAnimationStart(animToUse)
+        if (instantReset) immediateUpdate(spineRef.current)
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
       }
-      // set time scale
-      spineRef.current.state.timeScale = timeScale
+      // Do not set timeScale here — play/pause effect owns it so paused state is preserved on animation switch
     } else {
       // Animation unchanged, but loop might have changed - need to update it
-      // Setting loop on track directly doesn't always work, so re-set the animation
       const currentLoop = track?.loop ?? false
       if (currentLoop !== loop) {
         try {
           trackedSetAnimation(spineRef.current, 0, animToUse, loop)
           trackAnimationStart(animToUse)
+          if (instantReset) immediateUpdate(spineRef.current)
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
       }
     }
-  }, [animation, loop])
+  }, [animation, loop, instantReset])
 
   // Handle playing/paused, timeScale changes with resumeDelay and resetOnPause
   useEffect(() => {
@@ -739,12 +776,19 @@ export const SpineBase = (props: SpineProps) => {
     const spine = spineRef.current
     const wasPlaying = isPlaying
 
-    // Set the animation (this starts the mix transition)
     try {
       trackedSetAnimation(spine, 0, animToUse, loop)
       trackAnimationStart(animToUse)
     } catch (error) {
       throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
+    }
+
+    if (instantReset) {
+      const track = spine.state.tracks[0]
+      if (track) track.trackTime = 0
+      immediateUpdate(spine)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      return
     }
 
     // If paused and mixTime > 0, manually advance the mix to complete smoothly
@@ -858,6 +902,11 @@ export const SpineBase = (props: SpineProps) => {
   useEffect(() => {
     onCompleteRef.current = onCurrentAnimComplete
   }, [onCurrentAnimComplete])
+
+  // Update animation event callback ref (listener is already set up in loadSpine, just update the callback)
+  useEffect(() => {
+    onEventRef.current = onAnimationEvent
+  }, [onAnimationEvent])
 
   // Set initial scale value
   useEffect(() => {

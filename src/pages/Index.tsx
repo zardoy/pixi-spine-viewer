@@ -38,7 +38,7 @@ const Index = () => {
 
   const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
-    
+
     // Check for tester, playground, or override playground first
     const tester = params.get("tester");
     const playground = params.get("playground");
@@ -47,7 +47,7 @@ const Index = () => {
       // These are handled by the component render logic below
       return;
     }
-    
+
     const mapUrl = params.get("spinesMap");
     if (mapUrl) {
       setSpinesMapUrl(decodeURIComponent(mapUrl));
@@ -59,7 +59,7 @@ const Index = () => {
     const jsonUrl = params.get("jsonUrl");
     const atlasUrl = params.get("atlasUrl");
     const pngUrl = params.get("pngUrl");
-    
+
     const generator = params.get("generator");
     if (generator === "1") {
       setSpineFiles(getBlankParticleFiles());
@@ -126,6 +126,7 @@ const Index = () => {
   };
 
   const handleBack = () => {
+    window.location.reload();
     setSpineFiles(null);
     spineViewerStore.ui.particleGeneratorPanelVisible = false;
     // Restore spinesMap URL if it was there (pushState for browser back/forward)
@@ -143,15 +144,15 @@ const Index = () => {
   const tester = params.get("tester");
   const playground = params.get("playground");
   const overridePlayground = params.get("overridePlayground");
-  
+
   if (tester !== null) {
     return <SpineTester />;
   }
-  
+
   if (playground !== null) {
     return <Playground />;
   }
-  
+
   if (overridePlayground !== null) {
     return <OverridePlayground />;
   }

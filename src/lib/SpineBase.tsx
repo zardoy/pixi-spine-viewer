@@ -350,6 +350,7 @@ export const SpineBase = (props: SpineProps) => {
 
   // Helper to track setAnimation calls
   const trackedSetAnimation = (spine: SpineInstance, trackIndex: number, animationName: string, loop: boolean) => {
+    // eslint-disable-next-line no-useless-catch
     try {
       setAnimationCallCountRef.current++
       spine.state.setAnimation(trackIndex, animationName, loop)
@@ -659,6 +660,11 @@ export const SpineBase = (props: SpineProps) => {
     updateAnimationProgress()
   }, [animationProgress]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const setTimeScale = () => {
+    if (spineRef.current) {
+      spineRef.current.state.timeScale = isPlaying ? timeScaleRef.current : 0
+    }
+  }
   // Handle animation and loop prop changes (separate effect to avoid re-creating spine)
   useEffect(() => {
     if (!spineRef.current) {
@@ -688,19 +694,20 @@ export const SpineBase = (props: SpineProps) => {
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
       }
-      // Do not set timeScale here — play/pause effect owns it so paused state is preserved on animation switch
-      } else {
-        // Animation unchanged, but loop might have changed - need to update it
-        const currentLoop = track?.loop ?? false
-        if (currentLoop !== loop) {
-          try {
-            trackedSetAnimation(spineRef.current, 0, animToUse, loop)
-            trackAnimationStart(animToUse)
-            if (instantReset) {
-              const t = spineRef.current.state.tracks[0]
-              if (t) t.mixDuration = 0
-              immediateUpdate(spineRef.current)
-            }
+      // Set time scale since we clearn existing loop which might have ben stopped
+      setTimeScale()
+    } else {
+      // Animation unchanged, but loop might have changed - need to update it
+      const currentLoop = track?.loop ?? false
+      if (currentLoop !== loop) {
+        try {
+          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+          trackAnimationStart(animToUse)
+          if (instantReset) {
+            const t = spineRef.current.state.tracks[0]
+            if (t) t.mixDuration = 0
+            immediateUpdate(spineRef.current)
+          }
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
@@ -798,7 +805,7 @@ export const SpineBase = (props: SpineProps) => {
         track.trackTime = 0
       }
       immediateUpdate(spine)
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+
       return
     }
 

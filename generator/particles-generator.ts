@@ -235,46 +235,51 @@ export function generateSpineJson(
     }
 
     const rotateFrames: { time: number; angle: number }[] = [];
-    
-    // Start rotation
-    rotateFrames.push({ time: snap(t0), angle: inst.rotationStart });
-    
-    // End rotation (or wrap rotation for loop)
-    if (needsWrap) {
-      // Particle extends past totalDuration: interpolate rotation at totalDuration, then wrap
-      const progressAtEnd = (totalDuration - t0) / inst.duration;
-      const rotAtEnd = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * progressAtEnd;
-      rotateFrames.push({ time: snap(totalDuration), angle: rotAtEnd });
-      
-      // Wrapped portion: calculate final rotation at (t1 - totalDuration)
-      const wrappedDuration = t1 - totalDuration;
-      const finalProgress = wrappedDuration / inst.duration;
-      const finalRot = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * finalProgress;
-      rotateFrames.push({ time: snap(wrappedDuration), angle: finalRot });
-    } else {
-      // Particle ends within totalDuration or non-loop: just add end rotation
-      const endTime = Math.min(t1, totalDuration);
-      rotateFrames.push({ time: snap(endTime), angle: inst.rotationEnd });
+    const rotationChanges = inst.rotationStart !== inst.rotationEnd;
+
+    if (rotationChanges) {
+      rotateFrames.push({ time: snap(t0), angle: inst.rotationStart });
+      if (needsWrap) {
+        const progressAtEnd = (totalDuration - t0) / inst.duration;
+        const rotAtEnd = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * progressAtEnd;
+        rotateFrames.push({ time: snap(totalDuration), angle: rotAtEnd });
+        const wrappedDuration = t1 - totalDuration;
+        const finalProgress = wrappedDuration / inst.duration;
+        const finalRot = inst.rotationStart + (inst.rotationEnd - inst.rotationStart) * finalProgress;
+        rotateFrames.push({ time: snap(wrappedDuration), angle: finalRot });
+      } else {
+        const endTime = Math.min(t1, totalDuration);
+        rotateFrames.push({ time: snap(endTime), angle: inst.rotationEnd });
+      }
     }
 
     animBones[boneName] = {
       translate: translateFrames,
-      rotate: rotateFrames,
+      ...(rotationChanges && { rotate: rotateFrames }),
     };
 
+    // Fade-in: proportional to lifetime (20%), same idea as fade-out (30%)
+    const fadeInDuration = inst.duration * 0.2;
+    const fadeInStart = Math.max(0, t0 - fadeInDuration);
+
     const rgbaFrames: { time: number; color: string; curve?: string }[] = [];
-    rgbaFrames.push({ time: snap(t0), color: 'ffa500ff', curve: 'stepped' });
+    if (fadeInStart > 0) {
+      rgbaFrames.push({ time: snap(fadeInStart), color: 'ffa50000' });
+    }
+    rgbaFrames.push({ time: snap(t0), color: 'ffa500ff' });
     rgbaFrames.push({ time: snap(Math.max(t0, fadeStart)), color: 'ffa500ff' });
-    
+
     // End fade (or wrap fade for loop)
     if (needsWrap) {
       // Particle extends past totalDuration: fade at totalDuration, then continue fading after wrap
       rgbaFrames.push({ time: snap(totalDuration), color: 'ffa50000' });
-      
+
       // Wrapped portion: fade in at start, then fade out at end
       const wrappedDuration = t1 - totalDuration;
+      const wrappedFadeInDuration = wrappedDuration * 0.2;
       const wrappedFadeStart = wrappedDuration * 0.7;
-      rgbaFrames.push({ time: snap(0), color: 'ffa500ff', curve: 'stepped' });
+      rgbaFrames.push({ time: snap(0), color: 'ffa50000' });
+      rgbaFrames.push({ time: snap(wrappedFadeInDuration), color: 'ffa500ff' });
       rgbaFrames.push({ time: snap(wrappedFadeStart), color: 'ffa500ff' });
       rgbaFrames.push({ time: snap(wrappedDuration), color: 'ffa50000' });
     } else {
@@ -284,10 +289,8 @@ export function generateSpineJson(
     }
 
     const attachmentFrames: { time: number; name?: string }[] = [];
-    if (t0 > 0) {
-      attachmentFrames.push({ time: snap(Math.max(0, t0 - 0.05)) });
-    }
-    attachmentFrames.push({ time: snap(t0), name: attName });
+    // Show attachment from fade-in start (slot default is null so no hide key needed before it)
+    attachmentFrames.push({ time: snap(fadeInStart), name: attName });
     
     // End attachment (or wrap attachment for loop)
     if (needsWrap) {

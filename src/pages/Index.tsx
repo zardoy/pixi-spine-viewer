@@ -125,7 +125,11 @@ const Index = () => {
     setSpineFiles(files);
   };
 
-  const handleBack = () => {
+  const handleBack = async () => {
+    window.location.search = '';
+    await new Promise(resolve => {
+      setTimeout(resolve, 100)
+    })
     window.location.reload();
     setSpineFiles(null);
     spineViewerStore.ui.particleGeneratorPanelVisible = false;

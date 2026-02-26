@@ -21,7 +21,7 @@ export const NODE_CONFIG: GeneratorConfig = {
   generateAreas: [
     {
       spawnArea: { x: [400, 600], y: [400, 600] },
-      particleCount: 5, // Low count for easy visual verification
+      particleCount: 1, // Low count for easy visual verification
       maxParticleLife: [1.0, 2.5], // Longer life to ensure wrapping
       travelDistance: [200, 500],
       timelineDuration: 3,

@@ -7,7 +7,7 @@ export type DirectionPreset = 'random' | 'left' | 'right' | 'up' | 'down';
 export type Direction = DirectionPreset | { x: number; y: number };
 
 /** Config option metadata for UI generation */
-export type ConfigOptionType = 'number' | 'minMax' | 'checkbox' | 'string' | 'select';
+export type ConfigOptionType = 'number' | 'minMax' | 'checkbox' | 'string' | 'select' | 'title';
 
 export interface PreviewValueResult {
   done: boolean;
@@ -152,12 +152,12 @@ function previewTravelDistance(config: GenerateArea, time: number, ctx: CanvasRe
 /** Metadata for config options (for future UI generation) */
 export const CONFIG_OPTIONS_META: ConfigOptionMeta[] = [
   { key: 'particleCount', type: 'number', label: 'Particle Count', min: 1, max: 10000, step: 1 },
+  { key: 'title1', type: 'title', label: 'Spawn Area' },
   { key: 'spawnAreaX', type: 'minMax', label: 'Spawn Area X', min: -5000, max: 5000, step: 10, description: 'X coordinate range [min, max]' },
   { key: 'spawnAreaY', type: 'minMax', label: 'Spawn Area Y', min: -5000, max: 5000, step: 10, description: 'Y coordinate range [min, max]' },
-  { key: 'maxParticleLife', type: 'minMax', label: 'Particle Life (seconds)', min: 0.1, max: 10, step: 0.5, previewValue: previewParticleLife },
+  { key: 'title2', type: 'title', label: 'Particle Life' },
+  { key: 'maxParticleLife', type: 'minMax', label: 'Particle Life (in seconds)', min: 0.1, max: 10, step: 0.5, previewValue: previewParticleLife },
   { key: 'travelDistance', type: 'minMax', label: 'Travel Distance (px)', min: 0, max: 5000, step: 10, previewValue: previewTravelDistance },
-  { key: 'timelineDuration', type: 'number', label: 'Timeline Duration (seconds)', min: 0.1, max: 60, step: 1 },
-  { key: 'loop', type: 'checkbox', label: 'Seamless Loop', disabled: true },
   { key: 'particleSize', type: 'minMax', label: 'Particle Size (scale)', min: 0.1, max: 10, step: 0.5 },
   { key: 'rotationStart', type: 'number', label: 'Rotation Start (degrees)', min: -360, max: 360, step: 1 },
   { key: 'rotationEnd', type: 'number', label: 'Rotation End (degrees)', min: -360, max: 360, step: 1 },
@@ -175,6 +175,9 @@ export const CONFIG_OPTIONS_META: ConfigOptionMeta[] = [
     ],
     default: 'random'
   },
+  { key: 'title3', type: 'title', label: 'Timeline' },
+  { key: 'timelineDuration', type: 'number', label: 'Timeline Duration (seconds)', min: 0.1, max: 60, step: 1 },
+  { key: 'loop', type: 'checkbox', label: 'Seamless Loop', disabled: true },
   {
     key: 'spawnMode',
     type: 'select',

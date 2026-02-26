@@ -18,6 +18,7 @@ import { PairedField } from './PairedField';
 // Remove unused PreviewCanvas import - it's used in ConfigFieldWithPreview
 
 const DEFAULT_PARTICLE_IMAGE_SIZE = 44; // Default particle image size
+const PARTICLE_GENERATOR_STORAGE_KEY = 'pixi-spine-viewer/particleGenerator';
 
 interface ParticleGeneratorPanelProps {
   onFilesGenerated: (files: SpineFiles) => void;
@@ -41,34 +42,34 @@ function generateParticleImage(size: number, gradientFadeSpeed: number = 0.5): H
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  
+
   const centerX = size / 2;
   const centerY = size / 2;
   const radius = size / 2 - 2; // Slight padding
-  
+
   // Create radial gradient: white center fading to transparent edges
   // gradientFadeSpeed controls how quickly the fade happens:
   // - Lower values (0-0.3): slow fade, softer edges
   // - Higher values (0.7-1): fast fade, sharper edges
   const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-  
+
   // Calculate fade stops based on gradientFadeSpeed
   // Core stays opaque longer with lower fade speed
   const coreEnd = Math.max(0.1, 0.5 - gradientFadeSpeed * 0.3);
   const midPoint = Math.max(0.3, 0.7 - gradientFadeSpeed * 0.4);
   const fadeStart = Math.max(0.5, 0.9 - gradientFadeSpeed * 0.3);
-  
+
   gradient.addColorStop(0, 'rgba(255, 255, 255, 1)'); // White center, fully opaque
   gradient.addColorStop(coreEnd, 'rgba(255, 255, 255, 1)'); // Stay opaque in core
   gradient.addColorStop(midPoint, `rgba(255, 255, 255, ${1 - gradientFadeSpeed * 0.5})`); // Mid fade
   gradient.addColorStop(fadeStart, `rgba(255, 255, 255, ${0.3 - gradientFadeSpeed * 0.2})`); // More fade
   gradient.addColorStop(1, 'rgba(255, 255, 255, 0)'); // Fully transparent edges
-  
+
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.fill();
-  
+
   return canvas;
 }
 
@@ -84,18 +85,17 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated, embedded = false, onC
     }
   }, [embedded]);
 
-  // Use default config from generator/config.ts
-  const [config, setConfig] = useState<GenerateArea>(
-    DEFAULT_CONFIG.generateAreas[0] || {
-      spawnArea: { x: [0, 1000], y: [0, 1000] },
-      particleCount: 190,
-      maxParticleLife: [0.3, 0.7],
-      travelDistance: [400, 1000],
-      timelineDuration: 3,
-      particleSize: [1, 2],
-      loop: false, // Disabled for UI by default
-    }
-  );
+  const defaultArea: GenerateArea = DEFAULT_CONFIG.generateAreas[0] || {
+    spawnArea: { x: [0, 1000], y: [0, 1000] },
+    particleCount: 190,
+    maxParticleLife: [0.3, 0.7],
+    travelDistance: [400, 1000],
+    timelineDuration: 3,
+    particleSize: [1, 2],
+    loop: false,
+  };
+
+  const [config, setConfig] = useState<GenerateArea>(defaultArea);
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [showSpawnBounds, setShowSpawnBounds] = useState(false);
   const [gradientFadeSpeed, setGradientFadeSpeed] = useState(0.5); // 0 = slow/soft, 1 = fast/sharp
@@ -123,6 +123,46 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated, embedded = false, onC
       setConfig((prev) => ({ ...prev, [key]: value }));
     }
   }, []);
+
+  // Restore saved config from localStorage (keys from config meta only)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PARTICLE_GENERATOR_STORAGE_KEY);
+      if (!raw) return;
+      const obj: Record<string, unknown> = JSON.parse(raw);
+      const patch: Partial<GenerateArea> = { spawnArea: { ...defaultArea.spawnArea } };
+      for (const meta of AREA_CONFIG_META) {
+        if (meta.type === 'title') continue;
+        const v = obj[meta.key];
+        if (v === undefined) continue;
+        if (meta.key === 'spawnAreaX') (patch.spawnArea!.x as [number, number]) = v as [number, number];
+        else if (meta.key === 'spawnAreaY') (patch.spawnArea!.y as [number, number]) = v as [number, number];
+        else (patch as any)[meta.key] = v;
+      }
+      setConfig((prev) => ({
+        ...prev,
+        ...patch,
+        spawnArea: patch.spawnArea ? { ...prev.spawnArea, ...patch.spawnArea } : prev.spawnArea,
+      }));
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist config to localStorage on change (keys from config meta only)
+  useEffect(() => {
+    const obj: Record<string, unknown> = {};
+    for (const meta of AREA_CONFIG_META) {
+      if (meta.type === 'title') continue;
+      obj[meta.key] = getConfigValue(meta.key);
+    }
+    try {
+      localStorage.setItem(PARTICLE_GENERATOR_STORAGE_KEY, JSON.stringify(obj));
+    } catch {
+      /* ignore */
+    }
+  }, [config, getConfigValue]);
 
   const handleMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (embedded) return;
@@ -191,7 +231,7 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated, embedded = false, onC
 
       // Generate particle image: circle with shadow/opacity fading
       const particleCanvas = generateParticleImage(imageWidth, gradientFadeSpeed);
-      
+
       particleCanvas.toBlob((blob) => {
         if (!blob) {
           toast.error('Failed to create particle image');
@@ -364,6 +404,13 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated, embedded = false, onC
         );
       }
 
+      case 'title':
+        return (
+          <div key={meta.key} className="pt-2 mt-2 border-t border-border first:border-t-0 first:pt-0 first:mt-0">
+            <div className="font-medium text-foreground text-lg">{meta.label || meta.key}</div>
+          </div>
+        );
+
       default:
         return null;
     }
@@ -422,24 +469,6 @@ export const ParticleGeneratorPanel = ({ onFilesGenerated, embedded = false, onC
           // Skip rotationEnd as it's rendered with rotationStart
           if (meta.key === 'rotationEnd') {
             return null;
-          }
-          // Group minMax fields in pairs when possible (skip if already paired)
-          if (meta.type === 'minMax') {
-            const prevMeta = index > 0 ? AREA_CONFIG_META[index - 1] : null;
-            // If previous was also minMax and not spawnArea, we already rendered this pair
-            if (prevMeta?.type === 'minMax' && prevMeta.key !== 'spawnAreaX' && prevMeta.key !== 'spawnAreaY') {
-              return null;
-            }
-            const nextMeta = index < AREA_CONFIG_META.length - 1 ? AREA_CONFIG_META[index + 1] : null;
-            // If next is also minMax (and not spawnArea), render as pair
-            if (nextMeta?.type === 'minMax' && nextMeta.key !== 'spawnAreaX' && nextMeta.key !== 'spawnAreaY') {
-              return (
-                <div key={`${meta.key}-pair`} className="grid grid-cols-2 gap-2">
-                  {renderConfigField(meta)}
-                  {renderConfigField(nextMeta)}
-                </div>
-              );
-            }
           }
           return renderConfigField(meta);
         })}

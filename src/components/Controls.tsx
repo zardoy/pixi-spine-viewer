@@ -1,4 +1,4 @@
-import { Play, Pause, X, Copy } from "lucide-react";
+import { Play, Pause, X, Copy, Rewind } from "lucide-react";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
@@ -59,6 +59,16 @@ export const Controls = ({
                 Play
               </>
             )}
+          </Button>
+          <Button
+            onClick={() => { spineViewerStore.ui.isReversed = !spineViewerStore.ui.isReversed; }}
+            size="lg"
+            variant={ui.isReversed ? "default" : "outline"}
+            className="gap-2"
+            title="Reverse playback"
+          >
+            <Rewind className="w-5 h-5" />
+            {ui.isReversed ? "Reverse" : "Forward"}
           </Button>
           <div className="flex items-center gap-2">
             <Checkbox

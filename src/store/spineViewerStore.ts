@@ -62,6 +62,8 @@ export interface SpineViewerState {
     resetCounter: number;
     /** When true, increment resetCounter whenever the selected animation changes (so animation starts from beginning with mix). */
     increaseResetCounterOnAnimSwitch: boolean;
+    /** When true, play animation in reverse. */
+    isReversed: boolean;
     mountCount: number;
     particleGeneratorPanelVisible: boolean;
     particleGeneratorPanelPos: { x: number; y: number } | null;
@@ -127,6 +129,7 @@ export const initialState: SpineViewerState = {
     availableAttachmentSlots: [],
     resetCounter: 0,
     increaseResetCounterOnAnimSwitch: true,
+    isReversed: false,
     mountCount: 0,
     particleGeneratorPanelVisible: false,
     particleGeneratorPanelPos: null,

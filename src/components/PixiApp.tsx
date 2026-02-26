@@ -1016,6 +1016,7 @@ const PixiAppContent = () => {
             playing={state.ui.isPlaying}
             startPlaying={state.ui.isPlaying}
             startPlayingNoReset={true}
+            reverse={state.ui.isReversed}
             skin={state.ui.selectedSkin}
             mixTime={state.ui.mixTime}
             resetCounter={state.ui.resetCounter}
@@ -1042,6 +1043,7 @@ const PixiAppContent = () => {
                 playing={state.ui.isPlaying}
                 startPlaying={state.ui.isPlaying}
                 startPlayingNoReset={true}
+                reverse={state.ui.isReversed}
                 skin={state.ui.selectedSkin}
                 mixTime={state.ui.mixTime}
                 resetCounter={state.ui.resetCounter}

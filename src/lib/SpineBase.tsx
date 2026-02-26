@@ -129,6 +129,8 @@ export interface SpineProps
   resetCounter?: number
   /** When true, animation switch and counter reset apply immediately (no mix transition). */
   instantReset?: boolean
+  /** When true, play animation in reverse. Uses TrackEntry.reverse (native Spine API). */
+  reverse?: boolean
 
   // === Layout ===
   x?: number
@@ -192,6 +194,7 @@ export const SpineBase = (props: SpineProps) => {
     startPlayingNoReset,
     resetCounter,
     instantReset = false,
+    reverse = false,
 
     // Layout
     x = 0,
@@ -348,12 +351,14 @@ export const SpineBase = (props: SpineProps) => {
     currentAnimationStartCountRef.current++
   }
 
-  // Helper to track setAnimation calls
+  // Helper to track setAnimation calls; returns TrackEntry so caller can set .reverse etc.
   const trackedSetAnimation = (spine: SpineInstance, trackIndex: number, animationName: string, loop: boolean) => {
     // eslint-disable-next-line no-useless-catch
     try {
       setAnimationCallCountRef.current++
-      spine.state.setAnimation(trackIndex, animationName, loop)
+      const track = spine.state.setAnimation(trackIndex, animationName, loop)
+      track.reverse = reverse
+      return track
     } catch (err) {
       throw err
     }
@@ -659,6 +664,12 @@ export const SpineBase = (props: SpineProps) => {
     if (!spineRef.current || animationProgress === undefined) return
     updateAnimationProgress()
   }, [animationProgress]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle reverse changes: update the current track entry directly
+  useEffect(() => {
+    const track = spineRef.current?.state?.tracks?.[0]
+    if (track) track.reverse = reverse
+  }, [reverse])
 
   const setTimeScale = () => {
     if (spineRef.current) {

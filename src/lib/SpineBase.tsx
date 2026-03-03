@@ -33,9 +33,12 @@ function wrapSpineError(error: unknown, operation: string, spineKey: string, deb
   return new Error(msg, { cause: error })
 }
 
-/** Apply spine state with delta 0 and flush to skeleton (no time advance). Use after setAnimation when you want the first frame visible immediately. */
-function immediateUpdate(spine: SpineInstance): void {
+/** Apply spine state with delta 0 and flush to skeleton (no time advance). Use after setAnimation when you want the first frame visible immediately.
+ * When resetSlotsToSetup is true, resets slots to setup pose before apply. This prevents a one-frame blink where slots
+ * briefly show the previous animation's end state (e.g. alpha 1) before the new animation's alpha timeline (e.g. 0 at time 0) applies. */
+function immediateUpdate(spine: SpineInstance, resetSlotsToSetup = false): void {
   if (spine.state.tracks.length === 0) return
+  if (resetSlotsToSetup) spine.skeleton.setSlotsToSetupPose()
   spine.state.update(0)
   spine.state.apply(spine.skeleton)
   spine.skeleton.update(0)
@@ -127,7 +130,7 @@ export interface SpineProps
   startPlayingNoReset?: boolean
   /** Increment to reset current animation to start (uses mix time). SpineBase reacts when this increases. */
   resetCounter?: number
-  /** When true, animation switch and counter reset apply immediately (no mix transition). */
+  /** @deprecated Use mixTime={0} instead. When mixTime is 0, animation switches apply immediately (no mix transition). */
   instantReset?: boolean
   /** When true, play animation in reverse. Uses TrackEntry.reverse (native Spine API). */
   reverse?: boolean
@@ -185,7 +188,7 @@ export const SpineBase = (props: SpineProps) => {
     playing,
     paused,
     animationProgress,
-    mixTime = 0.25,
+    mixTime: _mixTime = 0.25,
     initialDelay = 0,
     resumeDelay = 0,
     resetOnPause,
@@ -193,7 +196,7 @@ export const SpineBase = (props: SpineProps) => {
     startPlaying,
     startPlayingNoReset,
     resetCounter,
-    instantReset = false,
+    instantReset, // Deprecated: use mixTime === 0 instead
     reverse = false,
 
     // Layout
@@ -231,6 +234,8 @@ export const SpineBase = (props: SpineProps) => {
 
     ...passthroughProps
   } = props
+
+  const mixTime = instantReset ? 0 : _mixTime
 
   const attachmentsFollowRef = useRef(attachmentsFollow)
   attachmentsFollowRef.current = attachmentsFollow
@@ -697,10 +702,11 @@ export const SpineBase = (props: SpineProps) => {
       try {
         trackedSetAnimation(spineRef.current, 0, animToUse, loop)
         trackAnimationStart(animToUse)
-        if (instantReset) {
+        // When mixTime is 0, apply instant reset behavior (no mix transition)
+        if (mixTime === 0) {
           const track = spineRef.current.state.tracks[0]
           if (track) track.mixDuration = 0
-          immediateUpdate(spineRef.current)
+          immediateUpdate(spineRef.current, true)
         }
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
@@ -714,17 +720,18 @@ export const SpineBase = (props: SpineProps) => {
         try {
           trackedSetAnimation(spineRef.current, 0, animToUse, loop)
           trackAnimationStart(animToUse)
-          if (instantReset) {
+          // When mixTime is 0, apply instant reset behavior (no mix transition)
+          if (mixTime === 0) {
             const t = spineRef.current.state.tracks[0]
             if (t) t.mixDuration = 0
-            immediateUpdate(spineRef.current)
+            immediateUpdate(spineRef.current, true)
           }
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
       }
     }
-  }, [animation, loop, instantReset])
+  }, [animation, loop, mixTime])
 
   // Handle playing/paused, timeScale changes with resumeDelay and resetOnPause
   useEffect(() => {
@@ -809,13 +816,14 @@ export const SpineBase = (props: SpineProps) => {
       throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
     }
 
-    if (instantReset) {
+    // When mixTime is 0, apply instant reset behavior (no mix transition)
+    if (mixTime === 0) {
       const track = spine.state.tracks[0]
       if (track) {
         track.mixDuration = 0
         track.trackTime = 0
       }
-      immediateUpdate(spine)
+      immediateUpdate(spine, true)
 
       return
     }

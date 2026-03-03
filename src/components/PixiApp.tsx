@@ -606,7 +606,8 @@ const PixiAppContent = () => {
         spineViewerStore.refs.previousViewport = null;
       }
 
-      spineState.setAnimation(0, state.ui.selectedAnimation, state.ui.loop);
+      // Animation switch is handled by SpineBase via animation prop change.
+      // SpineBase automatically applies instant reset behavior when mixTime === 0.
     }
     // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1008,7 +1009,6 @@ const PixiAppContent = () => {
         >
           <SpineBase
             key={`spine-${state.ui.mountCount}`}
-            instantReset={(globalThis as any).doReset}
             spine={SPINE_KEY}
             animation={state.ui.selectedAnimation}
             loop={state.ui.loop}

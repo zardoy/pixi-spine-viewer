@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { SpineDisplay } from "../lib/SpineDisplay";
 import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
-import { spineViewerStore, resetSpineViewerState } from "../store/spineViewerStore";
+import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
 import JSZip from "jszip";
@@ -113,6 +113,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
               spineViewerStore.ui.previousAnimation = state.ui.selectedAnimation;
             }
             spineViewerStore.ui.selectedAnimation = anim;
+            applyActionAfterAnimSwitch();
           }
         }
       } else if (e.code === "KeyQ") {
@@ -122,6 +123,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           const prevAnim = state.ui.previousAnimation;
           spineViewerStore.ui.previousAnimation = state.ui.selectedAnimation;
           spineViewerStore.ui.selectedAnimation = prevAnim;
+          applyActionAfterAnimSwitch();
         }
       } else if (e.code === "KeyC") {
         // Cycle through skins with 'C' key

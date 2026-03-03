@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { useSnapshot } from "valtio";
-import { spineViewerStore } from "../store/spineViewerStore";
+import { spineViewerStore, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
 
 interface ControlsProps {
   onCopyUrl: () => void;
@@ -149,6 +149,7 @@ export const Controls = ({
                 spineViewerStore.ui.previousAnimation = ui.selectedAnimation;
               }
               spineViewerStore.ui.selectedAnimation = val;
+              applyActionAfterAnimSwitch();
             }}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Select animation" />
@@ -159,6 +160,25 @@ export const Controls = ({
                     {index < 9 ? `${index + 1}. ` : ""}{anim}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">After anim switch</Label>
+            <Select
+              value={ui.actionAfterAnimSwitch}
+              onValueChange={(val: 'same state' | 'force play' | 'force pause') => {
+                spineViewerStore.ui.actionAfterAnimSwitch = val;
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="same state">Same state</SelectItem>
+                <SelectItem value="force play">Force play</SelectItem>
+                <SelectItem value="force pause">Force pause</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -193,6 +213,7 @@ export const Controls = ({
                   } else {
                     spineViewerStore.ui.secondSelectedAnimation = val;
                   }
+                  applyActionAfterAnimSwitch();
                 }}
               >
                 <SelectTrigger className="w-48">

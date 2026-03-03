@@ -64,6 +64,8 @@ export interface SpineViewerState {
     increaseResetCounterOnAnimSwitch: boolean;
     /** When true, play animation in reverse. */
     isReversed: boolean;
+    /** After switching animation: keep current play state, or force play/pause. */
+    actionAfterAnimSwitch: 'same state' | 'force play' | 'force pause';
     mountCount: number;
     particleGeneratorPanelVisible: boolean;
     particleGeneratorPanelPos: { x: number; y: number } | null;
@@ -130,6 +132,7 @@ export const initialState: SpineViewerState = {
     resetCounter: 0,
     increaseResetCounterOnAnimSwitch: true,
     isReversed: false,
+    actionAfterAnimSwitch: 'same state',
     mountCount: 0,
     particleGeneratorPanelVisible: false,
     particleGeneratorPanelPos: null,
@@ -156,6 +159,13 @@ export function resetSpineViewerState(): void {
   spineViewerStore.secondSpineOpacity = fresh.secondSpineOpacity;
   spineViewerStore.syncedDir = fresh.syncedDir;
   spineViewerStore.reloadPreserveAnimation = fresh.reloadPreserveAnimation;
+}
+
+/** Apply playback state after animation switch based on actionAfterAnimSwitch. */
+export function applyActionAfterAnimSwitch(): void {
+  const action = spineViewerStore.ui.actionAfterAnimSwitch;
+  if (action === 'force play') spineViewerStore.ui.isPlaying = true;
+  else if (action === 'force pause') spineViewerStore.ui.isPlaying = false;
 }
 
 (window as any).spineViewerStore = spineViewerStore;

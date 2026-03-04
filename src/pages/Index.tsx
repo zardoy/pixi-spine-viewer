@@ -55,10 +55,30 @@ const Index = () => {
       return;
     }
 
-    // Check for direct spine URLs (jsonUrl, atlasUrl, pngUrl)
+    // Check for direct spine URLs (jsonUrl, atlasUrl, pngUrl, pngUrl2, pngUrl3, etc.)
     const jsonUrl = params.get("jsonUrl");
     const atlasUrl = params.get("atlasUrl");
     const pngUrl = params.get("pngUrl");
+    
+    // Collect all PNG URLs (pngUrl, pngUrl2, pngUrl3, etc.)
+    const pngUrlMap = new Map<number, string>();
+    if (pngUrl) {
+      pngUrlMap.set(1, pngUrl); // pngUrl is the first one
+    }
+    // Check for pngUrl2, pngUrl3, etc.
+    for (const [key, value] of params.entries()) {
+      if (key.startsWith('pngUrl') && key !== 'pngUrl' && value) {
+        const numStr = key.replace('pngUrl', '');
+        const index = numStr ? parseInt(numStr) : 1;
+        if (index > 0) {
+          pngUrlMap.set(index, value);
+        }
+      }
+    }
+    // Sort by index and decode
+    const decodedPngUrls = Array.from(pngUrlMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([_, url]) => decodeURIComponent(url));
 
     const generator = params.get("generator");
     if (generator === "1") {
@@ -68,16 +88,15 @@ const Index = () => {
       return;
     }
 
-    if (jsonUrl && atlasUrl && pngUrl) {
+    if (jsonUrl && atlasUrl && decodedPngUrls.length > 0) {
       setLoadingFromUrl(true);
       const loadSpineFromUrls = async () => {
         try {
           toast.loading("Loading spine from URL...");
           const decodedJsonUrl = decodeURIComponent(jsonUrl);
           const decodedAtlasUrl = decodeURIComponent(atlasUrl);
-          const decodedPngUrl = decodeURIComponent(pngUrl);
 
-          const files = await fetchSpineFilesFromUrl(decodedJsonUrl, decodedAtlasUrl, decodedPngUrl);
+          const files = await fetchSpineFilesFromUrl(decodedJsonUrl, decodedAtlasUrl, decodedPngUrls);
 
           const spineFiles: SpineFiles = {
             jsonFile: files.jsonFile,

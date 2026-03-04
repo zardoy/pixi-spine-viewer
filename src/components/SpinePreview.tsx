@@ -8,11 +8,12 @@ import { Loader2 } from "lucide-react";
 interface SpinePreviewProps {
   jsonUrl: string;
   atlasUrl: string;
-  pngUrl: string;
+  pngUrl?: string; // Deprecated: use pngUrls instead
+  pngUrls?: string[]; // Support multiple PNG URLs
   className?: string;
 }
 
-export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, className }: SpinePreviewProps) => {
+export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, pngUrls, className }: SpinePreviewProps) => {
   const [loader, setLoader] = useState<FileSpineLoader | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,31 +26,40 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, className }: SpinePrev
         setLoading(true);
         setError(null);
 
+        // Support both pngUrl (legacy) and pngUrls (new)
+        const imageUrls = pngUrls || (pngUrl ? [pngUrl] : []);
+
         // Fetch all files
-        const [jsonResponse, atlasResponse, pngResponse] = await Promise.all([
+        const fetchPromises: Promise<Response>[] = [
           fetch(jsonUrl),
           fetch(atlasUrl),
-          fetch(pngUrl),
-        ]);
+          ...imageUrls.map(url => fetch(url)),
+        ];
 
-        if (!jsonResponse.ok || !atlasResponse.ok || !pngResponse.ok) {
+        const responses = await Promise.all(fetchPromises);
+
+        if (!responses[0].ok || !responses[1].ok || responses.slice(2).some(r => !r.ok)) {
           throw new Error("Failed to fetch spine files");
         }
 
         if (cancelled) return;
 
-        const [jsonBlob, atlasBlob, pngBlob] = await Promise.all([
-          jsonResponse.blob(),
-          atlasResponse.blob(),
-          pngResponse.blob(),
-        ]);
+        const blobPromises: Promise<Blob>[] = [
+          responses[0].blob(),
+          responses[1].blob(),
+          ...responses.slice(2).map(r => r.blob()),
+        ];
+
+        const blobs = await Promise.all(blobPromises);
 
         if (cancelled) return;
 
         // Convert to File objects
-        const jsonFile = new File([jsonBlob], "spine.json", { type: "application/json" });
-        const atlasFile = new File([atlasBlob], "spine.atlas", { type: "text/plain" });
-        const pngFile = new File([pngBlob], "spine.png", { type: "image/png" });
+        const jsonFile = new File([blobs[0]], "spine.json", { type: "application/json" });
+        const atlasFile = new File([blobs[1]], "spine.atlas", { type: "text/plain" });
+        const imageFiles = blobs.slice(2).map((blob, index) => 
+          new File([blob], `spine${index > 0 ? index + 1 : ''}.png`, { type: blob.type || "image/png" })
+        );
 
         // Read skeleton data
         const isSkelFile = jsonUrl.toLowerCase().endsWith('.skel');
@@ -60,8 +70,8 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, className }: SpinePrev
 
         if (cancelled) return;
 
-        // Create loader
-        const spineLoader = new FileSpineLoader(skeletonData, atlasText, [pngFile]);
+        // Create loader with all image files
+        const spineLoader = new FileSpineLoader(skeletonData, atlasText, imageFiles);
         await spineLoader.loadSpine("preview");
 
         if (cancelled) return;
@@ -80,7 +90,7 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, className }: SpinePrev
     return () => {
       cancelled = true;
     };
-  }, [jsonUrl, atlasUrl, pngUrl]);
+  }, [jsonUrl, atlasUrl, pngUrl, pngUrls]);
 
   if (loading) {
     return (

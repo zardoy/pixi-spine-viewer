@@ -4,9 +4,20 @@ import { Button } from "./ui/button";
 import { toast } from "sonner";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { SpineFiles } from "../pages/Index";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, MoreVertical } from "lucide-react";
 import { SpinePreview } from "./SpinePreview";
 import { spineViewerStore } from "../store/spineViewerStore";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@radix-ui/react-dropdown-menu";
+
+export interface SpineAction {
+  type: "fetch";
+  url: string;
+}
 
 export interface SpineEntry {
   name: string;
@@ -14,6 +25,9 @@ export interface SpineEntry {
   json: string;
   atlas: string;
   png: string;
+  actions?: Record<string, SpineAction>;
+  // Support multiple PNG keys: png2, png3, etc.
+  [key: string]: string | Record<string, SpineAction> | undefined;
 }
 
 interface SpinesMapViewerProps {
@@ -53,13 +67,68 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     loadSpinesMap();
   }, [spinesMapUrl]);
 
+  const handleActionClick = async (
+    spine: SpineEntry,
+    actionName: string,
+    action: SpineAction,
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation(); // Prevent card click
+
+    try {
+      if (action.type === "fetch") {
+        toast.loading(`Executing ${actionName}...`);
+        const response = await fetch(action.url);
+
+        if (!response.ok) {
+          throw new Error(`Action failed: ${response.statusText} (${response.status})`);
+        }
+
+        // Try to parse as JSON, but don't fail if it's not
+        let result: unknown;
+        const contentType = response.headers.get("content-type");
+        if (contentType?.includes("application/json")) {
+          result = await response.json();
+        } else {
+          result = await response.text();
+        }
+
+        toast.dismiss();
+        toast.success(`${actionName} completed successfully`);
+        console.log(`Action "${actionName}" result:`, result);
+      } else {
+        toast.error(`Unknown action type: ${(action as SpineAction).type}`);
+      }
+    } catch (err) {
+      toast.dismiss();
+      const errorMessage = err instanceof Error ? err.message : "Failed to execute action";
+      toast.error(errorMessage);
+    }
+  };
+
   const handleSpineClick = async (spine: SpineEntry) => {
     try {
       setLoadingSpine(spine.name);
       toast.loading(`Loading ${spine.name}...`);
 
-      // Download spine files from URLs (pass PNG URL explicitly)
-      const files = await fetchSpineFilesFromUrl(spine.json, spine.atlas, spine.png);
+      // Collect all PNG keys (png, png2, png3, etc.)
+      const pngUrls: string[] = [];
+      for (const [key, value] of Object.entries(spine)) {
+        if (key.startsWith('png') && typeof value === 'string' && value) {
+          // Sort: png, png2, png3, etc. (png comes before png2 lexicographically, but we want numeric order)
+          pngUrls.push(value);
+        }
+      }
+      // Sort by key name to ensure png, png2, png3 order
+      const pngKeys = Object.keys(spine).filter(k => k.startsWith('png') && typeof spine[k] === 'string').sort((a, b) => {
+        const numA = a === 'png' ? 0 : parseInt(a.replace('png', '')) || 0;
+        const numB = b === 'png' ? 0 : parseInt(b.replace('png', '')) || 0;
+        return numA - numB;
+      });
+      const sortedPngUrls = pngKeys.map(k => spine[k] as string).filter(Boolean);
+
+      // Download spine files from URLs (pass all PNG URLs)
+      const files = await fetchSpineFilesFromUrl(spine.json, spine.atlas, sortedPngUrls);
 
       const spineFiles: SpineFiles = {
         jsonFile: files.jsonFile,
@@ -74,7 +143,10 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
       const params = new URLSearchParams();
       params.set("jsonUrl", encodeURIComponent(spine.json));
       params.set("atlasUrl", encodeURIComponent(spine.atlas));
-      params.set("pngUrl", encodeURIComponent(spine.png));
+      // Add all PNG URLs as separate params
+      sortedPngUrls.forEach((url, index) => {
+        params.set(index === 0 ? "pngUrl" : `pngUrl${index + 1}`, encodeURIComponent(url));
+      });
       window.history.pushState({}, "", `?${params.toString()}`);
       
       spineViewerStore.ui.particleGeneratorPanelVisible = false;
@@ -144,14 +216,49 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground font-mono">{spine.path}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground font-mono">{spine.path}</p>
+                  {spine.actions && Object.keys(spine.actions).length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[200px] bg-popover text-popover-foreground border border-border rounded-md shadow-md p-1 z-50">
+                        {Object.entries(spine.actions).map(([actionName, action]) => (
+                          <DropdownMenuItem
+                            key={actionName}
+                            className="cursor-pointer px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground"
+                            onClick={(e) => handleActionClick(spine, actionName, action, e)}
+                          >
+                            {actionName}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
                 
                 {/* Spine Preview */}
                 <div className="flex-1 min-h-[200px] my-2">
                   <SpinePreview
                     jsonUrl={spine.json}
                     atlasUrl={spine.atlas}
-                    pngUrl={spine.png}
+                    pngUrls={Object.keys(spine)
+                      .filter(k => k.startsWith('png') && typeof spine[k] === 'string')
+                      .sort((a, b) => {
+                        const numA = a === 'png' ? 0 : parseInt(a.replace('png', '')) || 0;
+                        const numB = b === 'png' ? 0 : parseInt(b.replace('png', '')) || 0;
+                        return numA - numB;
+                      })
+                      .map(k => spine[k] as string)
+                      .filter(Boolean)}
                     className="w-full h-full"
                   />
                 </div>

@@ -48,12 +48,12 @@ async function fetchFile(url: string, filename: string): Promise<File | null> {
  *
  * - inputUrl: URL to any of the spine files (usually the JSON or .skel)
  * - atlasUrlOverride: optional explicit atlas URL (for cases like dragon-ess.json + dragon.atlas)
- * - pngUrlOverride: optional explicit PNG/image URL (if different from atlas base URL)
+ * - pngUrlOverride: optional explicit PNG/image URL(s) - can be string or array of strings for multiple images
  */
 export async function fetchSpineFilesFromUrl(
   inputUrl: string,
   atlasUrlOverride?: string,
-  pngUrlOverride?: string
+  pngUrlOverride?: string | string[]
 ): Promise<FetchedSpineFiles> {
   const skeletonBaseUrl = getBaseUrl(inputUrl);
   const skeletonBaseFilename = skeletonBaseUrl.split('/').pop() || 'spine';
@@ -88,15 +88,22 @@ export async function fetchSpineFilesFromUrl(
   // 3. Try to fetch image files
   const imageFiles: File[] = [];
   
-  // If explicit PNG URL provided, use it
+  // If explicit PNG URL(s) provided, use them
   if (pngUrlOverride) {
-    const pngFile = await fetchFile(pngUrlOverride, `${atlasBaseFilename}.png`);
-    if (pngFile) {
-      imageFiles.push(pngFile);
+    const pngUrls = Array.isArray(pngUrlOverride) ? pngUrlOverride : [pngUrlOverride];
+    for (let i = 0; i < pngUrls.length; i++) {
+      const pngUrl = pngUrls[i];
+      const filename = i === 0 
+        ? `${atlasBaseFilename}.png`
+        : `${atlasBaseFilename}${i + 1}.png`;
+      const pngFile = await fetchFile(pngUrl, filename);
+      if (pngFile) {
+        imageFiles.push(pngFile);
+      }
     }
   }
   
-  // If no PNG file found yet, try to derive from atlas base URL
+  // If no PNG files found yet, try to derive from atlas base URL
   if (imageFiles.length === 0) {
     for (const ext of IMAGE_EXTENSIONS) {
       const imageUrl = `${atlasBaseUrl}.${ext}`;

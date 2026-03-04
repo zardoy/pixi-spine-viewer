@@ -3,7 +3,7 @@ import { Container, type TextureSource } from 'pixi.js'
 import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
 import { useEffect, useLayoutEffect, useRef, type Ref, type RefObject } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
-import { Physics } from '@esotericsoftware/spine-core'
+import { Physics, RegionAttachment, MeshAttachment } from '@esotericsoftware/spine-core'
 import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
@@ -420,6 +420,118 @@ export const SpineBase = (props: SpineProps) => {
         const timeScaleStr = ts === 0 ? '0' : ts.toString()
 
         return `[${allAnimationsStartCountRef.current}/${currentAnimationStartCountRef.current}] [a:${animName}] [s:${skinName}] (${timeScaleStr}) [setAnim:${setAnimationCallCountRef.current}]`
+      },
+      get attachmentSizes() {
+        const s = spineRef.current
+        if (!s) return null
+
+        // Ensure skeleton is updated
+        s._validateAndTransformAttachments()
+
+        const slots = s.skeleton.slots
+        const result: Record<string, {
+          width: number
+          height: number
+          x: number
+          y: number
+          attachmentName: string | null
+          attachmentType: string
+          textureWidth: number | null
+          textureHeight: number | null
+          textureOversizeX: number | null
+          textureOversizeY: number | null
+        }> = {}
+
+        // Get Spine container's world transform for screen space conversion
+        const spineWorldTransform = s.worldTransform
+        const spineScaleX = Math.sqrt(spineWorldTransform.a * spineWorldTransform.a + spineWorldTransform.c * spineWorldTransform.c)
+        const spineScaleY = Math.sqrt(spineWorldTransform.b * spineWorldTransform.b + spineWorldTransform.d * spineWorldTransform.d)
+
+        for (let i = 0; i < slots.length; i++) {
+          const slot = slots[i]
+          if (!slot.bone.active) continue
+
+          const attachment = slot.getAttachment()
+          if (!attachment) continue
+
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
+          // Calculate world vertices bounds
+          if (attachment instanceof RegionAttachment) {
+            const vertices = new Float32Array(8)
+            attachment.computeWorldVertices(slot, vertices, 0, 2)
+            for (let j = 0; j < 8; j += 2) {
+              minX = Math.min(minX, vertices[j])
+              maxX = Math.max(maxX, vertices[j])
+              minY = Math.min(minY, vertices[j + 1])
+              maxY = Math.max(maxY, vertices[j + 1])
+            }
+          } else if (attachment instanceof MeshAttachment) {
+            const vertices = new Float32Array(attachment.worldVerticesLength)
+            attachment.computeWorldVertices(slot, 0, attachment.worldVerticesLength, vertices, 0, 2)
+            for (let j = 0; j < vertices.length; j += 2) {
+              minX = Math.min(minX, vertices[j])
+              maxX = Math.max(maxX, vertices[j])
+              minY = Math.min(minY, vertices[j + 1])
+              maxY = Math.max(maxY, vertices[j + 1])
+            }
+          } else {
+            // Skip other attachment types (PathAttachment, ClippingAttachment, etc.)
+            continue
+          }
+
+          // Transform to screen space (accounting for Spine container's transform)
+          const localWidth = maxX - minX
+          const localHeight = maxY - minY
+          const screenWidth = localWidth * spineScaleX
+          const screenHeight = localHeight * spineScaleY
+
+          // Transform position to screen space
+          const localX = minX
+          const localY = minY
+          const screenX = localX * spineScaleX + spineWorldTransform.tx
+          const screenY = localY * spineScaleY + spineWorldTransform.ty
+
+          // Get original texture size from atlas region
+          let textureWidth: number | null = null
+          let textureHeight: number | null = null
+          let textureOversizeX: number | null = null
+          let textureOversizeY: number | null = null
+
+          if (attachment instanceof RegionAttachment || attachment instanceof MeshAttachment) {
+            const region = attachment.region
+            if (region) {
+              // Use originalWidth/originalHeight for the actual texture source size
+              // These represent the original image dimensions before atlas packing
+              textureWidth = region.originalWidth || region.width
+              textureHeight = region.originalHeight || region.height
+
+              // Calculate oversize ratio: texture size / rendered size
+              // > 1.0 means texture is bigger than rendered (oversized)
+              // < 1.0 means texture is smaller than rendered (undersized)
+              // = 1.0 means perfect match
+              if (screenWidth > 0 && screenHeight > 0) {
+                textureOversizeX = textureWidth / screenWidth
+                textureOversizeY = textureHeight / screenHeight
+              }
+            }
+          }
+
+          result[slot.data.name] = {
+            width: screenWidth,
+            height: screenHeight,
+            x: screenX,
+            y: screenY,
+            attachmentName: attachment.name,
+            attachmentType: attachment.constructor.name,
+            textureWidth,
+            textureHeight,
+            textureOversizeX,
+            textureOversizeY,
+          }
+        }
+
+        return result
       },
     }
     return () => {

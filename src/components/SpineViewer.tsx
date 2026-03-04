@@ -10,7 +10,14 @@ import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } f
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
 import JSZip from "jszip";
-import { Download, Sparkles } from "lucide-react";
+import { Download, Sparkles, Wrench } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@radix-ui/react-dropdown-menu";
+import { skeletonDataToJson } from "../spine-toolbox";
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -553,6 +560,60 @@ const InfoPanel = () => {
     }
   };
 
+  /**
+   * Download ZIP with skeleton converted from .skel to .json
+   */
+  const handleDownloadZipWithSkelToJson = async () => {
+    if (!files) return;
+    const spine = spineViewerStore.refs.spine;
+    const isSkel = files.jsonFile.name.toLowerCase().endsWith('.skel');
+    if (!isSkel) {
+      toast.info('Skeleton is already JSON. Use regular Download ZIP.');
+      return;
+    }
+    if (!spine || spine.destroyed || !spine.skeleton?.data) {
+      toast.error('Spine not loaded. Cannot convert.');
+      return;
+    }
+
+    try {
+      toast.loading('Converting skel→JSON and creating ZIP...');
+      const zip = new JSZip();
+      const jsonObj = skeletonDataToJson(spine.skeleton.data);
+      const jsonStr = JSON.stringify(jsonObj, null, 2);
+      const jsonName = files.jsonFile.name.replace(/\.skel$/i, '.json');
+      zip.file(jsonName, jsonStr);
+
+      const atlasContent = await files.atlasFile.arrayBuffer();
+      zip.file(files.atlasFile.name, atlasContent);
+
+      const imageNames = await parseAtlasImageNames(files.atlasFile);
+      for (let i = 0; i < files.imageFiles.length; i++) {
+        const imageFile = files.imageFiles[i];
+        const imageName = imageNames[i] || imageFile.name;
+        const imageContent = await imageFile.arrayBuffer();
+        zip.file(imageName, imageContent);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${files.jsonFile.name.replace(/\.(json|skel)$/i, '')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.dismiss();
+      toast.success('ZIP with JSON skeleton downloaded');
+    } catch (error) {
+      toast.dismiss();
+      toast.error(error instanceof Error ? error.message : 'Conversion failed');
+      console.error('Error converting skel to JSON:', error);
+    }
+  };
+
   const spine = spineViewerStore.refs.spine;
   const isDestroyed = spine ? spine.destroyed : true;
   const skeletonName = !isDestroyed && spine?.skeleton?.data?.name ? spine.skeleton.data.name : "N/A";
@@ -620,6 +681,22 @@ const InfoPanel = () => {
           <Download className="w-3 h-3" />
           Download ZIP
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" className="gap-1">
+              <Wrench className="w-3 h-3" />
+              Toolbox
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[220px] bg-popover text-popover-foreground border border-border rounded-md shadow-md p-1 z-50">
+            <DropdownMenuItem
+              onClick={handleDownloadZipWithSkelToJson}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+            >
+              Download ZIP with skel→JSON
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="flex flex-wrap gap-2 mt-2">
         <Button

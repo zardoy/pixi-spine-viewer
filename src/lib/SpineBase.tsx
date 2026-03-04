@@ -33,6 +33,39 @@ function wrapSpineError(error: unknown, operation: string, spineKey: string, deb
   return new Error(msg, { cause: error })
 }
 
+/** Slot indices that have alpha/color timelines in the given animation. Uses property id "9|slotIndex" (alpha). */
+function getSlotIndicesWithAlphaTimeline(animation: { timelines: Array<{ getPropertyIds: () => string[]; slotIndex?: number }> }): Set<number> {
+  const indices = new Set<number>()
+  for (const t of animation.timelines) {
+    if (t.slotIndex !== undefined) {
+      for (const id of t.getPropertyIds()) {
+        if (id.startsWith('9|')) {
+          indices.add(t.slotIndex)
+          break
+        }
+      }
+    }
+  }
+  return indices
+}
+
+/** Reset only slots that are in the new animation but NOT in the old. Prevents blink on slots like "3" when
+ * transitioning 2→3 (anim 2 doesn't touch slot 3). Resetting ALL slots would flash slots 1,2 invisible. */
+function resetSlotsOnlyInNewAnim(spine: SpineInstance): void {
+  const track = spine.state.tracks[0]
+  const current = track?.animation
+  const from = track?.mixingFrom?.animation
+  if (!current || !from) return
+  const currentSlots = getSlotIndicesWithAlphaTimeline(current)
+  const fromSlots = getSlotIndicesWithAlphaTimeline(from)
+  for (const slotIndex of currentSlots) {
+    if (!fromSlots.has(slotIndex)) {
+      const slot = spine.skeleton.slots[slotIndex]
+      if (slot) slot.color.setFromColor(slot.data.color)
+    }
+  }
+}
+
 /** Apply spine state with delta 0 and flush to skeleton (no time advance). Use after setAnimation when you want the first frame visible immediately.
  * When resetSlotsToSetup is true, resets slots to setup pose before apply. This prevents a one-frame blink where slots
  * briefly show the previous animation's end state (e.g. alpha 1) before the new animation's alpha timeline (e.g. 0 at time 0) applies. */
@@ -157,6 +190,8 @@ export interface SpineProps
   // === Debug ===
   /** When set, exposes ref and live state on globalThis.spineDebug[key] (getters, no extra code paths) */
   debugKey?: string
+  /** When true, logs slot alpha values during animation mixing to help diagnose blink issues (slot 3 flashing to 1 before anim) */
+  debugSlotBlink?: boolean
 
   // === Refs ===
   /** Container ref */
@@ -223,6 +258,7 @@ export const SpineBase = (props: SpineProps) => {
 
     // Debug
     debugKey,
+    debugSlotBlink = true,
 
     // Refs
     itemRef,
@@ -708,6 +744,34 @@ export const SpineBase = (props: SpineProps) => {
         listenerRef.current = listener
         spine.state.addListener(listener)
 
+        // Debug: log slot alphas during mixing to diagnose blink (slot flashing to 1 before anim)
+        if (debugSlotBlink) {
+          spine.afterUpdateWorldTransforms = () => {
+            const track = spine.state.tracks[0]
+            if (!track?.mixingFrom) return
+            const from = track.mixingFrom.animation?.name ?? '?'
+            const cur = track.animation?.name ?? '?'
+            const mix = track.mixTime / Math.max(track.mixDuration, 1e-6)
+            const slotsToLog = ['1', '2', '3']
+            const info: Record<string, { colorA: number; setupA: number; blink?: boolean }> = {}
+            for (const name of slotsToLog) {
+              const slot = spine.skeleton.findSlot(name)
+              if (!slot) continue
+              const colorA = slot.color.a
+              const setupA = slot.data.color.a
+              const blink = setupA < 0.01 && colorA > 0.5 && mix < 0.1
+              info[name] = { colorA, setupA, ...(blink && { blink: true }) }
+            }
+            const hasBlink = Object.values(info).some((v) => v.blink)
+            if (hasBlink || mix < 0.05) {
+              console.log(
+                `[SpineBase debugSlotBlink] mix ${from}→${cur} mixTime=${track.mixTime.toFixed(4)} mix=${mix.toFixed(3)}`,
+                info,
+                hasBlink ? '⚠️ BLINK DETECTED' : ''
+              )
+            }
+          }
+        }
 
         ref.current.addChild(spine)
 
@@ -772,9 +836,41 @@ export const SpineBase = (props: SpineProps) => {
     // do not add any other deps, its for initial load only
   }, [spineKey])
 
+  // Sync debugSlotBlink callback when spine or flag changes
   useEffect(() => {
-    updateMixTime()
-  }, [mixTime])
+    const spine = spineRef.current
+    if (!spine) return
+    if (debugSlotBlink) {
+      spine.afterUpdateWorldTransforms = () => {
+        const track = spine.state.tracks[0]
+        if (!track?.mixingFrom) return
+        const from = track.mixingFrom.animation?.name ?? '?'
+        const cur = track.animation?.name ?? '?'
+        const mix = track.mixTime / Math.max(track.mixDuration, 1e-6)
+        const slotsToLog = ['1', '2', '3']
+        const info: Record<string, { colorA: number; setupA: number; blink?: boolean }> = {}
+        for (const name of slotsToLog) {
+          const slot = spine.skeleton.findSlot(name)
+          if (!slot) continue
+          const colorA = slot.color.a
+          const setupA = slot.data.color.a
+          const blink = setupA < 0.01 && colorA > 0.5 && mix < 0.1
+          info[name] = { colorA, setupA, ...(blink && { blink: true }) }
+        }
+        const hasBlink = Object.values(info).some((v) => v.blink)
+        if (hasBlink || mix < 0.05) {
+          console.log(
+            `[SpineBase debugSlotBlink] mix ${from}→${cur} mixTime=${track.mixTime.toFixed(4)} mix=${mix.toFixed(3)}`,
+            info,
+            hasBlink ? '⚠️ BLINK DETECTED' : ''
+          )
+        }
+      }
+    } else {
+      spine.afterUpdateWorldTransforms = () => {}
+    }
+  }, [debugSlotBlink])
+
 
   // Handle animationProgress changes
   useEffect(() => {
@@ -819,6 +915,12 @@ export const SpineBase = (props: SpineProps) => {
           const track = spineRef.current.state.tracks[0]
           if (track) track.mixDuration = 0
           immediateUpdate(spineRef.current, true)
+        } else {
+          // Reset only slots in new anim but not old (e.g. slot 3 when 2→3). Prevents blink without
+          // flashing slots 1,2 invisible (which setSlotsToSetupPose would do).
+          resetSlotsOnlyInNewAnim(spineRef.current)
+          // Apply immediately so first mix frame is correct before any render (avoids 1-frame blink)
+          immediateUpdate(spineRef.current, false)
         }
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
@@ -837,6 +939,9 @@ export const SpineBase = (props: SpineProps) => {
             const t = spineRef.current.state.tracks[0]
             if (t) t.mixDuration = 0
             immediateUpdate(spineRef.current, true)
+          } else {
+            resetSlotsOnlyInNewAnim(spineRef.current)
+            immediateUpdate(spineRef.current, false)
           }
         } catch (error) {
           throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
@@ -939,6 +1044,10 @@ export const SpineBase = (props: SpineProps) => {
 
       return
     }
+
+    // Reset only slots in new anim but not old (prevents blink without flashing shared slots)
+    resetSlotsOnlyInNewAnim(spine)
+    immediateUpdate(spine, false)
 
     // If paused and mixTime > 0, manually advance the mix to complete smoothly
     if (!wasPlaying && mixTime > 0) {

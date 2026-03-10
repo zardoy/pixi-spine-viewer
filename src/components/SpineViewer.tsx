@@ -3,10 +3,12 @@ import { Controls } from "./Controls";
 import { toast } from "sonner";
 import { SpineFiles } from "../pages/Index";
 import { Button } from './ui/button';
+import { Input } from "./ui/input";
 import { SpineDisplay } from "../lib/SpineDisplay";
 import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
 import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
+import { getAnimationKeyframeTimes } from "../lib/animationUtils";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
 import JSZip from "jszip";
@@ -15,9 +17,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@radix-ui/react-dropdown-menu";
-import { skeletonDataToJson } from "../spine-toolbox";
+import { skeletonDataToJson, parseAtlasRegions, downloadAttachmentAsImage } from "../spine-toolbox";
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -84,6 +89,11 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       if (e.ctrlKey || e.metaKey) {
         return;
       }
+      // Don't intercept when typing in inputs
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
 
       if (e.code === "Space") {
         e.preventDefault();
@@ -140,6 +150,48 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           const nextIndex = (currentIndex + 1) % state.ui.skins.length;
           spineViewerStore.ui.selectedSkin = state.ui.skins[nextIndex];
         }
+      } else if (e.code === "Comma") {
+        // Previous keyframe
+        const spine = spineViewerStore.refs.spine;
+        const anim = spine?.skeleton?.data?.findAnimation?.(state.ui.selectedAnimation);
+        if (anim) {
+          const keyframes = getAnimationKeyframeTimes(anim as Parameters<typeof getAnimationKeyframeTimes>[0]);
+          const current = state.ui.timeline;
+          const idx = keyframes.findIndex((t) => t >= current) - 1;
+          if (idx >= 0 && keyframes[idx] !== undefined) {
+            e.preventDefault();
+            spineViewerStore.ui.timeline = keyframes[idx];
+            spineViewerStore.ui.isPlaying = false;
+          }
+        }
+      } else if (e.code === "Period") {
+        // Next keyframe
+        const spine = spineViewerStore.refs.spine;
+        const anim = spine?.skeleton?.data?.findAnimation?.(state.ui.selectedAnimation);
+        if (anim) {
+          const keyframes = getAnimationKeyframeTimes(anim as Parameters<typeof getAnimationKeyframeTimes>[0]);
+          const current = state.ui.timeline;
+          const idx = keyframes.findIndex((t) => t > current);
+          if (idx >= 0 && keyframes[idx] !== undefined) {
+            e.preventDefault();
+            spineViewerStore.ui.timeline = keyframes[idx];
+            spineViewerStore.ui.isPlaying = false;
+          }
+        }
+      } else if (e.code === "KeyN") {
+        // Add custom event at current time
+        const animName = state.ui.selectedAnimation;
+        const time = state.ui.timeline;
+        if (animName && time >= 0) {
+          e.preventDefault();
+          const cur = spineViewerStore.ui.customEvents[animName] ?? {};
+          const eventName = `customEvent_${Object.keys(cur).length}`;
+          spineViewerStore.ui.customEvents = {
+            ...spineViewerStore.ui.customEvents,
+            [animName]: { ...cur, [eventName]: time },
+          };
+          toast.success(`Custom event "${eventName}" at ${time.toFixed(2)}s`);
+        }
       }
     };
 
@@ -152,7 +204,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     if (state.ui.selectedAnimation) params.set('animation', state.ui.selectedAnimation);
     if (state.ui.selectedSkin) params.set('skin', state.ui.selectedSkin);
     if (state.ui.timeline > 0) params.set('time', state.ui.timeline.toFixed(3));
-    if (state.ui.backgroundColor !== '#1a1625') params.set('bg', state.ui.backgroundColor);
+    if (state.ui.backgroundColor !== '#404040') params.set('bg', state.ui.backgroundColor);
 
     const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -366,7 +418,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
   const previewArea = (
     <div className="flex flex-col flex-1 min-h-0 relative">
-      <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
+      <div className="flex-shrink-0 max-h-[260px] overflow-y-auto border-b border-border bg-background/95">
+        <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
+      </div>
       <div className="flex-1 min-h-0 relative">
         <PixiApp />
       </div>
@@ -375,7 +429,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
   const previewWithFab = (
     <>
-      <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
+      <div className="flex-shrink-0 max-h-[260px] overflow-y-auto border-b border-border bg-background/95">
+        <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
+      </div>
       <div className="flex-1 min-h-0 relative">
         <PixiApp />
         {isNarrow && (
@@ -416,6 +472,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       {/* Draggable info panel */}
       <InfoPanel />
 
+      {/* Fullscreen attachment download modal */}
+      <AttachmentDownloadModal />
+
       {/* Draggable attachment test panel */}
       <AttachmentTestPanel />
 
@@ -450,8 +509,25 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 const InfoPanel = () => {
   const state = useSnapshot(spineViewerStore);
   const draggingRef = useRef(false);
+  const [atlasRegions, setAtlasRegions] = useState<{ name: string; index: number }[]>([]);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const pos = state.ui.infoPanelPos;
+
+  // Parse atlas regions when files change (for "Download attachment" submenu)
+  useEffect(() => {
+    console.log('InfoPanel useEffect');
+    const files = spineViewerStore.files;
+    if (!files) {
+      setAtlasRegions([]);
+      return;
+    }
+    files.atlasFile.text().then((atlasText) => {
+      const regions = parseAtlasRegions(atlasText);
+      setAtlasRegions(
+        regions.map((r) => ({ name: r.name, index: r.index }))
+      );
+    }).catch(() => setAtlasRegions([]));
+  }, [state.files]);
 
   const handleMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
     draggingRef.current = true;
@@ -538,6 +614,12 @@ const InfoPanel = () => {
         zip.file(imageName, imageContent);
       }
 
+      // Add custom.json if custom events were recorded (N key)
+      const customEvents = spineViewerStore.ui.customEvents;
+      if (Object.keys(customEvents).length > 0) {
+        zip.file("custom.json", JSON.stringify({ customEvents }, null, 2));
+      }
+
       // Generate ZIP blob
       const zipBlob = await zip.generateAsync({ type: 'blob' });
 
@@ -595,6 +677,11 @@ const InfoPanel = () => {
         zip.file(imageName, imageContent);
       }
 
+      const customEvents = spineViewerStore.ui.customEvents;
+      if (Object.keys(customEvents).length > 0) {
+        zip.file("custom.json", JSON.stringify({ customEvents }, null, 2));
+      }
+
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
@@ -649,29 +736,41 @@ const InfoPanel = () => {
         <div>Animation Timelines: {timelineCount}</div>
         <div>FPS: <span ref={(el) => { if (el) (window as any).__fpsRef = el; }}>{state.ui.fps.toFixed(1)}</span></div>
         <div>FPS Rendered: {state.ui.fpsRendered}</div>
+        {state.ui.frameTimeMs != null && (
+          <div>Frame: {state.ui.frameTimeMs.toFixed(1)} ms</div>
+        )}
+        {state.ui.memoryMB != null && (
+          <div>Memory: {state.ui.memoryMB.toFixed(1)} MB</div>
+        )}
       </div>
       <div className="flex flex-wrap gap-2 mt-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openFileInNewTab(files.jsonFile)}
-        >
-          Open Skeleton
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => openFileInNewTab(files.atlasFile)}
-        >
-          Open Atlas
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => files.imageFiles.forEach(openFileInNewTab)}
-        >
-          Open Texture{files.imageFiles.length > 1 ? "s" : ""}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" className="gap-1">
+              Open
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[160px] bg-popover text-popover-foreground border border-border rounded-md shadow-md p-1 z-50">
+            <DropdownMenuItem
+              onClick={() => openFileInNewTab(files.jsonFile)}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm"
+            >
+              Skeleton
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openFileInNewTab(files.atlasFile)}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm"
+            >
+              Atlas
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => files.imageFiles.forEach(openFileInNewTab)}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm"
+            >
+              Texture{files.imageFiles.length > 1 ? "s" : ""}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           size="sm"
           variant="outline"
@@ -694,6 +793,18 @@ const InfoPanel = () => {
               className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
             >
               Download ZIP with skel→JSON
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                if (atlasRegions.length === 0) {
+                  toast.warning("No regions in atlas");
+                  return;
+                }
+                spineViewerStore.ui.attachmentDownloadModalOpen = true;
+              }}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+            >
+              Download attachment as PNG
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -814,6 +925,149 @@ const InfoPanel = () => {
         >
           Perf test (50× instances)
         </Button>
+      </div>
+    </div>
+  );
+};
+
+const AttachmentDownloadModal = () => {
+  const state = useSnapshot(spineViewerStore);
+  const [atlasRegions, setAtlasRegions] = useState<{ name: string; index: number }[]>([]);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  const open = state.ui.attachmentDownloadModalOpen;
+
+  useEffect(() => {
+    if (!open) return;
+    const files = spineViewerStore.files;
+    if (!files) {
+      setAtlasRegions([]);
+      return;
+    }
+    files.atlasFile
+      .text()
+      .then((atlasText) => {
+        const regions = parseAtlasRegions(atlasText);
+        setAtlasRegions(
+          regions.map((r) => ({ name: r.name, index: r.index }))
+        );
+      })
+      .catch(() => setAtlasRegions([]));
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+      if (searchRef.current) {
+        searchRef.current.focus();
+      }
+    }
+  }, [open]);
+
+  const files = spineViewerStore.files;
+  if (!open || !files) return null;
+
+  const filteredRegions =
+    search.trim().length === 0
+      ? atlasRegions
+      : atlasRegions.filter((r) =>
+          r.name.toLowerCase().includes(search.trim().toLowerCase())
+        );
+
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-background/90 backdrop-blur-sm flex items-center justify-center"
+      onClick={() => {
+        spineViewerStore.ui.attachmentDownloadModalOpen = false;
+      }}
+    >
+      <div
+        className="w-full h-full max-w-3xl mx-auto bg-card text-card-foreground border border-border shadow-xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex flex-col gap-1">
+            <span className="font-semibold text-sm">Download attachment as PNG</span>
+            <span className="text-xs text-muted-foreground">
+              Select an atlas region to export as an image.
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            onClick={() => {
+              spineViewerStore.ui.attachmentDownloadModalOpen = false;
+            }}
+          >
+            ×
+          </Button>
+        </div>
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <Input
+            ref={searchRef}
+            placeholder="Filter attachments..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 text-xs"
+          />
+          <div className="text-[11px] text-muted-foreground">
+            {atlasRegions.length} total, {filteredRegions.length} shown
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {atlasRegions.length === 0 ? (
+            <div className="px-2 py-4 text-xs text-muted-foreground">
+              No regions in atlas.
+            </div>
+          ) : filteredRegions.length === 0 ? (
+            <div className="px-2 py-4 text-xs text-muted-foreground">
+              No regions match this filter.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {filteredRegions.map((r) => (
+                <Button
+                  key={r.index >= 0 ? `${r.name}-${r.index}` : r.name}
+                  variant="outline"
+                  size="sm"
+                  className="justify-between text-xs"
+                  onClick={async () => {
+                    try {
+                      toast.loading(`Downloading ${r.name}...`);
+                      const atlasText = await files.atlasFile.text();
+                      await downloadAttachmentAsImage(
+                        atlasText,
+                        files.imageFiles,
+                        r.name,
+                        r.index
+                      );
+                      toast.dismiss();
+                      toast.success(`Downloaded ${r.name}.png`);
+                      spineViewerStore.ui.attachmentDownloadModalOpen = false;
+                    } catch (err) {
+                      toast.dismiss();
+                      toast.error(err instanceof Error ? err.message : "Download failed");
+                    }
+                  }}
+                >
+                  <span className="truncate mr-2">
+                    {r.name}
+                    {r.index >= 0 ? ` (${r.index})` : ""}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Click to download
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>Click outside or × to close</span>
+          <span>Atlas regions from current file</span>
+        </div>
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import {
 } from "./ui/select";
 import { useSnapshot } from "valtio";
 import { spineViewerStore, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
+import { getAnimationKeyframeTimes, getAnimationEvents } from "../lib/animationUtils";
 
 interface ControlsProps {
   onCopyUrl: () => void;
@@ -29,6 +30,9 @@ export const Controls = ({
 }: ControlsProps) => {
   const state = useSnapshot(spineViewerStore);
   const { ui } = state;
+  const spine = spineViewerStore.refs.spine;
+  const anim = spine?.skeleton?.data?.findAnimation?.(ui.selectedAnimation);
+  const animEvents = anim ? getAnimationEvents(anim as Parameters<typeof getAnimationEvents>[0]) : [];
   return (
     <Card className="p-6 rounded-none border-x-0 border-t-0 border-b border-border relative">
       <div className="flex flex-col gap-6">
@@ -60,26 +64,6 @@ export const Controls = ({
               </>
             )}
           </Button>
-          <Button
-            onClick={() => { spineViewerStore.ui.isReversed = !spineViewerStore.ui.isReversed; }}
-            size="lg"
-            variant={ui.isReversed ? "default" : "outline"}
-            className="gap-2"
-            title="Reverse playback"
-          >
-            <Rewind className="w-5 h-5" />
-            {ui.isReversed ? "Reverse" : "Forward"}
-          </Button>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="loop"
-              checked={ui.loop}
-              onCheckedChange={(val) => { spineViewerStore.ui.loop = Boolean(val); }}
-            />
-            <Label htmlFor="loop" className="cursor-pointer">
-              Loop
-            </Label>
-          </div>
           <div className="flex items-center gap-2">
             <Checkbox
               id="increaseResetOnAnimSwitch"
@@ -125,8 +109,8 @@ export const Controls = ({
                 value={[ui.scale]}
                 onValueChange={(value) => { spineViewerStore.ui.scale = value[0]; }}
                 min={0.1}
-                max={5.0}
-                step={0.1}
+                max={1.5}
+                step={0.05}
                 className="flex-1"
               />
               <Input
@@ -143,25 +127,50 @@ export const Controls = ({
 
         <div className="flex items-center gap-6">
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Animation (Q: prev)</Label>
-            <Select value={ui.selectedAnimation} onValueChange={(val) => {
-              if (ui.selectedAnimation && ui.selectedAnimation !== val) {
-                spineViewerStore.ui.previousAnimation = ui.selectedAnimation;
-              }
-              spineViewerStore.ui.selectedAnimation = val;
-              applyActionAfterAnimSwitch();
-            }}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Select animation" />
-              </SelectTrigger>
-              <SelectContent>
-                {ui.animations.map((anim, index) => (
-                  <SelectItem key={anim} value={anim}>
-                    {index < 9 ? `${index + 1}. ` : ""}{anim}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs text-muted-foreground">Animation (Q: prev, ,/. keyframes)</Label>
+            <div className="flex items-center gap-1">
+              <Select value={ui.selectedAnimation} onValueChange={(val) => {
+                if (ui.selectedAnimation && ui.selectedAnimation !== val) {
+                  spineViewerStore.ui.previousAnimation = ui.selectedAnimation;
+                }
+                spineViewerStore.ui.selectedAnimation = val;
+                applyActionAfterAnimSwitch();
+              }}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select animation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ui.animations.map((animName, index) => (
+                    <SelectItem key={animName} value={animName}>
+                      {index < 9 ? `${index + 1}. ` : ""}{animName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {animEvents.length > 0 && (
+                <Select
+                  value=""
+                  onValueChange={(val) => {
+                    const t = parseFloat(val);
+                    if (!isNaN(t)) {
+                      spineViewerStore.ui.timeline = t;
+                      spineViewerStore.ui.isPlaying = false;
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-32 text-xs" title="Go to event">
+                    <SelectValue placeholder="Go to event…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {animEvents.map((ev) => (
+                      <SelectItem key={`${ev.name}-${ev.time}`} value={String(ev.time)}>
+                        {ev.name} @ {ev.time.toFixed(2)}s
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -200,13 +209,23 @@ export const Controls = ({
               </Select>
             </div>
           )}
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="loop"
+              checked={ui.loop}
+              onCheckedChange={(val) => { spineViewerStore.ui.loop = Boolean(val); }}
+            />
+            <Label htmlFor="loop" className="cursor-pointer text-xs">
+              Loop
+            </Label>
+          </div>
 
           {state.secondFiles && ui.secondAnimations.length > 0 && (
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Second Animation</Label>
-              <Select 
-                value={ui.secondSelectedAnimation || ui.selectedAnimation} 
-                onValueChange={(val) => { 
+              <Select
+                value={ui.secondSelectedAnimation || ui.selectedAnimation}
+                onValueChange={(val) => {
                   // If selecting the same as first, set to null to follow first
                   if (val === ui.selectedAnimation) {
                     spineViewerStore.ui.secondSelectedAnimation = null;
@@ -290,38 +309,38 @@ export const Controls = ({
           {/* Manual positioning controls */}
           {ui.positioningMode === 'manual' && (
             <div className="space-y-2 pl-4 border-l-2 border-border">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="flex gap-2">
                 <NumericField
                   id="manual-x"
                   label="X"
                   value={ui.manualPosition.x}
                   onChange={(val) => { spineViewerStore.ui.manualPosition.x = val; }}
-                  className="space-y-1"
-                  inputClassName="w-20"
+                  className="space-y-1 min-w-[5.5rem]"
+                  inputClassName="w-24"
                 />
                 <NumericField
                   id="manual-y"
                   label="Y"
                   value={ui.manualPosition.y}
                   onChange={(val) => { spineViewerStore.ui.manualPosition.y = val; }}
-                  className="space-y-1"
-                  inputClassName="w-20"
+                  className="space-y-1 min-w-[5.5rem]"
+                  inputClassName="w-24"
                 />
                 <NumericField
                   id="guide-width"
                   label="Width"
                   value={ui.manualGuideSize.width}
                   onChange={(val) => { spineViewerStore.ui.manualGuideSize.width = val; }}
-                  className="space-y-1"
-                  inputClassName="w-20"
+                  className="space-y-1 min-w-[5.5rem]"
+                  inputClassName="w-24"
                 />
                 <NumericField
                   id="guide-height"
                   label="Height"
                   value={ui.manualGuideSize.height}
                   onChange={(val) => { spineViewerStore.ui.manualGuideSize.height = val; }}
-                  className="space-y-1"
-                  inputClassName="w-20"
+                  className="space-y-1 min-w-[5.5rem]"
+                  inputClassName="w-24"
                 />
               </div>
             </div>
@@ -350,9 +369,20 @@ export const Controls = ({
           )}
 
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">
-              Speed: {ui.speed.toFixed(2)}x
-            </Label>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">
+                Speed: {ui.speed.toFixed(2)}x
+              </Label>
+              <Button
+                onClick={() => { spineViewerStore.ui.isReversed = !spineViewerStore.ui.isReversed; }}
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                title={ui.isReversed ? "Forward" : "Reverse"}
+              >
+                <Rewind className={`w-4 h-4 ${ui.isReversed ? "rotate-180" : ""}`} />
+              </Button>
+            </div>
             <div className="flex gap-2">
               {SPEED_PRESETS.map((preset) => (
                 <Button

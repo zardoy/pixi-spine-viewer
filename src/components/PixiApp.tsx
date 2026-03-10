@@ -38,6 +38,7 @@ const PixiAppContent = () => {
   const lastPositioningModeRef = useRef<'auto' | 'manual' | undefined>(undefined);
   const fpsCounterRef = useRef<number>(0);
   const fpsLastSecondRef = useRef<number>(performance.now());
+  const frameTimeSumRef = useRef<number>(0);
 
   // Sync container ref to store (wrapped in ref() to prevent proxying)
   useEffect(() => {
@@ -227,11 +228,6 @@ const PixiAppContent = () => {
 
   // Handle spine loaded - extract animations/skins and do initial setup
   const handleSpineLoaded = (spine: SpineInstance) => {
-    // Reset if positioning mode changed
-    if (lastPositioningModeRef.current !== undefined && lastPositioningModeRef.current !== state.ui.positioningMode) {
-      wasSpineLoaded.current = false;
-    }
-
     if (wasSpineLoaded.current) {
       return;
     }
@@ -320,14 +316,19 @@ const PixiAppContent = () => {
               };
             }
           } else {
-            // Manual mode - use manual position and default scale
+            // Manual mode - center guide, spine = guide + manualPosition
             spineViewerStore.ui.scale = 1.0;
+            const gw = state.ui.manualGuideSize.width;
+            const gh = state.ui.manualGuideSize.height;
+            spineViewerStore.ui.manualGuidePosition = {
+              x: app.app.screen.width / 2 - gw / 2,
+              y: app.app.screen.height / 2 - gh / 2,
+            };
             spineViewerStore.ui.spinePosition = {
-              x: state.ui.manualPosition.x,
-              y: state.ui.manualPosition.y
+              x: spineViewerStore.ui.manualGuidePosition.x + state.ui.manualPosition.x,
+              y: spineViewerStore.ui.manualGuidePosition.y + state.ui.manualPosition.y,
             };
             spineViewerStore.refs.currentViewport = null;
-            console.log('Manual positioning mode - spine positioned at', state.ui.manualPosition);
           }
 
           console.log('[PixiApp] Setting selectedAnimation to:', initialAnimation);
@@ -402,7 +403,10 @@ const PixiAppContent = () => {
       // Update timeline (loop resets are handled by handleAnimationComplete callback)
       const track = spine.state.tracks[0];
       if (track) {
-        spineViewerStore.ui.timeline = track.getAnimationTime();
+        const trackTime = track.getAnimationTime();
+        if (spineViewerStore.ui.isPlaying) {
+          spineViewerStore.ui.timeline = trackTime;
+        }
       }
 
       // FPS is updated via ref in separate effect (see below)
@@ -495,14 +499,15 @@ const PixiAppContent = () => {
     };
   }, [app.app, state.refs.spine, state.ui.positioningMode]); // Watch for spine changes and positioning mode
 
-  // FPS updates: use ref for frequent updates, state every second
+  // FPS and frame time: measure each frame via ticker, average every second
   useEffect(() => {
     if (!app.app) return;
 
     const updateFps = () => {
-      if (!app.app?.ticker) return;
+      const ticker = app.app?.ticker;
+      if (!ticker) return;
 
-      const currentFps = app.app.ticker.FPS ?? 0;
+      const currentFps = ticker.FPS ?? 0;
 
       // Update ref for frequent DOM updates (no React re-render)
       const fpsElement = (window as any).__fpsRef;
@@ -510,13 +515,21 @@ const PixiAppContent = () => {
         fpsElement.textContent = currentFps.toFixed(1);
       }
 
-      // Count frames for UI state update (every second)
+      // Accumulate frame time (elapsedMS = raw ms per frame, uncapped)
+      const elapsedMS = (ticker as { elapsedMS?: number }).elapsedMS ?? ticker.deltaMS * (1000 / 60);
+      frameTimeSumRef.current += elapsedMS;
       fpsCounterRef.current++;
+
       const now = performance.now();
       if (now - fpsLastSecondRef.current >= 1000) {
-        spineViewerStore.ui.fpsRendered = fpsCounterRef.current;
+        const count = fpsCounterRef.current;
+        spineViewerStore.ui.fpsRendered = count;
+        spineViewerStore.ui.frameTimeMs = count > 0 ? frameTimeSumRef.current / count : null;
         fpsCounterRef.current = 0;
+        frameTimeSumRef.current = 0;
         fpsLastSecondRef.current = now;
+        const mem = (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
+        spineViewerStore.ui.memoryMB = typeof mem === 'number' ? mem / 1024 / 1024 : null;
       }
     };
 
@@ -609,9 +622,9 @@ const PixiAppContent = () => {
       // Animation switch is handled by SpineBase via animation prop change.
       // SpineBase automatically applies instant reset behavior when mixTime === 0.
     }
-    // Intentionally NOT depending on smoothSwitch to avoid resetting animation when toggled
+    // Intentionally NOT depending on loop - loop changes handled by SpineBase (track.loop only, no reset)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ui.selectedAnimation, state.ui.loop, state.ui.positioningMode]);
+  }, [state.ui.selectedAnimation, state.ui.positioningMode]);
 
   // Update skin when selected skin changes - handled by SpineBase via skin prop
 
@@ -953,31 +966,34 @@ const PixiAppContent = () => {
     }
   }, [state.refs.spine]);
 
-  // Sync manual position to spinePosition when in manual mode
+  // Sync manual position to spinePosition when in manual mode (spine = guide + offset)
   useEffect(() => {
     if (state.ui.positioningMode === 'manual') {
       spineViewerStore.ui.spinePosition = {
-        x: state.ui.manualPosition.x,
-        y: state.ui.manualPosition.y
+        x: state.ui.manualGuidePosition.x + state.ui.manualPosition.x,
+        y: state.ui.manualGuidePosition.y + state.ui.manualPosition.y
       };
     }
-  }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y]);
+  }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y, state.ui.manualGuidePosition.x, state.ui.manualGuidePosition.y]);
 
   // Use position from store (updated in ticker for smooth transitions when auto mode is enabled)
   const position = state.ui.spinePosition;
 
-  // Force spine recreation when positioning mode changes
+  // When switching from auto to manual: use auto-computed values as default (no spine remount)
   useEffect(() => {
-    if (wasSpineLoaded.current) {
-      wasSpineLoaded.current = false;
-      // Reset loader to force recreation
-      setIsLoaderReady(false);
-      // Small delay to allow cleanup
-      setTimeout(() => {
-        if (fileSpineLoaderRef.current) {
-          setIsLoaderReady(true);
-        }
-      }, 100);
+    const prevMode = lastPositioningModeRef.current;
+    lastPositioningModeRef.current = state.ui.positioningMode;
+
+    if (prevMode === 'auto' && state.ui.positioningMode === 'manual') {
+      const viewport = spineViewerStore.refs.currentViewport;
+      const pos = spineViewerStore.ui.spinePosition;
+      spineViewerStore.ui.manualGuidePosition = { x: pos.x, y: pos.y };
+      spineViewerStore.ui.manualPosition = { x: 0, y: 0 };
+      if (viewport && app.app) {
+        const w = viewport.width + viewport.padLeft + viewport.padRight;
+        const h = viewport.height + viewport.padTop + viewport.padBottom;
+        spineViewerStore.ui.manualGuideSize = { width: w, height: h };
+      }
     }
   }, [state.ui.positioningMode]);
 
@@ -1065,15 +1081,16 @@ const PixiAppContent = () => {
             </pixiContainer>
           )}
         </pixiContainer>
-        {/* Yellow guide border for manual mode */}
+        {/* Yellow guide border for manual mode (fixed position; x/y move only spine) */}
         {state.ui.positioningMode === 'manual' && (
           <pixiGraphics
             ref={guideGraphicsRef}
             draw={(g) => {
               g.clear();
+              const gp = state.ui.manualGuidePosition;
               g.rect(
-                position.x,
-                position.y,
+                gp.x,
+                gp.y,
                 state.ui.manualGuideSize.width * state.ui.scale,
                 state.ui.manualGuideSize.height * state.ui.scale
               );

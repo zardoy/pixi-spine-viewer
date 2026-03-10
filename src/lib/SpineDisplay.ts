@@ -1,23 +1,23 @@
-import { Spine, AABBRectangleBoundsProvider } from '@esotericsoftware/spine-pixi-v8';
-import { Container, Graphics, ImageSource } from 'pixi.js';
-import type { TextureSource } from 'pixi.js';
-import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonBinary, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core';
-import { SpineTexture } from '@esotericsoftware/spine-pixi-v8';
+import { Spine, AABBRectangleBoundsProvider } from '@esotericsoftware/spine-pixi-v8'
+import { Container, Graphics, ImageSource } from 'pixi.js'
+import type { TextureSource } from 'pixi.js'
+import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonBinary, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core'
+import { SpineTexture } from '@esotericsoftware/spine-pixi-v8'
 
 export interface SpineDisplayOptions {
-  width: number;
-  height: number;
+  width: number
+  height: number
 }
 
 export interface AnimationViewport {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  padLeft: number;
-  padRight: number;
-  padTop: number;
-  padBottom: number;
+  x: number
+  y: number
+  width: number
+  height: number
+  padLeft: number
+  padRight: number
+  padTop: number
+  padBottom: number
 }
 
 /**
@@ -37,21 +37,21 @@ export class SpineDisplay extends Container {
   /** When true, logs load pipeline stages (image load, texture set, skeleton parse) for debugging. */
   static spineLoadDebug = false;
 
-  private dimensions: { width: number; height: number };
-  private initialGraphic: Graphics;
+  private dimensions: { width: number; height: number }
+  private initialGraphic: Graphics
   private spine: Spine | null = null;
 
   constructor(options: SpineDisplayOptions) {
-    super();
+    super()
 
-    const { width, height } = options;
-    this.dimensions = { width, height };
+    const { width, height } = options
+    this.dimensions = { width, height }
 
     // Create initial background graphic
-    this.initialGraphic = new Graphics();
-    this.initialGraphic.rect(0, 0, this.dimensions.width, this.dimensions.height);
-    this.initialGraphic.fill({ color: 0x000000, alpha: 0.9 });
-    this.addChild(this.initialGraphic);
+    this.initialGraphic = new Graphics()
+    this.initialGraphic.rect(0, 0, this.dimensions.width, this.dimensions.height)
+    this.initialGraphic.fill({ color: 0x000000, alpha: 0.9 })
+    this.addChild(this.initialGraphic)
   }
 
   /**
@@ -64,7 +64,7 @@ export class SpineDisplay extends Container {
      * - false: Force use default PIXI batcher (better blending, no two-color tinting)
      * - undefined: Auto-detect based on whether skeleton uses dark colors (default)
      */
-    darkTint?: boolean;
+    darkTint?: boolean
   } = {};
 
   /**
@@ -81,97 +81,98 @@ export class SpineDisplay extends Container {
     atlasText: string,
     imageFiles: File[]
   ): Promise<{ skeletonData: SkeletonData; textureSources: TextureSource[] }> {
-    const textureSources: TextureSource[] = [];
-    const log = (msg: string) => SpineDisplay.spineLoadDebug && console.log(`[SpineDisplay] ${msg}`);
+    const textureSources: TextureSource[] = []
+    const log = (msg: string) => SpineDisplay.spineLoadDebug && console.log(`[SpineDisplay] ${msg}`)
 
-    log('Creating texture atlas from atlas text');
-    const textureAtlas = new TextureAtlas(atlasText);
+    log('Creating texture atlas from atlas text')
+    const textureAtlas = new TextureAtlas(atlasText)
 
     // For each atlas page, find or fallback to an image file, then attach via SpineTexture
     for (const page of textureAtlas.pages) {
-      log(`Looking for image for atlas page: "${page.name}"`);
-      if (SpineDisplay.spineLoadDebug) console.log(`[SpineDisplay] Available image files:`, imageFiles.map(f => f.name));
-      
+      log(`Looking for image for atlas page: "${page.name}"`)
+      if (SpineDisplay.spineLoadDebug) console.log(`[SpineDisplay] Available image files:`, imageFiles.map(f => f.name))
+
       // Extract base filename from page name (handle paths like "./images/a.png" or "a.png")
-      const pageBaseName = page.name.split('/').pop() || page.name;
-      const pageNameWithoutExt = pageBaseName.split('.')[0];
-      
+      const pageBaseName = page.name.split('/').pop() || page.name
+      const pageNameWithoutExt = pageBaseName.split('.')[0]
+
       const pageFile =
         imageFiles.find(f => f.name === page.name) ||
         imageFiles.find(f => f.name === pageBaseName) ||
         imageFiles.find(f => {
-          const fileName = f.name.toLowerCase();
-          const baseName = fileName.split('.')[0];
-          return baseName === pageNameWithoutExt.toLowerCase() || fileName.includes(pageNameWithoutExt.toLowerCase());
-        });
+          const fileName = f.name.toLowerCase()
+          const baseName = fileName.split('.')[0]
+          return baseName === pageNameWithoutExt.toLowerCase() || fileName.includes(pageNameWithoutExt.toLowerCase())
+        })
 
-      const fileToUse = pageFile || imageFiles[0];
+      const fileToUse = pageFile || imageFiles[0]
       if (!fileToUse) {
-        console.error(`[SpineDisplay] No image files provided for Spine atlas page: ${page.name}`);
-        continue;
+        console.error(`[SpineDisplay] No image files provided for Spine atlas page: ${page.name}`)
+        continue
       }
 
-      log(`Using image file: "${fileToUse.name}" for atlas page: "${page.name}"`);
+      log(`Using image file: "${fileToUse.name}" for atlas page: "${page.name}"`)
 
       try {
-        const url = URL.createObjectURL(fileToUse);
+        const url = URL.createObjectURL(fileToUse)
 
-        const img = new Image();
+        const img = new Image()
         await new Promise<void>((resolve, reject) => {
           img.onload = () => {
-            log(`Image decoded (CPU): ${fileToUse.name}`);
-            resolve();
-          };
+            log(`Image decoded (CPU): ${fileToUse.name}`)
+            resolve()
+          }
           img.onerror = (err) => {
-            console.error(`[SpineDisplay] Image load error for ${fileToUse.name}:`, err);
-            reject(err);
-          };
-          img.crossOrigin = 'anonymous';
-          img.src = url;
-        });
+            console.error(`[SpineDisplay] Image load error for ${fileToUse.name}:`, err)
+            reject(err)
+          }
+          img.crossOrigin = 'anonymous'
+          img.src = url
+        })
 
         // IMPORTANT: Respect the atlas page's pma (premultiplied alpha) flag!
         // If pma is true, the texture is already premultiplied, use 'premultiplied-alpha'
         // If pma is false, PIXI should premultiply on upload (this is the default)
         // This is critical for correct blending of semi-transparent textures!
-        const alphaMode = page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload';
-        log(`Alpha mode: ${alphaMode} (pma: ${page.pma})`);
+        const alphaMode = page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload'
+        log(`Alpha mode: ${alphaMode} (pma: ${page.pma})`)
 
         // Create ImageSource with correct alphaMode for proper blending
         const imageSource = new ImageSource({
           resource: img,
           alphaMode: alphaMode as any,
-        });
+          autoGenerateMipmaps: true,
+        })
 
-        const spineTex = SpineTexture.from(imageSource);
-        page.setTexture(spineTex);
-        textureSources.push(spineTex.texture.source);
-        log(`Texture set for atlas page: ${page.name} (GPU upload deferred until first render)`);
+        const spineTex = SpineTexture.from(imageSource)
+        page.setTexture(spineTex)
+        textureSources.push(spineTex.texture.source)
+        log(`Texture set for atlas page: ${page.name} (GPU upload deferred until first render)`)
 
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(url)
       } catch (err) {
-        console.error(`[SpineDisplay] Failed to load image for atlas page ${page.name}:`, err);
+        console.error(`[SpineDisplay] Failed to load image for atlas page ${page.name}:`, err)
       }
     }
 
-    log('Creating atlas loader and parsing skeleton');
-    const atlasLoader = new AtlasAttachmentLoader(textureAtlas);
+    log('Creating atlas loader and parsing skeleton')
+    const atlasLoader = new AtlasAttachmentLoader(textureAtlas)
 
     // Determine if input is binary (.skel) or JSON
-    const isBinary = json instanceof ArrayBuffer || json instanceof Uint8Array;
+    const isBinary = json instanceof ArrayBuffer || json instanceof Uint8Array
 
-    let skeletonData: SkeletonData;
+    let skeletonData: SkeletonData
     if (isBinary) {
-      const skeletonBinary = new SkeletonBinary(atlasLoader);
-      const binaryData = json instanceof ArrayBuffer ? new Uint8Array(json) : json;
-      skeletonData = skeletonBinary.readSkeletonData(binaryData);
+      const skeletonBinary = new SkeletonBinary(atlasLoader)
+      const binaryData = json instanceof ArrayBuffer ? new Uint8Array(json) : json
+      skeletonData = skeletonBinary.readSkeletonData(binaryData)
     } else {
-      const skeletonJson = new SkeletonJson(atlasLoader);
-      const jsonData = typeof json === 'string' ? JSON.parse(json) : json;
-      skeletonData = skeletonJson.readSkeletonData(jsonData);
+      const skeletonJson = new SkeletonJson(atlasLoader)
+      const jsonData = typeof json === 'string' ? JSON.parse(json) : json
+      skeletonData = skeletonJson.readSkeletonData(jsonData)
     }
-    log(`Skeleton parsed: ${skeletonData.animations.length} animations, ${textureSources.length} texture source(s)`);
-    return { skeletonData, textureSources };
+    log(`Skeleton parsed: ${skeletonData.animations.length} animations, ${textureSources.length} texture source(s)`)
+    return { skeletonData, textureSources }
   }
 
   /**
@@ -194,32 +195,32 @@ export class SpineDisplay extends Container {
        * - false: Force default PIXI batcher (better blending for overlays, no dark tint support)
        * - undefined: Auto-detect based on skeleton dark colors
        */
-      darkTint?: boolean;
+      darkTint?: boolean
       /**
        * Fixed bounds x position. If x, y, width, and height are all provided, a boundsProvider will be created.
        */
-      boundsX?: number;
+      boundsX?: number
       /**
        * Fixed bounds y position. If x, y, width, and height are all provided, a boundsProvider will be created.
        */
-      boundsY?: number;
+      boundsY?: number
       /**
        * Fixed bounds width. If x, y, width, and height are all provided, a boundsProvider will be created.
        */
-      boundsWidth?: number;
+      boundsWidth?: number
       /**
        * Fixed bounds height. If x, y, width, and height are all provided, a boundsProvider will be created.
        */
-      boundsHeight?: number;
+      boundsHeight?: number
     }
   ): Promise<Spine> {
-    const { skeletonData } = await this.loadSpineDataFromFiles(json, atlasText, imageFiles);
+    const { skeletonData } = await this.loadSpineDataFromFiles(json, atlasText, imageFiles)
 
     // Use darkTint option from parameter, fallback to static option, or undefined for auto-detect
-    const darkTint = options?.darkTint ?? SpineDisplay.loadSpineOptions.darkTint;
+    const darkTint = options?.darkTint ?? SpineDisplay.loadSpineOptions.darkTint
 
     // Create bounds provider if all bounds values are provided
-    let boundsProvider;
+    let boundsProvider
     if (
       options?.boundsX !== undefined &&
       options?.boundsY !== undefined &&
@@ -231,16 +232,16 @@ export class SpineDisplay extends Container {
         options.boundsY,
         options.boundsWidth,
         options.boundsHeight
-      );
+      )
     }
 
     const spine = new Spine({
       skeletonData,
       darkTint, // undefined = auto-detect, false = disable for better blending, true = force enable
       boundsProvider,
-    });
+    })
 
-    return spine;
+    return spine
   }
 
   /**
@@ -255,41 +256,41 @@ export class SpineDisplay extends Container {
     spine: Spine,
     padding: number = 0.1
   ): AnimationViewport {
-    const skeleton = spine.skeleton;
+    const skeleton = spine.skeleton
 
     // Note: We temporarily modify the skeleton to calculate bounds.
     // The caller should set the desired animation immediately after this
     // to restore the skeleton to the correct state.
-    skeleton.setToSetupPose();
+    skeleton.setToSetupPose()
 
-    const steps = 100;
-    const stepTime = animation.duration ? animation.duration / steps : 0;
-    let time = 0;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
+    const steps = 100
+    const stepTime = animation.duration ? animation.duration / steps : 0
+    let time = 0
+    let minX = Infinity
+    let maxX = -Infinity
+    let minY = Infinity
+    let maxY = -Infinity
 
-    const offset = new Vector2();
-    const size = new Vector2();
+    const offset = new Vector2()
+    const size = new Vector2()
 
     // Sample animation at 100 different time points to find bounding box
     for (let i = 0; i < steps; i++, time += stepTime) {
-      animation.apply(skeleton, time, time, false, [], 1, MixBlend.setup, MixDirection.mixIn);
-      skeleton.updateWorldTransform(Physics.update);
-      skeleton.getBounds(offset, size, []);
+      animation.apply(skeleton, time, time, false, [], 1, MixBlend.setup, MixDirection.mixIn)
+      skeleton.updateWorldTransform(Physics.update)
+      skeleton.getBounds(offset, size, [])
 
       if (!isNaN(offset.x) && !isNaN(offset.y) && !isNaN(size.x) && !isNaN(size.y)) {
-        minX = Math.min(offset.x, minX);
-        maxX = Math.max(offset.x + size.x, maxX);
-        minY = Math.min(offset.y, minY);
-        maxY = Math.max(offset.y + size.y, maxY);
+        minX = Math.min(offset.x, minX)
+        maxX = Math.max(offset.x + size.x, maxX)
+        minY = Math.min(offset.y, minY)
+        maxY = Math.max(offset.y + size.y, maxY)
       }
     }
 
     // Validate bounds - if no valid bounds found, use default viewport
     if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
-      console.warn(`Animation "${animation.name}" has no valid bounds, using default viewport`);
+      console.warn(`Animation "${animation.name}" has no valid bounds, using default viewport`)
       // Use a default viewport centered at origin
       return {
         x: -500,
@@ -300,20 +301,20 @@ export class SpineDisplay extends Container {
         padRight: 100,
         padTop: 100,
         padBottom: 100,
-      };
+      }
     }
 
-    const width = maxX - minX;
-    const height = maxY - minY;
+    const width = maxX - minX
+    const height = maxY - minY
 
     // Ensure minimum dimensions to prevent division by zero
-    const safeWidth = Math.max(width, 1);
-    const safeHeight = Math.max(height, 1);
+    const safeWidth = Math.max(width, 1)
+    const safeHeight = Math.max(height, 1)
 
-    const padLeft = safeWidth * padding;
-    const padRight = safeWidth * padding;
-    const padTop = safeHeight * padding;
-    const padBottom = safeHeight * padding;
+    const padLeft = safeWidth * padding
+    const padRight = safeWidth * padding
+    const padTop = safeHeight * padding
+    const padBottom = safeHeight * padding
 
     return {
       x: minX,
@@ -324,7 +325,7 @@ export class SpineDisplay extends Container {
       padRight,
       padTop,
       padBottom,
-    };
+    }
   }
 
   /**
@@ -334,7 +335,7 @@ export class SpineDisplay extends Container {
    */
   setAnimation(name: string, loop: boolean = false): void {
     if (this.spine) {
-      this.spine.state.setAnimation(0, name, loop);
+      this.spine.state.setAnimation(0, name, loop)
     }
   }
 
@@ -344,9 +345,9 @@ export class SpineDisplay extends Container {
    */
   getAnimations(): string[] {
     if (this.spine && this.spine.skeleton.data.animations) {
-      return this.spine.skeleton.data.animations.map((anim: any) => anim.name);
+      return this.spine.skeleton.data.animations.map((anim: any) => anim.name)
     }
-    return [];
+    return []
   }
 
   /**
@@ -355,7 +356,7 @@ export class SpineDisplay extends Container {
    */
   setTimeScale(scale: number): void {
     if (this.spine) {
-      this.spine.state.timeScale = scale;
+      this.spine.state.timeScale = scale
     }
   }
 
@@ -365,7 +366,7 @@ export class SpineDisplay extends Container {
    */
   setAlpha(alpha: number): void {
     if (this.spine) {
-      this.spine.alpha = alpha;
+      this.spine.alpha = alpha
     }
   }
 
@@ -375,7 +376,7 @@ export class SpineDisplay extends Container {
    */
   setScale(scale: number): void {
     if (this.spine) {
-      this.spine.scale.set(scale);
+      this.spine.scale.set(scale)
     }
   }
 
@@ -384,7 +385,7 @@ export class SpineDisplay extends Container {
    */
   pause(): void {
     if (this.spine) {
-      this.spine.autoUpdate = false;
+      this.spine.autoUpdate = false
     }
   }
 
@@ -393,7 +394,7 @@ export class SpineDisplay extends Container {
    */
   resume(): void {
     if (this.spine) {
-      this.spine.autoUpdate = true;
+      this.spine.autoUpdate = true
     }
   }
 
@@ -402,7 +403,7 @@ export class SpineDisplay extends Container {
    */
   stop(): void {
     if (this.spine) {
-      this.spine.state.clearTracks();
+      this.spine.state.clearTracks()
     }
   }
 
@@ -411,10 +412,10 @@ export class SpineDisplay extends Container {
    */
   getCurrentAnimation(): string | null {
     if (this.spine && this.spine.state) {
-      const track = this.spine.state.tracks[0];
-      return track && track.animation ? track.animation.name : null;
+      const track = this.spine.state.tracks[0]
+      return track && track.animation ? track.animation.name : null
     }
-    return null;
+    return null
   }
 
   /**
@@ -422,8 +423,8 @@ export class SpineDisplay extends Container {
    */
   destroySpine(): void {
     if (this.spine) {
-      this.spine.destroy();
-      this.spine = null;
+      this.spine.destroy()
+      this.spine = null
     }
   }
 
@@ -431,24 +432,24 @@ export class SpineDisplay extends Container {
    * Get the spine instance (for advanced usage)
    */
   getSpine(): Spine | null {
-    return this.spine;
+    return this.spine
   }
 
   /**
    * Update dimensions and reposition spine
    */
   updateDimensions(width: number, height: number): void {
-    this.dimensions = { width, height };
+    this.dimensions = { width, height }
 
     // Update background graphic
-    this.initialGraphic.clear();
-    this.initialGraphic.rect(0, 0, width, height);
-    this.initialGraphic.fill({ color: 0x000000, alpha: 0.9 });
+    this.initialGraphic.clear()
+    this.initialGraphic.rect(0, 0, width, height)
+    this.initialGraphic.fill({ color: 0x000000, alpha: 0.9 })
 
     // Reposition spine if it exists
     if (this.spine) {
-      this.spine.x = width / 2;
-      this.spine.y = height / 2;
+      this.spine.x = width / 2
+      this.spine.y = height / 2
     }
   }
 }

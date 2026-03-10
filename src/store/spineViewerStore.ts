@@ -47,6 +47,10 @@ export interface SpineViewerState {
     infoPanelPos: { x: number; y: number };
     fps: number;
     fpsRendered: number;
+    /** JS heap used in MB (Chrome only) */
+    memoryMB: number | null;
+    /** Average frame time in ms (computed every second from ticker) */
+    frameTimeMs: number | null;
     backgroundColor: string;
     mixTime: number;
     spinePosition: { x: number; y: number };
@@ -55,10 +59,13 @@ export interface SpineViewerState {
     /** Manual mode settings */
     manualPosition: { x: number; y: number };
     manualGuideSize: { width: number; height: number };
+    /** Guide rect position (fixed); spine offset by manualPosition from this */
+    manualGuidePosition: { x: number; y: number };
     attachmentTestPanelVisible: boolean;
     attachmentTestPanelPos: { x: number; y: number };
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
+    attachmentDownloadModalOpen: boolean;
     resetCounter: number;
     /** When true, increment resetCounter whenever the selected animation changes (so animation starts from beginning with mix). */
     increaseResetCounterOnAnimSwitch: boolean;
@@ -71,6 +78,8 @@ export interface SpineViewerState {
     particleGeneratorPanelPos: { x: number; y: number } | null;
     showSpawnBounds: boolean;
     spawnBounds: { x: [number, number]; y: [number, number] } | null;
+    /** Custom events added via N key: { animationName: { eventName: time } } */
+    customEvents: Record<string, Record<string, number>>;
   };
 
   files: SpineFiles | null;
@@ -119,18 +128,22 @@ export const initialState: SpineViewerState = {
     infoPanelPos: { x: 0, y: 0 },
     fps: 0,
     fpsRendered: 0,
-    backgroundColor: '#1a1625',
+    memoryMB: null,
+    frameTimeMs: null,
+    backgroundColor: '#404040',
     mixTime: 0.25,
     spinePosition: { x: 0, y: 0 },
     positioningMode: 'auto',
-    manualPosition: { x: 100, y: 100 },
+    manualPosition: { x: 0, y: 0 },
     manualGuideSize: { width: 800, height: 600 },
+    manualGuidePosition: { x: 0, y: 0 },
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
+    attachmentDownloadModalOpen: false,
     resetCounter: 0,
-    increaseResetCounterOnAnimSwitch: true,
+    increaseResetCounterOnAnimSwitch: false,
     isReversed: false,
     actionAfterAnimSwitch: 'same state',
     mountCount: 0,
@@ -138,6 +151,7 @@ export const initialState: SpineViewerState = {
     particleGeneratorPanelPos: null,
     showSpawnBounds: false,
     spawnBounds: null,
+    customEvents: {},
   },
   files: null,
   secondFiles: null,

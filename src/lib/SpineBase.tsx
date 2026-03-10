@@ -826,22 +826,11 @@ export const SpineBase = (props: SpineProps) => {
       // Set time scale since we clearn existing loop which might have ben stopped
       setTimeScale()
     } else {
-      // Animation unchanged, but loop might have changed - need to update it
+      // Animation unchanged, but loop might have changed - just toggle track.loop (no restart)
       const currentLoop = track?.loop ?? false
-      if (currentLoop !== loop) {
-        try {
-          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
-          trackAnimationStart(animToUse)
-          // When mixTime is 0, apply instant reset behavior (no mix transition)
-          if (mixTime === 0) {
-            const t = spineRef.current.state.tracks[0]
-            if (t) t.mixDuration = 0
-            immediateUpdate(spineRef.current, true)
-          }
-        } catch (error) {
-          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
-        }
-      }
+      // if (currentLoop !== loop && track) {
+      //   track.loop = loop
+      // }
     }
   }, [animation, loop, mixTime])
 

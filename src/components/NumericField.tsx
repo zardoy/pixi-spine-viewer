@@ -127,6 +127,26 @@ export const NumericField = ({
     }
   }, [disabled, value]);
 
+  // Use string state while editing to allow empty/partial input; commit number on blur
+  const [editValue, setEditValue] = useState<string | null>(null);
+  const isEditing = editValue !== null;
+
+  const displayValue = isEditing ? editValue : String(value);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setEditValue(raw);
+  };
+  const handleBlur = () => {
+    if (editValue === null) return;
+    const parsed = step && step < 1 ? parseFloat(editValue) : parseInt(editValue, 10);
+    if (!isNaN(parsed)) {
+      const clamped = min !== undefined && parsed < min ? min : max !== undefined && parsed > max ? max : parsed;
+      onChange(clamped);
+    }
+    setEditValue(null);
+  };
+  const handleFocus = () => setEditValue(String(value));
+
   return (
     <div className={className}>
       <Label
@@ -142,19 +162,17 @@ export const NumericField = ({
       <Input
         ref={inputRef}
         id={id}
-        type="number"
+        type="text"
+        inputMode="decimal"
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(e) => {
-          const parsed = step && step < 1
-            ? parseFloat(e.target.value)
-            : parseInt(e.target.value);
-          onChange(isNaN(parsed) ? value : parsed);
-        }}
+        value={displayValue}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        onFocus={handleFocus}
         disabled={disabled}
-        className={`h-8 text-xs ${inputClassName}`}
+        className={`h-8 text-xs min-w-[5rem] ${inputClassName}`}
       />
     </div>
   );

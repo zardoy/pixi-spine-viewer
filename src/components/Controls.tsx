@@ -1,5 +1,6 @@
 import { Play, Pause, X, Copy, Rewind, Lock, Unlock } from "lucide-react";
 import { Button } from "./ui/button";
+import { ToggleIconButton } from "./ToggleIconButton";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -296,20 +297,15 @@ export const Controls = ({
                     onChange={() => { spineViewerStore.ui.positioningMode = 'auto'; }}
                     className="cursor-pointer"
                   />
-                  <Label htmlFor="positioning-auto" className="cursor-pointer text-xs flex items-center gap-1">
+                  <Label htmlFor="positioning-auto" className="cursor-pointer text-xs flex items-center gap-1.5">
                     Auto
-                    <button
-                      type="button"
+                    <ToggleIconButton
+                      active={ui.autoViewportLock}
                       onClick={() => { spineViewerStore.ui.autoViewportLock = !spineViewerStore.ui.autoViewportLock; }}
-                      className="inline-flex items-center justify-center h-5 w-5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40"
                       title="Lock viewport to all animations"
-                    >
-                      {ui.autoViewportLock ? (
-                        <Lock className="w-3 h-3" />
-                      ) : (
-                        <Unlock className="w-3 h-3" />
-                      )}
-                    </button>
+                      iconWhenActive={Lock}
+                      iconWhenInactive={Unlock}
+                    />
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">

@@ -401,7 +401,7 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
               Spine Animation Viewer
             </h1>
             <p className="text-lg text-muted-foreground">
-              World's most advanced Spine animation player tool. Open to view exported Spine animation files online
+              An advanced Spine animation player tool. Open to view exported Spine animation files online
             </p>
             <p className="text-sm text-muted-foreground">
               Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. You can also drop <span className="text-primary font-medium">.zip</span> files containing Spine assets. Preview and test your Spine animations in the browser.

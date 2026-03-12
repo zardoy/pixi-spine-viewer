@@ -1,4 +1,4 @@
-import { Play, Pause, X, Copy, Rewind } from "lucide-react";
+import { Play, Pause, X, Copy, Rewind, Lock, Unlock } from "lucide-react";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
@@ -273,6 +273,16 @@ export const Controls = ({
                 Debug bounds
               </Label>
             </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="guideBounds"
+                checked={ui.guideBoundsEnabled}
+                onCheckedChange={(val: boolean) => { spineViewerStore.ui.guideBoundsEnabled = Boolean(val); }}
+              />
+              <Label htmlFor="guideBounds" className="cursor-pointer text-xs">
+                Guide border
+              </Label>
+            </div>
             {/* Positioning Mode */}
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Positioning</Label>
@@ -286,8 +296,20 @@ export const Controls = ({
                     onChange={() => { spineViewerStore.ui.positioningMode = 'auto'; }}
                     className="cursor-pointer"
                   />
-                  <Label htmlFor="positioning-auto" className="cursor-pointer text-xs">
+                  <Label htmlFor="positioning-auto" className="cursor-pointer text-xs flex items-center gap-1">
                     Auto
+                    <button
+                      type="button"
+                      onClick={() => { spineViewerStore.ui.autoViewportLock = !spineViewerStore.ui.autoViewportLock; }}
+                      className="inline-flex items-center justify-center h-5 w-5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40"
+                      title="Lock viewport to all animations"
+                    >
+                      {ui.autoViewportLock ? (
+                        <Lock className="w-3 h-3" />
+                      ) : (
+                        <Unlock className="w-3 h-3" />
+                      )}
+                    </button>
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">

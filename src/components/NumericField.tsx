@@ -37,7 +37,7 @@ export const NumericField = ({
   const [pointerLockActive, setPointerLockActive] = useState(false);
   const startValueRef = useRef<number>(value);
   const sensitivityRef = useRef<number>(sensitivity * (step || 1) * 10);
-  
+
   // Use refs to access latest values without triggering re-runs
   const valueRef = useRef<number>(value);
   const onChangeRef = useRef(onChange);
@@ -132,17 +132,21 @@ export const NumericField = ({
   const isEditing = editValue !== null;
 
   const displayValue = isEditing ? editValue : String(value);
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    setEditValue(raw);
-  };
-  const handleBlur = () => {
-    if (editValue === null) return;
-    const parsed = step && step < 1 ? parseFloat(editValue) : parseInt(editValue, 10);
+  const changeValue = (raw: string) => {
+    const parsed = step && step < 1 ? parseFloat(raw) : parseInt(raw, 10);
     if (!isNaN(parsed)) {
       const clamped = min !== undefined && parsed < min ? min : max !== undefined && parsed > max ? max : parsed;
       onChange(clamped);
     }
+  }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setEditValue(raw);
+    changeValue(raw)
+  };
+  const handleBlur = () => {
+    if (editValue === null) return;
+    changeValue(editValue)
     setEditValue(null);
   };
   const handleFocus = () => setEditValue(String(value));
@@ -162,7 +166,7 @@ export const NumericField = ({
       <Input
         ref={inputRef}
         id={id}
-        type="text"
+        type="number"
         inputMode="decimal"
         min={min}
         max={max}

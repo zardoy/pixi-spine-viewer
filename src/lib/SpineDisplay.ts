@@ -329,6 +329,55 @@ export class SpineDisplay extends Container {
   }
 
   /**
+   * Calculate a viewport that encloses ALL animations on the skeleton.
+   * Useful for stable camera/framing across animation changes.
+   */
+  static calculateMaxAnimationsViewport(
+    spine: Spine,
+    padding: number = 0.1
+  ): AnimationViewport | null {
+    const skeletonData = spine.skeleton?.data;
+    const animations: Animation[] = (skeletonData?.animations as Animation[]) || [];
+    if (!animations.length) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let padLeft = 0;
+    let padRight = 0;
+    let padTop = 0;
+    let padBottom = 0;
+
+    for (const anim of animations) {
+      const vp = SpineDisplay.calculateAnimationViewport(anim, spine, padding);
+      minX = Math.min(minX, vp.x);
+      minY = Math.min(minY, vp.y);
+      maxX = Math.max(maxX, vp.x + vp.width);
+      maxY = Math.max(maxY, vp.y + vp.height);
+      padLeft = Math.max(padLeft, vp.padLeft);
+      padRight = Math.max(padRight, vp.padRight);
+      padTop = Math.max(padTop, vp.padTop);
+      padBottom = Math.max(padBottom, vp.padBottom);
+    }
+
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      return null;
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: Math.max(maxX - minX, 1),
+      height: Math.max(maxY - minY, 1),
+      padLeft,
+      padRight,
+      padTop,
+      padBottom,
+    };
+  }
+
+  /**
    * Set the current animation
    * @param name - Animation name to play
    * @param loop - Whether the animation should loop (default: false)

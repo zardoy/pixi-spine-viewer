@@ -282,8 +282,12 @@ const PixiAppContent = () => {
 
         if (anim) {
           if (state.ui.positioningMode === 'auto') {
-            // Calculate viewport for first animation
-            const viewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+            // Calculate viewport for first animation (or max over all if locked)
+            const viewport =
+              spineViewerStore.ui.autoViewportLock
+                ? SpineDisplay.calculateMaxAnimationsViewport(spine, 0.1) ??
+                  SpineDisplay.calculateAnimationViewport(anim, spine, 0.1)
+                : SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
             spineViewerStore.refs.currentViewport = viewport;
 
             // Calculate scale to fit viewport in screen
@@ -306,6 +310,19 @@ const PixiAppContent = () => {
                 y: app.app.screen.height / 2 - viewportCenterY * fitScale,
               };
 
+              // Also store guide rect based on this viewport so manual/auto share same visual bounds.
+              spineViewerStore.ui.manualGuideSize = {
+                width: viewportWidth,
+                height: viewportHeight,
+              };
+              const pos = spineViewerStore.ui.spinePosition;
+              spineViewerStore.ui.manualGuidePosition = {
+                x: pos.x,
+                y: pos.y,
+              };
+              // Keep manualPosition equal to the auto-computed spine position for perfect initial switch
+              spineViewerStore.ui.manualPosition = { x: pos.x, y: pos.y };
+
               console.log('Auto-fit scale:', fitScale, 'Viewport:', viewport);
             } else {
               console.warn('Invalid scale calculated, using default scale 1.0');
@@ -316,18 +333,18 @@ const PixiAppContent = () => {
               };
             }
           } else {
-            // Manual mode - center guide, spine = guide + manualPosition
+            // Manual mode - center guide; manualPosition is the absolute position
             spineViewerStore.ui.scale = 1.0;
             const gw = state.ui.manualGuideSize.width;
             const gh = state.ui.manualGuideSize.height;
+            const guideX = app.app.screen.width / 2 - gw / 2;
+            const guideY = app.app.screen.height / 2 - gh / 2;
             spineViewerStore.ui.manualGuidePosition = {
-              x: app.app.screen.width / 2 - gw / 2,
-              y: app.app.screen.height / 2 - gh / 2,
+              x: guideX,
+              y: guideY,
             };
-            spineViewerStore.ui.spinePosition = {
-              x: spineViewerStore.ui.manualGuidePosition.x + state.ui.manualPosition.x,
-              y: spineViewerStore.ui.manualGuidePosition.y + state.ui.manualPosition.y,
-            };
+            spineViewerStore.ui.manualPosition = { x: guideX, y: guideY };
+            spineViewerStore.ui.spinePosition = { x: guideX, y: guideY };
             spineViewerStore.refs.currentViewport = null;
           }
 
@@ -580,7 +597,11 @@ const PixiAppContent = () => {
       if (state.ui.positioningMode === 'auto') {
         // Calculate viewport BEFORE setting animation (official Spine player approach)
         // This temporarily modifies the skeleton, but setAnimation will restore it
-        const newViewport = SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+        const newViewport =
+          spineViewerStore.ui.autoViewportLock
+            ? SpineDisplay.calculateMaxAnimationsViewport(spine, 0.1) ??
+              SpineDisplay.calculateAnimationViewport(anim, spine, 0.1)
+            : SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
 
         // Validate viewport before storing
         const isValidViewport =
@@ -608,6 +629,22 @@ const PixiAppContent = () => {
             };
           }
 
+          // Keep guide rect (and manualPosition) in sync with auto-computed viewport
+          if (app.app && spineViewerStore.ui.positioningMode === 'auto') {
+            const viewportWidth = newViewport.width + newViewport.padLeft + newViewport.padRight;
+            const viewportHeight = newViewport.height + newViewport.padTop + newViewport.padBottom;
+            spineViewerStore.ui.manualGuideSize = {
+              width: viewportWidth,
+              height: viewportHeight,
+            };
+            const pos = spineViewerStore.ui.spinePosition;
+            spineViewerStore.ui.manualGuidePosition = {
+              x: pos.x,
+              y: pos.y,
+            };
+            spineViewerStore.ui.manualPosition = { x: pos.x, y: pos.y };
+          }
+
           console.log('Animation switched to:', state.ui.selectedAnimation, 'New viewport:', newViewport);
         } else {
           console.warn('Invalid viewport calculated for animation:', state.ui.selectedAnimation, newViewport);
@@ -624,7 +661,7 @@ const PixiAppContent = () => {
     }
     // Intentionally NOT depending on loop - loop changes handled by SpineBase (track.loop only, no reset)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ui.selectedAnimation, state.ui.positioningMode]);
+  }, [state.ui.selectedAnimation, state.ui.positioningMode, state.ui.autoViewportLock]);
 
   // Update skin when selected skin changes - handled by SpineBase via skin prop
 
@@ -966,15 +1003,15 @@ const PixiAppContent = () => {
     }
   }, [state.refs.spine]);
 
-  // Sync manual position to spinePosition when in manual mode (spine = guide + offset)
+  // Sync manual position to spinePosition when in manual mode (manualPosition is absolute)
   useEffect(() => {
     if (state.ui.positioningMode === 'manual') {
       spineViewerStore.ui.spinePosition = {
-        x: state.ui.manualGuidePosition.x + state.ui.manualPosition.x,
-        y: state.ui.manualGuidePosition.y + state.ui.manualPosition.y
+        x: state.ui.manualPosition.x,
+        y: state.ui.manualPosition.y
       };
     }
-  }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y, state.ui.manualGuidePosition.x, state.ui.manualGuidePosition.y]);
+  }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y]);
 
   // Use position from store (updated in ticker for smooth transitions when auto mode is enabled)
   const position = state.ui.spinePosition;
@@ -988,7 +1025,7 @@ const PixiAppContent = () => {
       const viewport = spineViewerStore.refs.currentViewport;
       const pos = spineViewerStore.ui.spinePosition;
       spineViewerStore.ui.manualGuidePosition = { x: pos.x, y: pos.y };
-      spineViewerStore.ui.manualPosition = { x: 0, y: 0 };
+      spineViewerStore.ui.manualPosition = { x: pos.x, y: pos.y };
       if (viewport && app.app) {
         const w = viewport.width + viewport.padLeft + viewport.padRight;
         const h = viewport.height + viewport.padTop + viewport.padBottom;
@@ -1081,8 +1118,8 @@ const PixiAppContent = () => {
             </pixiContainer>
           )}
         </pixiContainer>
-        {/* Yellow guide border for manual mode (fixed position; x/y move only spine) */}
-        {state.ui.positioningMode === 'manual' && (
+        {/* Yellow guide border (auto + manual; manual mode just changes how it's computed) */}
+        {state.ui.guideBoundsEnabled && (
           <pixiGraphics
             ref={guideGraphicsRef}
             draw={(g) => {

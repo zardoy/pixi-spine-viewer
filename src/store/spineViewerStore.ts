@@ -61,6 +61,10 @@ export interface SpineViewerState {
     manualGuideSize: { width: number; height: number };
     /** Guide rect position (fixed); spine offset by manualPosition from this */
     manualGuidePosition: { x: number; y: number };
+    /** When true, render the yellow guide border (auto + manual). */
+    guideBoundsEnabled: boolean;
+    /** When true, auto mode uses max viewport over all animations (lock). */
+    autoViewportLock: boolean;
     attachmentTestPanelVisible: boolean;
     attachmentTestPanelPos: { x: number; y: number };
     selectedAttachmentSlot: string;
@@ -137,6 +141,8 @@ export const initialState: SpineViewerState = {
     manualPosition: { x: 0, y: 0 },
     manualGuideSize: { width: 800, height: 600 },
     manualGuidePosition: { x: 0, y: 0 },
+    guideBoundsEnabled: true,
+    autoViewportLock: false,
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },
     selectedAttachmentSlot: '',

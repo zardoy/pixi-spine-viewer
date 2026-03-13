@@ -343,6 +343,21 @@ export interface SpineProps
   animationProgress?: number
   /** Mix time for animation transitions (default: 0.25) */
   mixTime?: number
+  /**
+   * Per-animation mix-time overrides applied via AnimationStateData.setMix().
+   * Each rule targets one animation name and a direction:
+   *   - 'from'  → override the mix when leaving that animation (from → *)
+   *   - 'to'    → override the mix when entering that animation (* → to)
+   *   - 'both'  → both directions
+   * Applied on every animation switch; defaults fall back to `mixTime`.
+   * Example: [{animation:'idle', direction:'from', mixTime:0}]
+   *   means leaving 'idle' always cuts instantly with no blend.
+   */
+  mixTimeRules?: Array<{
+    animation: string
+    direction: 'from' | 'to' | 'both'
+    mixTime: number
+  }>
   /** Delay before starting animation initially in seconds (default: 0) */
   initialDelay?: number
   /** Delay before resuming animation when playing changes from false->true in seconds (default: 0) */
@@ -417,6 +432,7 @@ export const SpineBase = (props: SpineProps) => {
     paused,
     animationProgress,
     mixTime: _mixTime = 0.25,
+    mixTimeRules,
     initialDelay = 0,
     resumeDelay = 0,
     resetOnPause,
@@ -522,6 +538,28 @@ export const SpineBase = (props: SpineProps) => {
   const updateMixTime = () => {
     if (spineRef.current) {
       spineRef.current.state.data.defaultMix = mixTime
+    }
+  }
+
+  /** Apply mixTimeRules to AnimationStateData.setMix() for all animation pairs. */
+  const applyMixTimeRules = (spine: SpineInstance) => {
+    if (!mixTimeRules || mixTimeRules.length === 0) return
+    const data = spine.state.data
+    const animations = spine.skeleton.data.animations
+    if (!animations) return
+    const names = animations.map((a: any) => a.name as string)
+    for (const rule of mixTimeRules) {
+      // Only apply rule if the animation exists in this skeleton
+      if (!names.includes(rule.animation)) continue
+      for (const name of names) {
+        if (name === rule.animation) continue
+        if (rule.direction === 'from' || rule.direction === 'both') {
+          data.setMix(rule.animation, name, rule.mixTime)
+        }
+        if (rule.direction === 'to' || rule.direction === 'both') {
+          data.setMix(name, rule.animation, rule.mixTime)
+        }
+      }
     }
   }
 
@@ -796,6 +834,7 @@ export const SpineBase = (props: SpineProps) => {
         }
 
         updateMixTime()
+        applyMixTimeRules(spine)
 
         // Apply initial animation progress if provided
         if (animationProgress !== undefined) {
@@ -937,7 +976,8 @@ export const SpineBase = (props: SpineProps) => {
 
   useEffect(() => {
     updateMixTime()
-  }, [mixTime])
+    if (spineRef.current) applyMixTimeRules(spineRef.current)
+  }, [mixTime, mixTimeRules]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle animationProgress changes
   useEffect(() => {
@@ -974,6 +1014,8 @@ export const SpineBase = (props: SpineProps) => {
         clearTimeout(loopTimeoutRef.current)
         loopTimeoutRef.current = null
       }
+      // Re-apply mix rules before the switch so per-pair mix is current
+      applyMixTimeRules(spineRef.current)
       try {
         trackedSetAnimation(spineRef.current, 0, animToUse, loop)
         trackAnimationStart(animToUse)

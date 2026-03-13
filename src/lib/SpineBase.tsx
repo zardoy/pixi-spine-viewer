@@ -412,7 +412,7 @@ export interface SpineProps
 
   // === Required ===
   spineLoader: SpineLoader
-  globalController: SpineOverrideControllerPublicAPI
+  globalController?: SpineOverrideControllerPublicAPI
   control?: string
 }
 

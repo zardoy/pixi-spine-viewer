@@ -1,5 +1,5 @@
 import 'pixi.js/prepare' // Ensures prepare system is available for texture preload
-import { Container, type TextureSource } from 'pixi.js'
+import { Application, Container, type TextureSource } from 'pixi.js'
 import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
 import { useEffect, useLayoutEffect, useRef, type Ref, type RefObject } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
@@ -8,6 +8,10 @@ import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
 import gsap from 'gsap'
+
+declare global {
+  var spineDebugResults: Record<string, SpineDebugResults> | undefined
+}
 
 interface SpineLoader {
   createSpine: (spineKey: string, options: any) => {
@@ -19,6 +23,41 @@ interface SpineLoader {
   /** Optional: return texture sources for GPU preload. When provided, SpineBase will call
    * app.prepare.upload(sources) before onSpineLoaded so textures are visible on first frame. */
   getTextureSourcesForPreload?: (spineKey: string) => TextureSource[] | undefined
+}
+
+let globalDebugMode: 'texture-sizes' | undefined = undefined
+
+export const setGlobalDebugMode = (mode: 'texture-sizes' | undefined) => {
+  if (!globalThis.spineDebugResults) {
+    globalThis.spineDebugResults = {}
+  }
+  globalDebugMode = mode
+}
+
+export interface AttachmentSizeInfo {
+  width: number
+  height: number
+  x: number
+  y: number
+  attachmentName: string | null
+  attachmentType: string
+  renderedWidth: number
+  renderedHeight: number
+  textureWidth: number
+  textureHeight: number
+  oversizeX: number
+  oversizeY: number
+}
+
+export interface SpineDebugMinMax {
+  oversizeX: number
+  oversizeY: number
+  attachment: string
+}
+
+export type SpineDebugResults = Record<string, AttachmentSizeInfo | SpineDebugMinMax> & {
+  min: SpineDebugMinMax
+  max: SpineDebugMinMax
 }
 
 function getAnimToUse(animation: string | undefined, spine: SpineInstance | null): string | null {
@@ -44,6 +83,188 @@ function immediateUpdate(spine: SpineInstance, resetSlotsToSetup = false): void 
   spine.skeleton.update(0)
   spine.skeleton.updateWorldTransform(Physics.update)
   spine._validateAndTransformAttachments()
+}
+
+/**
+ * Calculate attachment sizes for a spine instance
+ * Returns a map of slot names to their size information
+ */
+function calculateAttachmentSizes(
+  spine: SpineInstance,
+  pixelRatio: number
+): Record<string, AttachmentSizeInfo> {
+  // Ensure skeleton is updated
+  spine._validateAndTransformAttachments()
+
+  const slots = spine.skeleton.slots
+  const result: Record<string, AttachmentSizeInfo> = {}
+
+  // Get Spine container's world transform for screen space conversion
+  const spineWorldTransform = spine.worldTransform
+  const spineScaleX = Math.sqrt(spineWorldTransform.a * spineWorldTransform.a + spineWorldTransform.c * spineWorldTransform.c)
+  const spineScaleY = Math.sqrt(spineWorldTransform.b * spineWorldTransform.b + spineWorldTransform.d * spineWorldTransform.d)
+
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]
+    if (!slot.bone.active) continue
+
+    const attachment = slot.getAttachment()
+    if (!attachment) continue
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
+    // Calculate world vertices bounds
+    if (attachment instanceof RegionAttachment) {
+      const vertices = new Float32Array(8)
+      attachment.computeWorldVertices(slot, vertices, 0, 2)
+      for (let j = 0; j < 8; j += 2) {
+        minX = Math.min(minX, vertices[j])
+        maxX = Math.max(maxX, vertices[j])
+        minY = Math.min(minY, vertices[j + 1])
+        maxY = Math.max(maxY, vertices[j + 1])
+      }
+    } else if (attachment instanceof MeshAttachment) {
+      const vertices = new Float32Array(attachment.worldVerticesLength)
+      attachment.computeWorldVertices(slot, 0, attachment.worldVerticesLength, vertices, 0, 2)
+      for (let j = 0; j < vertices.length; j += 2) {
+        minX = Math.min(minX, vertices[j])
+        maxX = Math.max(maxX, vertices[j])
+        minY = Math.min(minY, vertices[j + 1])
+        maxY = Math.max(maxY, vertices[j + 1])
+      }
+    } else {
+      // Skip other attachment types (PathAttachment, ClippingAttachment, etc.)
+      continue
+    }
+
+    // Transform to screen space (accounting for Spine container's transform)
+    const localWidth = maxX - minX
+    const localHeight = maxY - minY
+    const screenWidth = localWidth * spineScaleX
+    const screenHeight = localHeight * spineScaleY
+
+    // Transform position to screen space
+    const localX = minX
+    const localY = minY
+    const screenX = localX * spineScaleX + spineWorldTransform.tx
+    const screenY = localY * spineScaleY + spineWorldTransform.ty
+
+    // Get original texture size from atlas region
+    let textureWidth: number | null = null
+    let textureHeight: number | null = null
+    let oversizeX: number | null = null
+    let oversizeY: number | null = null
+    let renderedWidth: number | null = null
+    let renderedHeight: number | null = null
+
+    if (attachment instanceof RegionAttachment || attachment instanceof MeshAttachment) {
+      const region = attachment.region
+      if (region) {
+        // Use originalWidth/originalHeight for the actual texture source size
+        // These represent the original image dimensions before atlas packing
+        textureWidth = region.originalWidth || region.width
+        textureHeight = region.originalHeight || region.height
+
+        // Calculate oversize ratio: texture size / rendered size
+        // Account for device pixel ratio since textures render at devicePixelRatio
+        // > 1.0 means texture is bigger than rendered (oversized)
+        // < 1.0 means texture is smaller than rendered (undersized)
+        // = 1.0 means perfect match
+        if (screenWidth > 0 && screenHeight > 0) {
+          renderedWidth = screenWidth * pixelRatio
+          renderedHeight = screenHeight * pixelRatio
+          oversizeX = textureWidth / renderedWidth
+          oversizeY = textureHeight / renderedHeight
+        }
+      }
+    }
+
+    // Only include attachments with valid texture data
+    if (textureWidth !== null && textureHeight !== null && renderedWidth !== null && renderedHeight !== null && oversizeX !== null && oversizeY !== null) {
+      result[slot.data.name] = {
+        width: screenWidth,
+        height: screenHeight,
+        x: screenX,
+        y: screenY,
+        attachmentName: attachment.name,
+        attachmentType: attachment.constructor.name,
+        renderedWidth,
+        renderedHeight,
+        textureWidth,
+        textureHeight,
+        oversizeX,
+        oversizeY,
+      }
+    }
+  }
+
+  return result
+}
+
+/**
+ * Calculate and store debug results for texture sizes
+ */
+function updateDebugResults(spine: SpineInstance, spineKey: string, app: Application): void {
+  if (globalDebugMode !== 'texture-sizes') return
+
+  const pixelRatio = app.renderer.resolution
+  const attachmentSizes = calculateAttachmentSizes(spine, pixelRatio)
+
+  // Calculate min/max oversize factors
+  let minOversizeX = Infinity
+  let minOversizeY = Infinity
+  let maxOversizeX = -Infinity
+  let maxOversizeY = -Infinity
+  let minAttachmentX = ''
+  let minAttachmentY = ''
+  let maxAttachmentX = ''
+  let maxAttachmentY = ''
+
+  const readableAttachmentSizes = [] as string[]
+
+  for (const [slotName, info] of Object.entries(attachmentSizes)) {
+    if (info.oversizeX < minOversizeX) {
+      minOversizeX = info.oversizeX
+      minAttachmentX = slotName
+    }
+    if (info.oversizeX > maxOversizeX) {
+      maxOversizeX = info.oversizeX
+      maxAttachmentX = slotName
+    }
+    if (info.oversizeY < minOversizeY) {
+      minOversizeY = info.oversizeY
+      minAttachmentY = slotName
+    }
+    if (info.oversizeY > maxOversizeY) {
+      maxOversizeY = info.oversizeY
+      maxAttachmentY = slotName
+    }
+    readableAttachmentSizes.push(`${slotName}: ${info.oversizeX.toFixed(2)}/${info.oversizeY.toFixed(2)}`)
+  }
+
+  // Store results in global
+  if (!globalThis.spineDebugResults) {
+    globalThis.spineDebugResults = {}
+  }
+
+  const results = {
+    ...attachmentSizes,
+    min: {
+      oversizeX: minOversizeX === Infinity ? 0 : minOversizeX,
+      oversizeY: minOversizeY === Infinity ? 0 : minOversizeY,
+      attachment: minAttachmentX || minAttachmentY || '',
+    },
+    max: {
+      oversizeX: maxOversizeX === -Infinity ? 0 : maxOversizeX,
+      oversizeY: maxOversizeY === -Infinity ? 0 : maxOversizeY,
+      attachment: maxAttachmentX || maxAttachmentY || '',
+    },
+  } as SpineDebugResults
+
+  // globalThis.spineDebugResults[spineKey] = results
+  globalThis.spineDebugResults[spineKey] = {
+    minMax: `${results.min.oversizeX.toFixed(2)}/${results.max.oversizeX.toFixed(2)}: ${readableAttachmentSizes.join(', ')}`,
+  } as any
 }
 
 /** Data for a single slot's attachment (world vertices, bone transform, etc.). Exported for consumers that need full data. */
@@ -92,6 +313,11 @@ function getAttachmentFollowTransform(spine: SpineInstance, slotName: string): {
     scaleX: bone.getWorldScaleX(),
     scaleY: bone.getWorldScaleY(),
   }
+}
+
+export interface SpineOverrideControllerPublicAPI {
+  getMergedProps: <T>(props: T) => T
+  useReactiveUpdateHook(control: string): { counter: number }
 }
 
 export interface SpineProps
@@ -171,6 +397,8 @@ export interface SpineProps
 
   // === Required ===
   spineLoader: SpineLoader
+  globalController: SpineOverrideControllerPublicAPI
+  control?: string
 }
 
 export const SpineBase = (props: SpineProps) => {
@@ -233,7 +461,10 @@ export const SpineBase = (props: SpineProps) => {
     attachmentsFollow,
 
     ...passthroughProps
-  } = props
+  } = props.globalController ? props.globalController.getMergedProps(props) : props
+  if (props.globalController && props.control) {
+    const { counter } = props.globalController.useReactiveUpdateHook(props.control)
+  }
 
   const mixTime = instantReset ? 0 : _mixTime
 
@@ -425,10 +656,10 @@ export const SpineBase = (props: SpineProps) => {
         const s = spineRef.current
         if (!s) return null
 
-        // Ensure skeleton is updated
-        s._validateAndTransformAttachments()
+        const pixelRatio = app.app.renderer.resolution
+        const attachmentSizes = calculateAttachmentSizes(s, pixelRatio)
 
-        const slots = s.skeleton.slots
+        // Convert to legacy format for backward compatibility
         const result: Record<string, {
           width: number
           height: number
@@ -436,98 +667,28 @@ export const SpineBase = (props: SpineProps) => {
           y: number
           attachmentName: string | null
           attachmentType: string
+          renderedWidth: number | null
+          renderedHeight: number | null
           textureWidth: number | null
           textureHeight: number | null
           textureOversizeX: number | null
           textureOversizeY: number | null
         }> = {}
 
-        // Get Spine container's world transform for screen space conversion
-        const spineWorldTransform = s.worldTransform
-        const spineScaleX = Math.sqrt(spineWorldTransform.a * spineWorldTransform.a + spineWorldTransform.c * spineWorldTransform.c)
-        const spineScaleY = Math.sqrt(spineWorldTransform.b * spineWorldTransform.b + spineWorldTransform.d * spineWorldTransform.d)
-
-        for (let i = 0; i < slots.length; i++) {
-          const slot = slots[i]
-          if (!slot.bone.active) continue
-
-          const attachment = slot.getAttachment()
-          if (!attachment) continue
-
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-
-          // Calculate world vertices bounds
-          if (attachment instanceof RegionAttachment) {
-            const vertices = new Float32Array(8)
-            attachment.computeWorldVertices(slot, vertices, 0, 2)
-            for (let j = 0; j < 8; j += 2) {
-              minX = Math.min(minX, vertices[j])
-              maxX = Math.max(maxX, vertices[j])
-              minY = Math.min(minY, vertices[j + 1])
-              maxY = Math.max(maxY, vertices[j + 1])
-            }
-          } else if (attachment instanceof MeshAttachment) {
-            const vertices = new Float32Array(attachment.worldVerticesLength)
-            attachment.computeWorldVertices(slot, 0, attachment.worldVerticesLength, vertices, 0, 2)
-            for (let j = 0; j < vertices.length; j += 2) {
-              minX = Math.min(minX, vertices[j])
-              maxX = Math.max(maxX, vertices[j])
-              minY = Math.min(minY, vertices[j + 1])
-              maxY = Math.max(maxY, vertices[j + 1])
-            }
-          } else {
-            // Skip other attachment types (PathAttachment, ClippingAttachment, etc.)
-            continue
-          }
-
-          // Transform to screen space (accounting for Spine container's transform)
-          const localWidth = maxX - minX
-          const localHeight = maxY - minY
-          const screenWidth = localWidth * spineScaleX
-          const screenHeight = localHeight * spineScaleY
-
-          // Transform position to screen space
-          const localX = minX
-          const localY = minY
-          const screenX = localX * spineScaleX + spineWorldTransform.tx
-          const screenY = localY * spineScaleY + spineWorldTransform.ty
-
-          // Get original texture size from atlas region
-          let textureWidth: number | null = null
-          let textureHeight: number | null = null
-          let textureOversizeX: number | null = null
-          let textureOversizeY: number | null = null
-
-          if (attachment instanceof RegionAttachment || attachment instanceof MeshAttachment) {
-            const region = attachment.region
-            if (region) {
-              // Use originalWidth/originalHeight for the actual texture source size
-              // These represent the original image dimensions before atlas packing
-              textureWidth = region.originalWidth || region.width
-              textureHeight = region.originalHeight || region.height
-
-              // Calculate oversize ratio: texture size / rendered size
-              // > 1.0 means texture is bigger than rendered (oversized)
-              // < 1.0 means texture is smaller than rendered (undersized)
-              // = 1.0 means perfect match
-              if (screenWidth > 0 && screenHeight > 0) {
-                textureOversizeX = textureWidth / screenWidth
-                textureOversizeY = textureHeight / screenHeight
-              }
-            }
-          }
-
-          result[slot.data.name] = {
-            width: screenWidth,
-            height: screenHeight,
-            x: screenX,
-            y: screenY,
-            attachmentName: attachment.name,
-            attachmentType: attachment.constructor.name,
-            textureWidth,
-            textureHeight,
-            textureOversizeX,
-            textureOversizeY,
+        for (const [slotName, info] of Object.entries(attachmentSizes)) {
+          result[slotName] = {
+            width: info.width,
+            height: info.height,
+            x: info.x,
+            y: info.y,
+            attachmentName: info.attachmentName,
+            attachmentType: info.attachmentType,
+            renderedWidth: info.renderedWidth,
+            renderedHeight: info.renderedHeight,
+            textureWidth: info.textureWidth,
+            textureHeight: info.textureHeight,
+            textureOversizeX: info.oversizeX,
+            textureOversizeY: info.oversizeY,
           }
         }
 
@@ -716,6 +877,8 @@ export const SpineBase = (props: SpineProps) => {
           immediateUpdate(spine)
         }
 
+        updateDebugResults(spine, spineKey, app.app)
+
         // await new Promise<void>(resolve => {
         //   requestAnimationFrame(() => {
         //   requestAnimationFrame(() => {
@@ -820,19 +983,38 @@ export const SpineBase = (props: SpineProps) => {
           if (track) track.mixDuration = 0
           immediateUpdate(spineRef.current, true)
         }
+        // Update debug results if debug mode is enabled
+        if (spineRef.current) {
+          updateDebugResults(spineRef.current, spineKey, app.app)
+        }
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
       }
       // Set time scale since we clearn existing loop which might have ben stopped
       setTimeScale()
     } else {
-      // Animation unchanged, but loop might have changed - just toggle track.loop (no restart)
+      // Animation unchanged, but loop might have changed - need to update it
       const currentLoop = track?.loop ?? false
-      // if (currentLoop !== loop && track) {
-      //   track.loop = loop
-      // }
+      if (currentLoop !== loop) {
+        try {
+          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+          trackAnimationStart(animToUse)
+          // When mixTime is 0, apply instant reset behavior (no mix transition)
+          if (mixTime === 0) {
+            const t = spineRef.current.state.tracks[0]
+            if (t) t.mixDuration = 0
+            immediateUpdate(spineRef.current, true)
+          }
+          // Update debug results if debug mode is enabled
+          if (spineRef.current) {
+            updateDebugResults(spineRef.current, spineKey, app.app)
+          }
+        } catch (error) {
+          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
+        }
+      }
     }
-  }, [animation, loop, mixTime])
+  }, [animation, loop, mixTime, spineKey])
 
   // Handle playing/paused, timeScale changes with resumeDelay and resetOnPause
   useEffect(() => {
@@ -882,11 +1064,10 @@ export const SpineBase = (props: SpineProps) => {
     // ignore resumeDelay, resetOnPause
   }, [isPlaying, timeScale])
 
-  // Handle resetCounter increases: reset current animation to start (uses mix time)
+  // Handle resetCounter changes: reset current animation to start (uses mix time)
   useEffect(() => {
     const cur = resetCounter ?? 0
-    if (cur <= prevResetCounterRef.current) {
-      prevResetCounterRef.current = cur
+    if (cur === prevResetCounterRef.current) {
       return
     }
     prevResetCounterRef.current = cur
@@ -1030,11 +1211,13 @@ export const SpineBase = (props: SpineProps) => {
       if (skinData) {
         spineRef.current.skeleton.setSkin(skinData)
         spineRef.current.skeleton.setSlotsToSetupPose()
+        // Update debug results if debug mode is enabled
+        updateDebugResults(spineRef.current, spineKey, app.app)
       }
     } catch (error) {
       throw wrapSpineError(error, `Failed to set skin '${skin}'`, spineKey, debugKey)
     }
-  }, [skin])
+  }, [skin, spineKey])
 
   // Update animation complete callback ref (listener is already set up in loadSpine, just update the callback)
   useEffect(() => {

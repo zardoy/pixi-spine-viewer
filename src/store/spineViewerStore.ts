@@ -141,7 +141,7 @@ export const initialState: SpineViewerState = {
     manualPosition: { x: 0, y: 0 },
     manualGuideSize: { width: 800, height: 600 },
     manualGuidePosition: { x: 0, y: 0 },
-    guideBoundsEnabled: true,
+    guideBoundsEnabled: false,
     autoViewportLock: false,
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },

@@ -1073,6 +1073,11 @@ const PixiAppContent = () => {
             skin={state.ui.selectedSkin}
             mixTime={state.ui.mixTime}
             resetCounter={state.ui.resetCounter}
+            animationProgress={
+              !state.ui.isPlaying && state.ui.timelineDuration > 0
+                ? state.ui.timeline / state.ui.timelineDuration
+                : undefined
+            }
             scale={{ x: 1, y: 1 }}
             scaleAnimationDuration={0}
             x={0}

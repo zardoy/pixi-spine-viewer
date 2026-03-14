@@ -32,7 +32,7 @@ interface SpineViewerProps {
 const GENERATOR_BREAKPOINT_PX = 768;
 
 export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
-  const state = useSnapshot(spineViewerStore);
+  const snapshot = useSnapshot(spineViewerStore);
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < GENERATOR_BREAKPOINT_PX);
 
   useEffect(() => {
@@ -113,7 +113,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         e.preventDefault();
         spineViewerStore.ui.debugBones = !spineViewerStore.ui.debugBones;
       } else if (e.code === "KeyS") {
-        if (state.ui.selectedAnimation) {
+        if (spineViewerStore.ui.selectedAnimation) {
           e.preventDefault();
           spineViewerStore.ui.resetCounter += 1;
           spineViewerStore.ui.timeline = 0;
@@ -122,12 +122,12 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         const digit = parseInt(e.code.replace("Digit", ""), 10);
         if (!Number.isNaN(digit) && digit >= 1 && digit <= 9) {
           const index = digit - 1;
-          const anim = state.ui.animations[index];
-          if (anim && anim !== state.ui.selectedAnimation) {
+          const anim = spineViewerStore.ui.animations[index];
+          if (anim && anim !== spineViewerStore.ui.selectedAnimation) {
             e.preventDefault();
             // Store current animation as previous before switching
-            if (state.ui.selectedAnimation) {
-              spineViewerStore.ui.previousAnimation = state.ui.selectedAnimation;
+            if (spineViewerStore.ui.selectedAnimation) {
+              spineViewerStore.ui.previousAnimation = spineViewerStore.ui.selectedAnimation;
             }
             spineViewerStore.ui.selectedAnimation = anim;
             applyActionAfterAnimSwitch();
@@ -135,28 +135,28 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         }
       } else if (e.code === "KeyQ") {
         // Switch to previous animation
-        if (state.ui.previousAnimation && state.ui.previousAnimation !== state.ui.selectedAnimation) {
+        if (spineViewerStore.ui.previousAnimation && spineViewerStore.ui.previousAnimation !== spineViewerStore.ui.selectedAnimation) {
           e.preventDefault();
-          const prevAnim = state.ui.previousAnimation;
-          spineViewerStore.ui.previousAnimation = state.ui.selectedAnimation;
+          const prevAnim = spineViewerStore.ui.previousAnimation;
+          spineViewerStore.ui.previousAnimation = spineViewerStore.ui.selectedAnimation;
           spineViewerStore.ui.selectedAnimation = prevAnim;
           applyActionAfterAnimSwitch();
         }
       } else if (e.code === "KeyC") {
         // Cycle through skins with 'C' key
-        if (state.ui.skins.length > 1) {
+        if (spineViewerStore.ui.skins.length > 1) {
           e.preventDefault();
-          const currentIndex = state.ui.skins.indexOf(state.ui.selectedSkin);
-          const nextIndex = (currentIndex + 1) % state.ui.skins.length;
-          spineViewerStore.ui.selectedSkin = state.ui.skins[nextIndex];
+          const currentIndex = spineViewerStore.ui.skins.indexOf(spineViewerStore.ui.selectedSkin);
+          const nextIndex = (currentIndex + 1) % spineViewerStore.ui.skins.length;
+          spineViewerStore.ui.selectedSkin = spineViewerStore.ui.skins[nextIndex];
         }
       } else if (e.code === "Comma") {
         // Previous keyframe
         const spine = spineViewerStore.refs.spine;
-        const anim = spine?.skeleton?.data?.findAnimation?.(state.ui.selectedAnimation);
+        const anim = spine?.skeleton?.data?.findAnimation?.(spineViewerStore.ui.selectedAnimation);
         if (anim) {
           const keyframes = getAnimationKeyframeTimes(anim as Parameters<typeof getAnimationKeyframeTimes>[0]);
-          const current = state.ui.timeline;
+          const current = spineViewerStore.ui.timeline;
           const idx = keyframes.findIndex((t) => t >= current) - 1;
           if (idx >= 0 && keyframes[idx] !== undefined) {
             e.preventDefault();
@@ -167,10 +167,10 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       } else if (e.code === "Period") {
         // Next keyframe
         const spine = spineViewerStore.refs.spine;
-        const anim = spine?.skeleton?.data?.findAnimation?.(state.ui.selectedAnimation);
+        const anim = spine?.skeleton?.data?.findAnimation?.(spineViewerStore.ui.selectedAnimation);
         if (anim) {
           const keyframes = getAnimationKeyframeTimes(anim as Parameters<typeof getAnimationKeyframeTimes>[0]);
-          const current = state.ui.timeline;
+          const current = spineViewerStore.ui.timeline;
           const idx = keyframes.findIndex((t) => t > current);
           if (idx >= 0 && keyframes[idx] !== undefined) {
             e.preventDefault();
@@ -180,12 +180,13 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         }
       } else if (e.code === "KeyN") {
         // Add custom event at current time
-        const animName = state.ui.selectedAnimation;
-        const time = state.ui.timeline;
+        const animName = spineViewerStore.ui.selectedAnimation;
+        const time = spineViewerStore.ui.timeline;
         if (animName && time >= 0) {
           e.preventDefault();
           const cur = spineViewerStore.ui.customEvents[animName] ?? {};
-          const eventName = `customEvent_${Object.keys(cur).length}`;
+          const eventName = prompt("Enter event name", `customEvent_${Object.keys(cur).length}`);
+          if (!eventName) return
           spineViewerStore.ui.customEvents = {
             ...spineViewerStore.ui.customEvents,
             [animName]: { ...cur, [eventName]: time },
@@ -197,14 +198,14 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [onBack, state.ui.animations, state.ui.skins, state.ui.loop, state.ui.selectedAnimation, state.ui.selectedSkin]);
+  }, []);
 
   const handleCopyUrl = () => {
     const params = new URLSearchParams();
-    if (state.ui.selectedAnimation) params.set('animation', state.ui.selectedAnimation);
-    if (state.ui.selectedSkin) params.set('skin', state.ui.selectedSkin);
-    if (state.ui.timeline > 0) params.set('time', state.ui.timeline.toFixed(3));
-    if (state.ui.backgroundColor !== '#404040') params.set('bg', state.ui.backgroundColor);
+    if (snapshot.ui.selectedAnimation) params.set('animation', snapshot.ui.selectedAnimation);
+    if (snapshot.ui.selectedSkin) params.set('skin', snapshot.ui.selectedSkin);
+    if (snapshot.ui.timeline > 0) params.set('time', snapshot.ui.timeline.toFixed(3));
+    if (snapshot.ui.backgroundColor !== '#404040') params.set('bg', snapshot.ui.backgroundColor);
 
     const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -226,7 +227,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       if (files.length === 0) return;
 
       // Check if we already have a first spine loaded
-      if (!state.files) {
+      if (!snapshot.files) {
         toast.warning('Please load first spine before dropping second one');
         return;
       }
@@ -310,7 +311,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       window.removeEventListener('drop', handleDrop);
       window.removeEventListener('dragover', handleDragOver);
     };
-  }, [state.files]);
+  }, [snapshot.files]);
 
   // Keyboard handlers for spine positioning and scaling
   useEffect(() => {
@@ -325,7 +326,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
       let changed = false;
 
-      if (state.secondFiles) {
+      if (snapshot.secondFiles) {
         // Second spine is loaded - control second spine offset
         if (e.code === "ArrowLeft") {
           e.preventDefault();
@@ -395,9 +396,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [state.secondFiles]);
+  }, [snapshot.secondFiles]);
 
-  const showGenerator = state.ui.particleGeneratorPanelVisible;
+  const showGenerator = snapshot.ui.particleGeneratorPanelVisible;
   const showGeneratorInline = showGenerator && !isNarrow;
   const showGeneratorModal = showGenerator && isNarrow;
 
@@ -428,7 +429,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   );
 
   const previewWithFab = (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 relative">
       <div className="flex-shrink-0 max-h-[260px] overflow-y-auto border-b border-border bg-background/95">
         <Controls onCopyUrl={handleCopyUrl} onBack={onBack} />
       </div>
@@ -445,11 +446,11 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           </button>
         )}
       </div>
-    </>
+    </div>
   );
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-background relative">
+    <div className="h-screen flex flex-col md:flex-row bg-background relative">
       {/* Split: left = generator (desktop), right = preview */}
       {showGeneratorInline && (
         <aside className="hidden md:flex md:flex-col md:w-[380px] md:shrink-0 md:border-r md:border-border md:bg-card/50 md:overflow-y-auto">
@@ -465,7 +466,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         </aside>
       )}
 
-      <div className="flex flex-col flex-1 min-w-0">
+      <div className="flex flex-col flex-1 min-w-0 h-full">
         {showGeneratorInline ? previewArea : previewWithFab}
       </div>
 

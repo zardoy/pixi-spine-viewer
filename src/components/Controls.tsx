@@ -128,7 +128,7 @@ export const Controls = ({
 
         <div className="flex items-center gap-6">
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Animation (Q: prev, ,/. keyframes)</Label>
+            <Label className="text-xs text-muted-foreground">Animation (Q: prev)</Label>
             <div className="flex items-center gap-1">
               <Select value={ui.selectedAnimation} onValueChange={(val) => {
                 if (ui.selectedAnimation && ui.selectedAnimation !== val) {

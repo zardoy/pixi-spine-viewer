@@ -566,8 +566,17 @@ export const SpineBase = (props: SpineProps) => {
   const updateAnimationProgress = () => {
     if (!spineRef.current || animationProgress === undefined) return
 
-    const track = spineRef.current.state.tracks[0]
-    if (!track || !track.animation) return
+    let track = spineRef.current.state.tracks[0]
+    // When loop=false and the animation completed, Spine clears tracks[0].
+    // Re-set the animation to restore the track before seeking.
+    if (!track || !track.animation) {
+      const animToUse = getAnimToUse(animation, spineRef.current)
+      if (!animToUse) return
+      applyMixTimeRules(spineRef.current)
+      trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+      track = spineRef.current.state.tracks[0]
+      if (!track || !track.animation) return
+    }
 
     const duration = track.animation.duration
     if (duration <= 0) return
@@ -578,11 +587,13 @@ export const SpineBase = (props: SpineProps) => {
     // Clamp to valid range
     const clampedTime = Math.max(0, Math.min(targetTime, duration))
 
-    // Set track time
+    // Set track time only; do NOT set trackEnd = clampedTime — Spine treats
+    // trackTime >= trackEnd as "complete" and clears the track, breaking the next seek.
     track.trackTime = clampedTime
-    track.trackEnd = clampedTime
 
-    // Apply the state immediately
+    // Apply the state and immediately render so the pose is visible on the
+    // same frame even while paused (timeScale=0 means the ticker won't advance
+    // the animation on its own).
     spineRef.current.state.apply(spineRef.current.skeleton)
     spineRef.current.skeleton.updateWorldTransform(Physics.update)
   }

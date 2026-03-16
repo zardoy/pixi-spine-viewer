@@ -1154,7 +1154,7 @@ export const PixiApp = () => {
   const backgroundColor = parseInt(bgColor, 16);
 
   return (
-    <div ref={canvasWrapperRef} className="flex-1">
+    <div ref={canvasWrapperRef} className="h-full w-full">
       <Application
         backgroundColor={backgroundColor}
         resizeTo={canvasWrapperRef}

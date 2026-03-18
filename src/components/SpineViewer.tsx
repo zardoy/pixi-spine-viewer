@@ -45,6 +45,10 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
   // Set files in store on mount, wrapped in ref() to prevent proxying (File objects need proper this context)
   useEffect(() => {
     spineViewerStore.files = ref(files);
+    spineViewerStore.ui.selectedSkeleton = files.jsonFile.name.replace(/\.(json|skel)$/i, '');
+    spineViewerStore.ui.availableSkeletonNames = files.skeletonFiles?.map((f) =>
+      f.name.replace(/\.(json|skel)$/i, '')
+    ) ?? [];
     // Clear second files when first files change
     spineViewerStore.secondFiles = null;
     spineViewerStore.secondSpineOffset = { x: 0, y: 0, scale: 1 };
@@ -263,15 +267,15 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           }
         }
 
-        // Find skeleton, atlas, and image files
-        const skeletonFile = allFiles.find(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
+        // Find skeleton files, atlas, and image files
+        const skeletonFiles = allFiles.filter(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
         const atlasFile = allFiles.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
         const imageFiles = allFiles.filter(f =>
           f.type.startsWith("image/") ||
           f.name.match(/\.(png|jpg|jpeg|webp)$/i)
         );
 
-        if (!skeletonFile) {
+        if (skeletonFiles.length === 0) {
           toast.error("No .json or .skel file found in dropped files.");
           return;
         }
@@ -286,6 +290,17 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
           return;
         }
 
+        if (skeletonFiles.length > 1) {
+          spineViewerStore.pendingSkeletonSelection = ref({ skeletonFiles, atlasFile, imageFiles }) as any;
+          spineViewerStore.ui.skeletonSelectModalOpen = true;
+          spineViewerStore.skeletonSelectOnSelect = ref((files: SpineFiles) => {
+            spineViewerStore.secondFiles = ref(files);
+            toast.success(`Second spine loaded: ${files.jsonFile.name}`);
+          }) as any;
+          return;
+        }
+
+        const skeletonFile = skeletonFiles[0];
         const secondFiles: SpineFiles = {
           jsonFile: skeletonFile,
           atlasFile,

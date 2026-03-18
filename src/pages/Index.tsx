@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSnapshot } from "valtio";
 import { LandingPage } from "../components/LandingPage";
 import { SpineViewer } from "../components/SpineViewer";
 import { SpinesMapViewer } from "../components/SpinesMapViewer";
@@ -8,11 +9,14 @@ import { OverridePlayground } from "../components/OverridePlayground";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
+import { SkeletonSelectModal } from "../components/SkeletonSelectModal";
 
 export interface SpineFiles {
   jsonFile: File;
   atlasFile: File;
   imageFiles: File[];
+  /** When multiple .skel/.json files share an atlas, list all for skeleton dropdown */
+  skeletonFiles?: File[];
 }
 
 /** Blank spine files used when opening particle generator; shared for QS restore. */
@@ -31,10 +35,17 @@ export function getBlankParticleFiles(): SpineFiles {
   };
 }
 
+export interface PendingSkeletonSelection {
+  skeletonFiles: File[];
+  atlasFile: File;
+  imageFiles: File[];
+}
+
 const Index = () => {
   const [spineFiles, setSpineFiles] = useState<SpineFiles | null>(null);
   const [spinesMapUrl, setSpinesMapUrl] = useState<string | null>(null);
   const [loadingFromUrl, setLoadingFromUrl] = useState(false);
+  const [pendingSkeletonSelection, setPendingSkeletonSelection] = useState<PendingSkeletonSelection | null>(null);
 
   const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
@@ -144,6 +155,14 @@ const Index = () => {
     setSpineFiles(files);
   };
 
+  const handleSkeletonSelect = (files: SpineFiles) => {
+    spineViewerStore.syncedDir = null;
+    spineViewerStore.refs.syncedDirHandles = null;
+    spineViewerStore.ui.particleGeneratorPanelVisible = false;
+    setSpineFiles(files);
+    setPendingSkeletonSelection(null);
+  };
+
   const handleBack = async () => {
     window.location.search = '';
     await new Promise(resolve => {
@@ -201,12 +220,50 @@ const Index = () => {
     );
   }
 
+  const storeSnapshot = useSnapshot(spineViewerStore);
+  const storePending = storeSnapshot.pendingSkeletonSelection as
+    | { current?: PendingSkeletonSelection }
+    | null
+    | undefined;
+  const storePendingRaw = storePending?.current ?? (storePending as PendingSkeletonSelection | null);
+
+  const modalPending = pendingSkeletonSelection ?? storePendingRaw;
+  const isFirstSpine = !!pendingSkeletonSelection;
+
   return (
     <>
       {!spineFiles ? (
-        <LandingPage onFilesSelect={handleFilesSelect} />
+        <LandingPage
+          onFilesSelect={handleFilesSelect}
+          onMultipleSkeletonsFound={setPendingSkeletonSelection}
+        />
       ) : (
         <SpineViewer files={spineFiles} onBack={handleBack} />
+      )}
+      {modalPending && (
+        <SkeletonSelectModal
+          pending={modalPending}
+          onSelect={
+            isFirstSpine
+              ? handleSkeletonSelect
+              : (files) => {
+                  const cb = spineViewerStore.skeletonSelectOnSelect as { current?: (f: SpineFiles) => void } | null;
+                  cb?.current?.(files);
+                  spineViewerStore.pendingSkeletonSelection = null;
+                  spineViewerStore.ui.skeletonSelectModalOpen = false;
+                  spineViewerStore.skeletonSelectOnSelect = null;
+                }
+          }
+          onClose={() => {
+            if (isFirstSpine) {
+              setPendingSkeletonSelection(null);
+            } else {
+              spineViewerStore.pendingSkeletonSelection = null;
+              spineViewerStore.ui.skeletonSelectModalOpen = false;
+              spineViewerStore.skeletonSelectOnSelect = null;
+            }
+          }}
+        />
       )}
     </>
   );

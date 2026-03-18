@@ -78,31 +78,58 @@ export const AttachmentTestPanel = () => {
         </Button>
       </div>
       <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-        <Label className="text-xs text-muted-foreground">Select Attachment Slot</Label>
+        <Label className="text-xs text-muted-foreground">Select target (bone or slot)</Label>
         <Select
-          value={state.ui.selectedAttachmentSlot}
+          value={
+            state.ui.attachmentFollowMode === 'bone' && state.ui.selectedAttachmentBone
+              ? `bone/${state.ui.selectedAttachmentBone}`
+              : state.ui.attachmentFollowMode === 'slot' && state.ui.selectedAttachmentSlot
+                ? `slot/${state.ui.selectedAttachmentSlot}`
+                : ''
+          }
           onValueChange={(value) => {
-            spineViewerStore.ui.selectedAttachmentSlot = value;
+            if (!value) return;
+            if (value.startsWith('bone/')) {
+              spineViewerStore.ui.attachmentFollowMode = 'bone';
+              spineViewerStore.ui.selectedAttachmentBone = value.slice(5);
+              spineViewerStore.ui.selectedAttachmentSlot = '';
+            } else if (value.startsWith('slot/')) {
+              spineViewerStore.ui.attachmentFollowMode = 'slot';
+              spineViewerStore.ui.selectedAttachmentSlot = value.slice(5);
+              spineViewerStore.ui.selectedAttachmentBone = '';
+            }
           }}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select slot..." />
+            <SelectValue placeholder="Select target..." />
           </SelectTrigger>
           <SelectContent>
-            {state.ui.availableAttachmentSlots.length === 0 ? (
-              <SelectItem value="" disabled>No slots available</SelectItem>
+            {state.ui.availableBones.length === 0 && state.ui.availableAttachmentSlots.length === 0 ? (
+              <SelectItem value="" disabled>No bones or slots available</SelectItem>
             ) : (
-              state.ui.availableAttachmentSlots.map((slot) => (
-                <SelectItem key={slot} value={slot}>
-                  {slot}
-                </SelectItem>
-              ))
+              <>
+                {state.ui.availableBones.map((bone) => (
+                  <SelectItem key={`bone-${bone}`} value={`bone/${bone}`}>
+                    bone/{bone}
+                  </SelectItem>
+                ))}
+                {state.ui.availableAttachmentSlots.map((slot) => (
+                  <SelectItem key={`slot-${slot}`} value={`slot/${slot}`}>
+                    slot/{slot}
+                  </SelectItem>
+                ))}
+              </>
             )}
           </SelectContent>
         </Select>
-        {state.ui.selectedAttachmentSlot && (
+        {((state.ui.attachmentFollowMode === 'slot' && state.ui.selectedAttachmentSlot) ||
+          (state.ui.attachmentFollowMode === 'bone' && state.ui.selectedAttachmentBone)) && (
           <div className="text-xs text-muted-foreground pt-1">
-            Red box will follow: <span className="font-medium">{state.ui.selectedAttachmentSlot}</span>
+            Red box will follow: <span className="font-medium">
+              {state.ui.attachmentFollowMode === 'bone'
+                ? `bone/${state.ui.selectedAttachmentBone}`
+                : `slot/${state.ui.selectedAttachmentSlot}`}
+            </span>
           </div>
         )}
       </div>

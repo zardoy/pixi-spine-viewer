@@ -14,7 +14,8 @@ declare global {
 }
 
 interface SpineLoader {
-  createSpine: (spineKey: string, options: any) => {
+  loadSpine: (spineKey: string) => Promise<unknown>
+  createSpine: (spineKey: string, options?: Record<string, unknown>) => {
     spine: SpineInstance
     x?: number
     y?: number
@@ -287,9 +288,12 @@ export interface AttachmentsFollowTarget {
   scale?: { x: number; y: number }
 }
 
-/** One entry for attachmentsFollow: slot to follow and ref to the PIXI object to position each frame. */
+/** One entry for attachmentsFollow: slot or bone to follow and ref to the PIXI object to position each frame. */
 export interface AttachmentsFollowItem {
-  slotName: string
+  /** Follow attachment slot (uses slot's bone transform) */
+  slotName?: string
+  /** Follow bone directly (pos + scale). Use slotName OR boneName, not both. */
+  boneName?: string
   ref: RefObject<AttachmentsFollowTarget | null>
 }
 
@@ -303,16 +307,29 @@ export interface SpineEvent<TName extends string = string> {
   trackIndex: number
 }
 
-function getAttachmentFollowTransform(spine: SpineInstance, slotName: string): { x: number; y: number; scaleX: number; scaleY: number } | null {
-  const slot = spine.skeleton.findSlot(slotName)
-  if (!slot) return null
-  const bone = slot.bone
-  return {
-    x: bone.worldX,
-    y: bone.worldY,
-    scaleX: bone.getWorldScaleX(),
-    scaleY: bone.getWorldScaleY(),
+function getFollowTransform(spine: SpineInstance, item: AttachmentsFollowItem): { x: number; y: number; scaleX: number; scaleY: number } | null {
+  if (item.slotName) {
+    const slot = spine.skeleton.findSlot(item.slotName)
+    if (!slot) return null
+    const bone = slot.bone
+    return {
+      x: bone.worldX,
+      y: bone.worldY,
+      scaleX: bone.getWorldScaleX(),
+      scaleY: bone.getWorldScaleY(),
+    }
   }
+  if (item.boneName) {
+    const bone = spine.skeleton.findBone(item.boneName)
+    if (!bone) return null
+    return {
+      x: bone.worldX,
+      y: bone.worldY,
+      scaleX: bone.getWorldScaleX(),
+      scaleY: bone.getWorldScaleY(),
+    }
+  }
+  return null
 }
 
 export interface SpineOverrideControllerPublicAPI {
@@ -323,7 +340,7 @@ export interface SpineOverrideControllerPublicAPI {
 export interface SpineProps
   extends Pick<PixiReactElementProps<typeof Container>, 'x' | 'y' | 'eventMode' | 'cursor' | 'filters' | 'layout' | 'zIndex' | 'mask' | 'scale' | 'origin'> {
   // === Core ===
-  /** The spine key from textures.json */
+  /** The spine key: "spineName" or "spineName/skeleton" for multi-skeleton folders */
   spine: string
   /** Skin name to apply (optional) */
   skin?: string
@@ -496,7 +513,7 @@ export const SpineBase = (props: SpineProps) => {
     for (const item of list) {
       const target = item.ref.current
       if (!target) continue
-      const t = getAttachmentFollowTransform(spine, item.slotName)
+      const t = getFollowTransform(spine, item)
       if (!t) continue
       target.x = t.x
       target.y = t.y
@@ -566,17 +583,8 @@ export const SpineBase = (props: SpineProps) => {
   const updateAnimationProgress = () => {
     if (!spineRef.current || animationProgress === undefined) return
 
-    let track = spineRef.current.state.tracks[0]
-    // When loop=false and the animation completed, Spine clears tracks[0].
-    // Re-set the animation to restore the track before seeking.
-    if (!track || !track.animation) {
-      const animToUse = getAnimToUse(animation, spineRef.current)
-      if (!animToUse) return
-      applyMixTimeRules(spineRef.current)
-      trackedSetAnimation(spineRef.current, 0, animToUse, loop)
-      track = spineRef.current.state.tracks[0]
-      if (!track || !track.animation) return
-    }
+    const track = spineRef.current.state.tracks[0]
+    if (!track || !track.animation) return
 
     const duration = track.animation.duration
     if (duration <= 0) return
@@ -587,13 +595,11 @@ export const SpineBase = (props: SpineProps) => {
     // Clamp to valid range
     const clampedTime = Math.max(0, Math.min(targetTime, duration))
 
-    // Set track time only; do NOT set trackEnd = clampedTime — Spine treats
-    // trackTime >= trackEnd as "complete" and clears the track, breaking the next seek.
+    // Set track time
     track.trackTime = clampedTime
+    // track.trackEnd = clampedTime
 
-    // Apply the state and immediately render so the pose is visible on the
-    // same frame even while paused (timeScale=0 means the ticker won't advance
-    // the animation on its own).
+    // Apply the state immediately
     spineRef.current.state.apply(spineRef.current.skeleton)
     spineRef.current.skeleton.updateWorldTransform(Physics.update)
   }
@@ -760,8 +766,10 @@ export const SpineBase = (props: SpineProps) => {
           return
         }
 
+        // Load spine (spineKey is "spineName" or "spineName/skeleton")
+        await spineLoader.loadSpine(spineKey)
+
         // Create a new Spine instance from the cached skeleton data
-        // This ensures each component gets its own independent instance
         const { spine, x: spineX = 0, y: spineY = 0, scale: spineScale = 0 } = spineLoader.createSpine(spineKey, {
           ...(xBounds && yBounds && widthBounds && heightBounds ? {
             boundsProvider: new AABBRectangleBoundsProvider(xBounds, yBounds, widthBounds, heightBounds),
@@ -982,7 +990,7 @@ export const SpineBase = (props: SpineProps) => {
       }
     }
 
-    // do not add any other deps, its for initial load only
+    // Reload when spine key changes
   }, [spineKey])
 
   useEffect(() => {

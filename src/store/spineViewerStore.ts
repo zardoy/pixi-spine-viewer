@@ -69,7 +69,16 @@ export interface SpineViewerState {
     attachmentTestPanelPos: { x: number; y: number };
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
+    /** 'slot' = follow attachment slot, 'bone' = follow bone directly */
+    attachmentFollowMode: 'slot' | 'bone';
+    selectedAttachmentBone: string;
+    availableBones: string[];
     attachmentDownloadModalOpen: boolean;
+    skeletonSelectModalOpen: boolean;
+    /** When spine has multiple .skel/.json, which skeleton variant is selected (filename without ext) */
+    selectedSkeleton: string;
+    /** When spine has multiple .skel/.json, list of available skeleton names for dropdown */
+    availableSkeletonNames: string[];
     resetCounter: number;
     /** When true, increment resetCounter whenever the selected animation changes (so animation starts from beginning with mix). */
     increaseResetCounterOnAnimSwitch: boolean;
@@ -95,6 +104,10 @@ export interface SpineViewerState {
   secondSpineOpacity: number;
   /** When true, we poll for JSON changes and reload on change (handles in refs.syncedDirHandles) */
   syncedDir: boolean | null;
+  /** Pending skeleton selection: multiple .skel/.json with shared atlas (ref-wrapped to avoid proxy) */
+  pendingSkeletonSelection: { current: { skeletonFiles: File[]; atlasFile: File; imageFiles: File[] } } | null;
+  /** Callback when user picks a skeleton from SkeletonSelectModal (ref-wrapped to avoid proxy) */
+  skeletonSelectOnSelect: { current: (files: import("../pages/Index").SpineFiles) => void } | null;
   /** When reloading from synced dir, preserve this animation */
   reloadPreserveAnimation: string | null;
 }
@@ -147,7 +160,13 @@ export const initialState: SpineViewerState = {
     attachmentTestPanelPos: { x: 0, y: 0 },
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
+    attachmentFollowMode: 'slot',
+    selectedAttachmentBone: '',
+    availableBones: [],
     attachmentDownloadModalOpen: false,
+    skeletonSelectModalOpen: false,
+    selectedSkeleton: '',
+    availableSkeletonNames: [],
     resetCounter: 0,
     increaseResetCounterOnAnimSwitch: false,
     isReversed: false,
@@ -165,6 +184,8 @@ export const initialState: SpineViewerState = {
   secondSpineOpacity: 1,
   syncedDir: null,
   reloadPreserveAnimation: null,
+  pendingSkeletonSelection: null,
+  skeletonSelectOnSelect: null,
 };
 
 export const spineViewerStore = proxy<SpineViewerState>(structuredClone(initialState));
@@ -179,6 +200,8 @@ export function resetSpineViewerState(): void {
   spineViewerStore.secondSpineOpacity = fresh.secondSpineOpacity;
   spineViewerStore.syncedDir = fresh.syncedDir;
   spineViewerStore.reloadPreserveAnimation = fresh.reloadPreserveAnimation;
+  spineViewerStore.pendingSkeletonSelection = fresh.pendingSkeletonSelection;
+  spineViewerStore.skeletonSelectOnSelect = fresh.skeletonSelectOnSelect;
 }
 
 /** Apply playback state after animation switch based on actionAfterAnimSwitch. */

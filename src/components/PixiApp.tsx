@@ -84,33 +84,36 @@ const PixiAppContent = () => {
         console.log('[PixiApp] Starting loader initialization...');
         const files = spineViewerStore.files!;
 
-        // Read atlas and skeleton file (JSON or binary .skel)
+        // Read atlas
         console.log('[PixiApp] Reading files...');
         const atlasText = await files.atlasFile.text();
 
-        // Detect if skeleton file is binary (.skel) or JSON
-        const isSkelFile = files.jsonFile.name.toLowerCase().endsWith('.skel');
-        let skeletonData: string | ArrayBuffer;
+        const isMultiSkeleton = files.skeletonFiles && files.skeletonFiles.length > 1;
+        let loader: FileSpineLoader;
 
-        if (isSkelFile) {
-          skeletonData = await files.jsonFile.arrayBuffer();
-          console.log('[PixiApp] Detected .skel binary file');
+        if (isMultiSkeleton) {
+          loader = new FileSpineLoader(files, atlasText);
+          spineViewerStore.refs.spineData = { skeletonData: '', atlasText };
+          spineViewerStore.refs.imageFiles = ref(files.imageFiles);
         } else {
-          skeletonData = await files.jsonFile.text();
-          console.log('[PixiApp] Detected .json text file');
+          const isSkelFile = files.jsonFile.name.toLowerCase().endsWith('.skel');
+          const skeletonData = isSkelFile
+            ? await files.jsonFile.arrayBuffer()
+            : await files.jsonFile.text();
+          spineViewerStore.refs.spineData = { skeletonData, atlasText };
+          spineViewerStore.refs.imageFiles = ref(files.imageFiles);
+          loader = new FileSpineLoader(skeletonData, atlasText, files.imageFiles);
         }
 
-        spineViewerStore.refs.spineData = { skeletonData, atlasText };
-        spineViewerStore.refs.imageFiles = ref(files.imageFiles);
-
-        // Create file-based spine loader
-        console.log('[PixiApp] Creating FileSpineLoader...');
-        const loader = new FileSpineLoader(skeletonData, atlasText, files.imageFiles);
         fileSpineLoaderRef.current = loader;
 
-        // Load skeleton data
-        console.log('[PixiApp] Loading skeleton data...');
-        await loader.loadSpine(SPINE_KEY);
+        // Load skeleton data (use "key/skeleton" format when multi)
+        const spineKeyToLoad =
+          isMultiSkeleton && state.ui.selectedSkeleton
+            ? `${SPINE_KEY}/${state.ui.selectedSkeleton}`
+            : SPINE_KEY;
+        console.log('[PixiApp] Loading skeleton data...', spineKeyToLoad);
+        await loader.loadSpine(spineKeyToLoad);
         console.log('[PixiApp] Skeleton data loaded, setting isLoaderReady to true');
 
         setIsLoaderReady(true);
@@ -122,7 +125,7 @@ const PixiAppContent = () => {
     };
 
     void initLoader();
-  }, [state.files]);
+  }, [state.files, state.ui.selectedSkeleton]);
 
   // Initialize second file loader and load second files
   useEffect(() => {
@@ -927,8 +930,11 @@ const PixiAppContent = () => {
 
     if (!spineViewerStore.ui.loop) {
       spineViewerStore.ui.isPlaying = false;
+      // Keep timeline at end (last frame) so animationProgress stays at 1; don't reset to 0
+      spineViewerStore.ui.timeline = spineViewerStore.ui.timelineDuration;
+    } else {
+      spineViewerStore.ui.timeline = 0;
     }
-    spineViewerStore.ui.timeline = 0;
   }, [state.ui.loop, state.ui.selectedAnimation]);
 
   // Keyboard handler for 'Y' key to toggle attachment test panel
@@ -980,26 +986,32 @@ const PixiAppContent = () => {
     };
   }, [state.ui.attachmentTestPanelVisible, state.refs.spine]);
 
-  // Hide marker when no slot selected
+  // Hide marker when no slot/bone selected
   useEffect(() => {
     if (attachmentTestGraphicsRef.current) {
-      attachmentTestGraphicsRef.current.visible = !!state.ui.selectedAttachmentSlot;
+      const hasTarget =
+        (state.ui.attachmentFollowMode === 'slot' && !!state.ui.selectedAttachmentSlot) ||
+        (state.ui.attachmentFollowMode === 'bone' && !!state.ui.selectedAttachmentBone);
+      attachmentTestGraphicsRef.current.visible = !!hasTarget;
     }
-  }, [state.ui.selectedAttachmentSlot]);
+  }, [state.ui.attachmentFollowMode, state.ui.selectedAttachmentSlot, state.ui.selectedAttachmentBone]);
 
-  // Update available attachment slots in store when spine changes
+  // Update available attachment slots and bones in store when spine changes
   useEffect(() => {
     const spine = state.refs.spine;
     if (spine) {
-      // Skip if spine is destroyed
       if ((spine as any).destroyed) {
         spineViewerStore.ui.availableAttachmentSlots = [];
+        spineViewerStore.ui.availableBones = [];
         return;
       }
       const slots = Array.from(new Set(spine.skeleton.drawOrder.map(slot => slot.data.name)));
       spineViewerStore.ui.availableAttachmentSlots = slots;
+      const bones = spine.skeleton.bones.map(b => b.data.name);
+      spineViewerStore.ui.availableBones = bones;
     } else {
       spineViewerStore.ui.availableAttachmentSlots = [];
+      spineViewerStore.ui.availableBones = [];
     }
   }, [state.refs.spine]);
 
@@ -1062,7 +1074,11 @@ const PixiAppContent = () => {
         >
           <SpineBase
             key={`spine-${state.ui.mountCount}`}
-            spine={SPINE_KEY}
+            spine={
+              state.files?.skeletonFiles && state.files.skeletonFiles.length > 1 && state.ui.selectedSkeleton
+                ? `${SPINE_KEY}/${state.ui.selectedSkeleton}`
+                : SPINE_KEY
+            }
             animation={state.ui.selectedAnimation}
             loop={state.ui.loop}
             timeScale={state.ui.speed}
@@ -1086,7 +1102,13 @@ const PixiAppContent = () => {
             spineRef={spineRef}
             onSpineLoaded={handleSpineLoaded}
             onCurrentAnimComplete={handleAnimationComplete}
-            attachmentsFollow={state.ui.selectedAttachmentSlot ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }] : []}
+            attachmentsFollow={
+              (state.ui.attachmentFollowMode === 'slot' && state.ui.selectedAttachmentSlot)
+                ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }]
+                : (state.ui.attachmentFollowMode === 'bone' && state.ui.selectedAttachmentBone)
+                  ? [{ boneName: state.ui.selectedAttachmentBone, ref: attachmentTestGraphicsRef }]
+                  : []
+            }
             layout={undefined}
           />
           {/* Second spine - positioned with offset from first spine */}

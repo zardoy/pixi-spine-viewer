@@ -19,9 +19,10 @@ import {
 
 interface LandingPageProps {
   onFilesSelect: (files: SpineFiles) => void;
+  onMultipleSkeletonsFound?: (pending: { skeletonFiles: File[]; atlasFile: File; imageFiles: File[] }) => void;
 }
 
-export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
+export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: LandingPageProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedExample, setSelectedExample] = useState<string>("");
 
@@ -69,15 +70,15 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
       }
     }
 
-    // Find skeleton file (.json or .skel), Atlas, and image files
-    const skeletonFile = allFiles.find(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
+    // Find skeleton files (.json or .skel), Atlas, and image files
+    const skeletonFiles = allFiles.filter(f => f.name.endsWith('.json') || f.name.endsWith('.skel'));
     const atlasFile = allFiles.find(f => f.name.endsWith('.atlas') || f.name.endsWith('.atlas.txt'));
     const imageFiles = allFiles.filter(f =>
       f.type.startsWith("image/") ||
       f.name.match(/\.(png|jpg|jpeg|webp)$/i)
     );
 
-    if (!skeletonFile) {
+    if (skeletonFiles.length === 0) {
       toast.dismiss();
       toast.error("No .json or .skel file found. Please include the Spine skeleton file.");
       return;
@@ -96,12 +97,19 @@ export const LandingPage = ({ onFilesSelect }: LandingPageProps) => {
     }
 
     toast.dismiss();
+
+    if (skeletonFiles.length > 1 && onMultipleSkeletonsFound) {
+      onMultipleSkeletonsFound({ skeletonFiles, atlasFile, imageFiles });
+      return;
+    }
+
+    const skeletonFile = skeletonFiles[0];
     toast.success(`Loaded: ${skeletonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
     spineViewerStore.syncedDir = null;
     spineViewerStore.refs.syncedDirHandles = null;
     spineViewerStore.ui.particleGeneratorPanelVisible = false;
     onFilesSelect({
-      jsonFile: skeletonFile, // Keep the prop name as jsonFile for compatibility
+      jsonFile: skeletonFile,
       atlasFile,
       imageFiles,
     });

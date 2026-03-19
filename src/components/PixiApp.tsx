@@ -8,9 +8,11 @@ import { SpineDisplay } from "../lib/SpineDisplay";
 import { SpineDebugRenderer } from '../lib/SpineDebugRenderer';
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
-import { SpineBase } from "../lib/SpineBase";
+import { setGlobalDebugMode, SpineBase } from "../lib/SpineBase";
 import { FileSpineLoader } from "../lib/FileSpineLoader";
 import { Spine as SpineInstance } from "@esotericsoftware/spine-pixi-v8";
+
+setGlobalDebugMode('texture-sizes')
 
 const SPINE_KEY = 'viewer-spine'; // Single key for the viewer
 const SECOND_SPINE_KEY = 'viewer-spine-2'; // Key for second spine

@@ -295,6 +295,12 @@ export interface AttachmentsFollowItem {
   /** Follow bone directly (pos + scale). Use slotName OR boneName, not both. */
   boneName?: string
   ref: RefObject<AttachmentsFollowTarget | null>
+  /** Scale modifier applied to bone scale (default 1). E.g. 0.5 = half size, 2 = double. */
+  scaleModifier?: number
+  /** Scale offset added after modifier (default 0). Number applies to both axes, or use { x, y } for per-axis. */
+  scaleOffset?: number | { x: number; y: number }
+  /** Linear scale compensation: at scale 1 output stays 1; at scale `at` output becomes `result`. E.g. { at: 0.8, result: 0.77 } maps 0.8→0.77. Applied before modifier/offset. */
+  scaleCompensation?: { at: number; result: number }
 }
 
 /** Payload for animation track events (Spine editor events). Generic TName narrows event.name for typed callbacks. */
@@ -426,6 +432,8 @@ export interface SpineProps
   // === Attachments (world vertices) ===
   /** Slots to follow: SpineBase sets each ref's x/y (and scale if present) each frame to the attachment bone's world transform. Ref must be a PIXI object added as a child of this Spine's container. Uses app ticker (useTick). */
   attachmentsFollow?: AttachmentsFollowItem[]
+  /** When true, hide attachments whose texture path starts with "ref_". When a string, use that prefix. When an array, hide if path starts with any prefix. Uses slot.color.a=0 so the spine renderer skips them. */
+  forceHideAttachment?: boolean | string | string[]
 
   // === Required ===
   spineLoader: SpineLoader
@@ -492,6 +500,7 @@ export const SpineBase = (props: SpineProps) => {
 
     // Attachments
     attachmentsFollow,
+    forceHideAttachment,
 
     ...passthroughProps
   } = props.globalController ? props.globalController.getMergedProps(props) : props
@@ -503,6 +512,16 @@ export const SpineBase = (props: SpineProps) => {
 
   const attachmentsFollowRef = useRef(attachmentsFollow)
   attachmentsFollowRef.current = attachmentsFollow
+
+  const forceHidePrefixes: string[] | null = forceHideAttachment === true
+    ? ['ref_']
+    : typeof forceHideAttachment === 'string'
+      ? [forceHideAttachment]
+      : Array.isArray(forceHideAttachment) && forceHideAttachment.length > 0
+        ? forceHideAttachment.filter((p): p is string => typeof p === 'string')
+        : null
+  const forceHideAttachmentPrefixesRef = useRef<string[] | null>(forceHidePrefixes)
+  forceHideAttachmentPrefixesRef.current = forceHidePrefixes
 
   // Update PIXI objects (x, y, scale) each frame to follow attachment bone transforms
   useTick(() => {
@@ -518,8 +537,20 @@ export const SpineBase = (props: SpineProps) => {
       target.x = t.x
       target.y = t.y
       if (target.scale !== undefined) {
-        target.scale.x = t.scaleX
-        target.scale.y = t.scaleY
+        let sx = t.scaleX
+        let sy = t.scaleY
+        const comp = item.scaleCompensation
+        if (comp && Math.abs(comp.at - 1) > 1e-6) {
+          const slope = (comp.result - 1) / (comp.at - 1)
+          sx = 1 + slope * (sx - 1)
+          sy = 1 + slope * (sy - 1)
+        }
+        const mod = item.scaleModifier ?? 1
+        const off = item.scaleOffset
+        const offX = typeof off === 'number' ? off : off?.x ?? 0
+        const offY = typeof off === 'number' ? off : off?.y ?? 0
+        target.scale.x = sx * mod + offX
+        target.scale.y = sy * mod + offY
       }
     }
   })
@@ -797,6 +828,28 @@ export const SpineBase = (props: SpineProps) => {
 
         // Add spine to container
         spineRef.current = spine
+
+        // Force-hide attachments by texture path prefix (e.g. ref_). Runs after state.apply; sets slot.color.a=0
+        // so transformAttachments computes alpha=0 and skipRender, and SpinePipe skips adding to batch.
+        const prevAfter = spine.afterUpdateWorldTransforms
+        spine.afterUpdateWorldTransforms = (spineObj) => {
+          prevAfter(spineObj)
+          const prefixes = forceHideAttachmentPrefixesRef.current
+          if (!prefixes?.length) return
+          const slots = spineObj.skeleton.drawOrder
+          for (let i = 0; i < slots.length; i++) {
+            const slot = slots[i]
+            const att = slot.getAttachment()
+            if (att && (att instanceof RegionAttachment || att instanceof MeshAttachment)) {
+              const path = (att as RegionAttachment).path ?? att.name
+              const name = att.name
+              const matches = prefixes.some(
+                (p) => (path && path.startsWith(p)) || (name && name.startsWith(p))
+              )
+              if (matches) slot.color.a = 0
+            }
+          }
+        }
 
         // Sync spineRef prop immediately
         if (spineRefProp && 'current' in spineRefProp) {

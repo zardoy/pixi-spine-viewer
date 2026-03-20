@@ -356,6 +356,10 @@ export interface SpineProps
   animation?: string
   /** Whether the animation should loop (default: false) */
   loop?: boolean
+  /** Animation to play on track 1 (layered on top of track 0). Set to undefined/null to clear track 1. */
+  animation2?: string
+  /** Whether the track 1 animation should loop (default: false) */
+  loop2?: boolean
   /** Animation playback speed (default: 1.0) */
   timeScale?: number
   /** @deprecated Use `paused` prop instead. Whether the animation is playing (default: true). Set to false to pause/freeze on first frame */
@@ -413,6 +417,8 @@ export interface SpineProps
   // === Callbacks ===
   /** Callback fired when the current animation completes (fires even when loop=true) */
   onCurrentAnimComplete?: () => void
+  /** Callback fired when any track completes. Receives the track index. Fires for all tracks, including mixing-out entries. */
+  onAnimationTrackComplete?: (trackIndex: number) => void
   /** Callback fired when spine is loaded and ready */
   onSpineLoaded?: (spine: SpineInstance) => void
   /** Callback fired when an animation track emits an event (e.g., events defined in Spine editor). With typed SpineTypes, event.name is narrowed to that spine's event names. */
@@ -467,6 +473,8 @@ export const SpineBase = (props: SpineProps) => {
     resetCounter,
     instantReset, // Deprecated: use mixTime === 0 instead
     reverse = false,
+    animation2,
+    loop2 = false,
 
     // Layout
     x = 0,
@@ -487,6 +495,7 @@ export const SpineBase = (props: SpineProps) => {
 
     // Callbacks
     onCurrentAnimComplete,
+    onAnimationTrackComplete,
     onSpineLoaded,
     onAnimationEvent,
 
@@ -562,6 +571,7 @@ export const SpineBase = (props: SpineProps) => {
   const ref = useRef<Container>(null!)
   const spineRef = useRef<SpineInstance | null>(null)
   const onCompleteRef = useRef(onCurrentAnimComplete)
+  const onTrackCompleteRef = useRef(onAnimationTrackComplete)
   const onEventRef = useRef(onAnimationEvent)
   const listenerRef = useRef<{ complete: (trackEntry: any) => void; event?: (trackEntry: any, event: any) => void } | null>(null)
   const previousPlayingRef = useRef<boolean>(isPlaying)
@@ -897,6 +907,15 @@ export const SpineBase = (props: SpineProps) => {
           setAnimationWithDelay()
         }
 
+        // Set animation on track 1 if provided
+        if (animation2) {
+          try {
+            spine.state.setAnimation(1, animation2, loop2)
+          } catch (error) {
+            throw wrapSpineError(error, `Failed to set animation2 '${animation2}'`, spineKey, debugKey)
+          }
+        }
+
         // Store the timeScale value
         timeScaleRef.current = timeScale
 
@@ -928,9 +947,15 @@ export const SpineBase = (props: SpineProps) => {
 
         // Set up animation complete listener
         onCompleteRef.current = onCurrentAnimComplete
+        onTrackCompleteRef.current = onAnimationTrackComplete
         onEventRef.current = onAnimationEvent
         const listener: { complete: (trackEntry: any) => void; event?: (trackEntry: any, event: any) => void } = {
           complete: (trackEntry: any) => {
+            // Fire general track complete for any track
+            if (onTrackCompleteRef.current) {
+              onTrackCompleteRef.current(trackEntry.trackIndex)
+            }
+
             // Only fire callback for the main track (track 0)
             if (trackEntry.trackIndex !== 0) return
             // Skip completion for entries that are mixing out (were interrupted/reset).
@@ -1129,6 +1154,31 @@ export const SpineBase = (props: SpineProps) => {
       }
     }
   }, [animation, loop, mixTime, spineKey])
+
+  // Handle animation2 / loop2 changes on track 1
+  useEffect(() => {
+    const spine = spineRef.current
+    if (!spine) return
+    if (!animation2) {
+      spine.state.clearTrack(1)
+      return
+    }
+    const track = spine.state.tracks[1]
+    const currentAnim = track?.animation?.name
+    if (currentAnim !== animation2) {
+      try {
+        spine.state.setAnimation(1, animation2, loop2)
+      } catch (error) {
+        throw wrapSpineError(error, `Failed to set animation2 '${animation2}'`, spineKey, debugKey)
+      }
+    } else if ((track?.loop ?? false) !== loop2) {
+      try {
+        spine.state.setAnimation(1, animation2, loop2)
+      } catch (error) {
+        throw wrapSpineError(error, `Failed to set animation2 '${animation2}'`, spineKey, debugKey)
+      }
+    }
+  }, [animation2, loop2, spineKey])
 
   // Handle playing/paused, timeScale changes with resumeDelay and resetOnPause
   useEffect(() => {
@@ -1337,6 +1387,11 @@ export const SpineBase = (props: SpineProps) => {
   useEffect(() => {
     onCompleteRef.current = onCurrentAnimComplete
   }, [onCurrentAnimComplete])
+
+  // Update general track complete callback ref
+  useEffect(() => {
+    onTrackCompleteRef.current = onAnimationTrackComplete
+  }, [onAnimationTrackComplete])
 
   // Update animation event callback ref (listener is already set up in loadSpine, just update the callback)
   useEffect(() => {

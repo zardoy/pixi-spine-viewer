@@ -11,6 +11,7 @@ import { spineViewerStore } from "../store/spineViewerStore";
 import { setGlobalDebugMode, SpineBase } from "../lib/SpineBase";
 import { FileSpineLoader } from "../lib/FileSpineLoader";
 import { Spine as SpineInstance } from "@esotericsoftware/spine-pixi-v8";
+import { globalController } from '@/components/globalController';
 
 setGlobalDebugMode('texture-sizes')
 
@@ -1112,6 +1113,8 @@ const PixiAppContent = () => {
                   : []
             }
             layout={undefined}
+            globalController={globalController as any}
+            control="spine"
           />
           {/* Second spine - positioned with offset from first spine */}
           {secondFileSpineLoaderRef.current && isSecondLoaderReady && (

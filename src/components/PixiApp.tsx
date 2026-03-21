@@ -1,7 +1,7 @@
 import '@pixi/layout';
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Container, Graphics, Text } from "pixi.js";
-import { Physics } from "@esotericsoftware/spine-core";
+import { Physics, RegionAttachment, MeshAttachment } from "@esotericsoftware/spine-core";
 import { Application, useExtend, useApplication } from "@pixi/react";
 import { useSnapshot, ref } from "valtio";
 import { SpineDisplay } from "../lib/SpineDisplay";
@@ -940,12 +940,16 @@ const PixiAppContent = () => {
     }
   }, [state.ui.loop, state.ui.selectedAnimation]);
 
-  // Keyboard handler for 'Y' key to toggle attachment test panel
+  // Keyboard handler for 'Y' key to toggle attachment test panel, 'U' for attachment hide panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "KeyY" && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         spineViewerStore.ui.attachmentTestPanelVisible = !spineViewerStore.ui.attachmentTestPanelVisible;
+      }
+      if (e.code === "KeyU" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        spineViewerStore.ui.attachmentHidePanelVisible = !spineViewerStore.ui.attachmentHidePanelVisible;
       }
     };
 
@@ -999,24 +1003,35 @@ const PixiAppContent = () => {
     }
   }, [state.ui.attachmentFollowMode, state.ui.selectedAttachmentSlot, state.ui.selectedAttachmentBone]);
 
-  // Update available attachment slots and bones in store when spine changes
+  // Update available attachment slots, bones, and texture paths in store when spine changes
   useEffect(() => {
     const spine = state.refs.spine;
     if (spine) {
       if ((spine as any).destroyed) {
         spineViewerStore.ui.availableAttachmentSlots = [];
         spineViewerStore.ui.availableBones = [];
+        spineViewerStore.ui.availableTextureAttachmentPaths = [];
         return;
       }
       const slots = Array.from(new Set(spine.skeleton.drawOrder.map(slot => slot.data.name)));
       spineViewerStore.ui.availableAttachmentSlots = slots;
       const bones = spine.skeleton.bones.map(b => b.data.name);
       spineViewerStore.ui.availableBones = bones;
+      const pathsSet = new Set<string>();
+      for (const slot of spine.skeleton.drawOrder) {
+        const att = slot.getAttachment();
+        if (att && (att instanceof RegionAttachment || att instanceof MeshAttachment)) {
+          const path = (att as RegionAttachment).path ?? att.name;
+          if (path) pathsSet.add(path);
+        }
+      }
+      spineViewerStore.ui.availableTextureAttachmentPaths = Array.from(pathsSet).sort();
     } else {
       spineViewerStore.ui.availableAttachmentSlots = [];
       spineViewerStore.ui.availableBones = [];
+      spineViewerStore.ui.availableTextureAttachmentPaths = [];
     }
-  }, [state.refs.spine]);
+  }, [state.refs.spine, state.ui.selectedAnimation, state.ui.selectedSkin]);
 
   // Sync manual position to spinePosition when in manual mode (manualPosition is absolute)
   useEffect(() => {
@@ -1111,6 +1126,11 @@ const PixiAppContent = () => {
                 : (state.ui.attachmentFollowMode === 'bone' && state.ui.selectedAttachmentBone)
                   ? [{ boneName: state.ui.selectedAttachmentBone, ref: attachmentTestGraphicsRef }]
                   : []
+            }
+            forceHideAttachmentExact={
+              state.ui.hiddenAttachmentPaths.length > 0
+                ? [...state.ui.hiddenAttachmentPaths]
+                : undefined
             }
             layout={undefined}
             globalController={globalController as any}

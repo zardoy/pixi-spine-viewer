@@ -67,6 +67,13 @@ export interface SpineViewerState {
     autoViewportLock: boolean;
     attachmentTestPanelVisible: boolean;
     attachmentTestPanelPos: { x: number; y: number };
+    /** U key: hide texture attachments by path */
+    attachmentHidePanelVisible: boolean;
+    attachmentHidePanelPos: { x: number; y: number };
+    /** Paths to hide (forceHideAttachment array). Unchecked = hidden. */
+    hiddenAttachmentPaths: string[];
+    /** Current texture attachment paths from spine (path or name for Region/Mesh) */
+    availableTextureAttachmentPaths: string[];
     selectedAttachmentSlot: string;
     availableAttachmentSlots: string[];
     /** 'slot' = follow attachment slot, 'bone' = follow bone directly */
@@ -158,6 +165,10 @@ export const initialState: SpineViewerState = {
     autoViewportLock: false,
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },
+    attachmentHidePanelVisible: false,
+    attachmentHidePanelPos: { x: 0, y: 0 },
+    hiddenAttachmentPaths: [],
+    availableTextureAttachmentPaths: [],
     selectedAttachmentSlot: '',
     availableAttachmentSlots: [],
     attachmentFollowMode: 'slot',

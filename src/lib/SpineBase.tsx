@@ -440,6 +440,8 @@ export interface SpineProps
   attachmentsFollow?: AttachmentsFollowItem[]
   /** When true, hide attachments whose texture path starts with "ref_". When a string, use that prefix. When an array, hide if path starts with any prefix. Uses slot.color.a=0 so the spine renderer skips them. */
   forceHideAttachment?: boolean | string | string[]
+  /** Exact path/name match - hide when path === p or name === p. Used for per-attachment toggles. */
+  forceHideAttachmentExact?: string[]
 
   // === Required ===
   spineLoader: SpineLoader
@@ -510,6 +512,7 @@ export const SpineBase = (props: SpineProps) => {
     // Attachments
     attachmentsFollow,
     forceHideAttachment,
+    forceHideAttachmentExact,
 
     ...passthroughProps
   } = props.globalController ? props.globalController.getMergedProps(props) : props
@@ -531,6 +534,12 @@ export const SpineBase = (props: SpineProps) => {
         : null
   const forceHideAttachmentPrefixesRef = useRef<string[] | null>(forceHidePrefixes)
   forceHideAttachmentPrefixesRef.current = forceHidePrefixes
+
+  const forceHideExact: string[] = Array.isArray(forceHideAttachmentExact)
+    ? forceHideAttachmentExact.filter((p): p is string => typeof p === 'string')
+    : []
+  const forceHideAttachmentExactRef = useRef<string[]>(forceHideExact)
+  forceHideAttachmentExactRef.current = forceHideExact
 
   // Update PIXI objects (x, y, scale) each frame to follow attachment bone transforms
   useTick(() => {
@@ -845,18 +854,24 @@ export const SpineBase = (props: SpineProps) => {
         spine.afterUpdateWorldTransforms = (spineObj) => {
           prevAfter(spineObj)
           const prefixes = forceHideAttachmentPrefixesRef.current
-          if (!prefixes?.length) return
+          const exact = forceHideAttachmentExactRef.current
+          const hasPrefixes = prefixes?.length
+          const hasExact = exact?.length
+          if (!hasPrefixes && !hasExact) return
           const slots = spineObj.skeleton.drawOrder
           for (let i = 0; i < slots.length; i++) {
             const slot = slots[i]
             const att = slot.getAttachment()
             if (att && (att instanceof RegionAttachment || att instanceof MeshAttachment)) {
               const path = (att as RegionAttachment).path ?? att.name
-              const name = att.name
-              const matches = prefixes.some(
-                (p) => (path && path.startsWith(p)) || (name && name.startsWith(p))
+              const attName = att.name
+              const matchesPrefix = hasPrefixes && prefixes!.some(
+                (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
               )
-              if (matches) slot.color.a = 0
+              const matchesExact = hasExact && exact.some(
+                (p) => (path === p) || (attName === p)
+              )
+              if (matchesPrefix || matchesExact) slot.color.a = 0
             }
           }
         }

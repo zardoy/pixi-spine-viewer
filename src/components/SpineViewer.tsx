@@ -10,6 +10,7 @@ import { useSnapshot, ref } from "valtio";
 import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
 import { getAnimationKeyframeTimes } from "../lib/animationUtils";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
+import { AttachmentHidePanel } from "./AttachmentHidePanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
 import JSZip from "jszip";
 import { Download, Sparkles, Wrench } from "lucide-react";
@@ -493,6 +494,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
       {/* Draggable attachment test panel */}
       <AttachmentTestPanel />
+
+      {/* Draggable attachment hide panel (U key) */}
+      <AttachmentHidePanel />
 
       {/* Mobile: generator in modal */}
       {showGeneratorModal && (

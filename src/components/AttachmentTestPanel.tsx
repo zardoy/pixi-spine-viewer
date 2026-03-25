@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import { X } from "lucide-react";
 import { useSnapshot } from "valtio";
 import { spineViewerStore } from "../store/spineViewerStore";
@@ -21,7 +22,7 @@ export const AttachmentTestPanel = () => {
   const handleMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Don't start drag if clicking on interactive elements
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('[role="combobox"]')) {
+    if (target.closest('button') || target.closest('[role="combobox"]') || target.closest('[role="checkbox"]')) {
       return;
     }
 
@@ -122,10 +123,37 @@ export const AttachmentTestPanel = () => {
             )}
           </SelectContent>
         </Select>
+        <div className="flex flex-col gap-2 pt-1 border-t border-border">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="attachmentTestBlue"
+              checked={state.ui.attachmentTestBoxBlue}
+              onCheckedChange={(v) => {
+                spineViewerStore.ui.attachmentTestBoxBlue = v === true;
+              }}
+            />
+            <Label htmlFor="attachmentTestBlue" className="cursor-pointer text-xs">
+              Blue box
+            </Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="attachmentTestLarge"
+              checked={state.ui.attachmentTestBoxLarge}
+              onCheckedChange={(v) => {
+                spineViewerStore.ui.attachmentTestBoxLarge = v === true;
+              }}
+            />
+            <Label htmlFor="attachmentTestLarge" className="cursor-pointer text-xs">
+              2× size
+            </Label>
+          </div>
+        </div>
         {((state.ui.attachmentFollowMode === 'slot' && state.ui.selectedAttachmentSlot) ||
           (state.ui.attachmentFollowMode === 'bone' && state.ui.selectedAttachmentBone)) && (
           <div className="text-xs text-muted-foreground pt-1">
-            Red box will follow: <span className="font-medium">
+            {state.ui.attachmentTestBoxBlue ? "Blue" : "Red"} box will follow:{" "}
+            <span className="font-medium">
               {state.ui.attachmentFollowMode === 'bone'
                 ? `bone/${state.ui.selectedAttachmentBone}`
                 : `slot/${state.ui.selectedAttachmentSlot}`}

@@ -67,6 +67,10 @@ export interface SpineViewerState {
     autoViewportLock: boolean;
     attachmentTestPanelVisible: boolean;
     attachmentTestPanelPos: { x: number; y: number };
+    /** Attachment test marker: blue instead of red */
+    attachmentTestBoxBlue: boolean;
+    /** Attachment test marker: 2× size (20×20 vs 10×10) */
+    attachmentTestBoxLarge: boolean;
     /** U key: hide texture attachments by path */
     attachmentHidePanelVisible: boolean;
     attachmentHidePanelPos: { x: number; y: number };
@@ -86,6 +90,10 @@ export interface SpineViewerState {
     selectedSkeleton: string;
     /** When spine has multiple .skel/.json, list of available skeleton names for dropdown */
     availableSkeletonNames: string[];
+    /** Second spine multi-skeleton: selected variant (filename without ext) */
+    selectedSecondSkeleton: string;
+    /** Second spine multi-skeleton names for dropdown */
+    availableSecondSkeletonNames: string[];
     resetCounter: number;
     /** When true, increment resetCounter whenever the selected animation changes (so animation starts from beginning with mix). */
     increaseResetCounterOnAnimSwitch: boolean;
@@ -165,6 +173,8 @@ export const initialState: SpineViewerState = {
     autoViewportLock: false,
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },
+    attachmentTestBoxBlue: false,
+    attachmentTestBoxLarge: false,
     attachmentHidePanelVisible: false,
     attachmentHidePanelPos: { x: 0, y: 0 },
     hiddenAttachmentPaths: [],
@@ -178,6 +188,8 @@ export const initialState: SpineViewerState = {
     skeletonSelectModalOpen: false,
     selectedSkeleton: '',
     availableSkeletonNames: [],
+    selectedSecondSkeleton: '',
+    availableSecondSkeletonNames: [],
     resetCounter: 0,
     increaseResetCounterOnAnimSwitch: false,
     isReversed: false,

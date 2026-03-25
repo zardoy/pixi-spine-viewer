@@ -210,26 +210,6 @@ export const Controls = ({
               </Select>
             </div>
           )}
-          {ui.availableSkeletonNames.length > 1 && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Skeleton</Label>
-              <Select
-                value={ui.selectedSkeleton || ui.availableSkeletonNames[0]}
-                onValueChange={(val) => { spineViewerStore.ui.selectedSkeleton = val; }}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Select skeleton" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ui.availableSkeletonNames.map((name) => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <div className="flex items-center gap-2">
             <Checkbox
               id="loop"

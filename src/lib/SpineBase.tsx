@@ -1,7 +1,7 @@
 import 'pixi.js/prepare' // Ensures prepare system is available for texture preload
-import { Application, Container, type TextureSource } from 'pixi.js'
+import { Application, Container, Filter, GlProgram, ColorMatrixFilter, type TextureSource } from 'pixi.js'
 import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
-import { useEffect, useLayoutEffect, useRef, type Ref, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type Ref, type RefObject } from 'react'
 import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
 import { Physics, RegionAttachment, MeshAttachment } from '@esotericsoftware/spine-core'
 import { useSnapshot } from 'valtio'
@@ -338,6 +338,58 @@ function getFollowTransform(spine: SpineInstance, item: AttachmentsFollowItem): 
   return null
 }
 
+/** Render mode for simplified spine visualization. 'normal' = default, 'silhouette' = flat color preserving texture alpha, 'ghosted' = fully desaturated gray preserving texture alpha/shape. */
+export type SpineRenderMode = 'normal' | 'silhouette' | 'ghosted'
+
+const silhouetteFilterVertex = `in vec2 aPosition;
+out vec2 vTextureCoord;
+uniform vec4 uInputSize;
+uniform vec4 uOutputFrame;
+uniform vec4 uOutputTexture;
+vec4 filterVertexPosition(void) {
+  vec2 position = aPosition * uOutputFrame.zw + uOutputFrame.xy;
+  position.x = position.x * (2.0 / uOutputTexture.x) - 1.0;
+  position.y = position.y * (2.0 * uOutputTexture.z / uOutputTexture.y) - uOutputTexture.z;
+  return vec4(position, 0.0, 1.0);
+}
+vec2 filterTextureCoord(void) {
+  return aPosition * (uOutputFrame.zw * uInputSize.zw);
+}
+void main(void) {
+  gl_Position = filterVertexPosition();
+  vTextureCoord = filterTextureCoord();
+}`
+
+const silhouetteFilterFragment = `in vec2 vTextureCoord;
+uniform sampler2D uTexture;
+uniform vec3 uSilhouetteColor;
+void main(void) {
+  float a = texture(uTexture, vTextureCoord).a;
+  gl_FragColor = vec4(uSilhouetteColor * a, a);
+}`
+
+let _silhouetteFilter: Filter | null = null
+function getSilhouetteFilter(): Filter {
+  if (!_silhouetteFilter) {
+    _silhouetteFilter = new Filter({
+      glProgram: new GlProgram({ vertex: silhouetteFilterVertex, fragment: silhouetteFilterFragment }),
+      resources: {
+        uniforms: { uSilhouetteColor: { value: new Float32Array([0.55, 0.55, 0.55]), type: 'vec3<f32>' } },
+      },
+    })
+  }
+  return _silhouetteFilter
+}
+
+let _ghostedFilter: ColorMatrixFilter | null = null
+function getGhostedFilter(): ColorMatrixFilter {
+  if (!_ghostedFilter) {
+    _ghostedFilter = new ColorMatrixFilter()
+    _ghostedFilter.desaturate()
+  }
+  return _ghostedFilter
+}
+
 export interface SpineOverrideControllerPublicAPI {
   getMergedProps: <T>(props: T) => T
   useReactiveUpdateHook(control: string): { counter: number }
@@ -442,6 +494,10 @@ export interface SpineProps
   forceHideAttachment?: boolean | string | string[]
   /** Exact path/name match - hide when path === p or name === p. Used for per-attachment toggles. */
   forceHideAttachmentExact?: string[]
+  /** When true, Region/Mesh slots render with alpha 0 so only wireframe overlay (SpineDebugRenderer) shows fills. */
+  textureWireframeMode?: boolean
+  /** Render mode: 'silhouette' = flat color preserving texture alpha (shows exact shapes), 'ghosted' = fully desaturated gray. Default 'normal'. */
+  renderMode?: SpineRenderMode
 
   // === Required ===
   spineLoader: SpineLoader
@@ -513,6 +569,8 @@ export const SpineBase = (props: SpineProps) => {
     attachmentsFollow,
     forceHideAttachment,
     forceHideAttachmentExact,
+    textureWireframeMode = false,
+    renderMode = 'normal',
 
     ...passthroughProps
   } = props.globalController ? props.globalController.getMergedProps(props) : props
@@ -540,6 +598,20 @@ export const SpineBase = (props: SpineProps) => {
     : []
   const forceHideAttachmentExactRef = useRef<string[]>(forceHideExact)
   forceHideAttachmentExactRef.current = forceHideExact
+
+  const textureWireframeModeRef = useRef(textureWireframeMode)
+  textureWireframeModeRef.current = textureWireframeMode
+
+  const renderModeFilter = useMemo(() => {
+    if (renderMode === 'silhouette') return getSilhouetteFilter()
+    if (renderMode === 'ghosted') return getGhostedFilter()
+    return null
+  }, [renderMode])
+  const mergedFilters = useMemo(() => {
+    if (!renderModeFilter && !filters) return filters
+    const base = filters ? (Array.isArray(filters) ? filters : [filters]) : []
+    return renderModeFilter ? [...base, renderModeFilter] : base
+  }, [filters, renderModeFilter])
 
   // Update PIXI objects (x, y, scale) each frame to follow attachment bone transforms
   useTick(() => {
@@ -853,26 +925,30 @@ export const SpineBase = (props: SpineProps) => {
         const prevAfter = spine.afterUpdateWorldTransforms
         spine.afterUpdateWorldTransforms = (spineObj) => {
           prevAfter(spineObj)
+          const wireframe = textureWireframeModeRef.current
           const prefixes = forceHideAttachmentPrefixesRef.current
           const exact = forceHideAttachmentExactRef.current
           const hasPrefixes = prefixes?.length
           const hasExact = exact?.length
-          if (!hasPrefixes && !hasExact) return
+          if (!wireframe && !hasPrefixes && !hasExact) return
           const slots = spineObj.skeleton.drawOrder
           for (let i = 0; i < slots.length; i++) {
             const slot = slots[i]
             const att = slot.getAttachment()
-            if (att && (att instanceof RegionAttachment || att instanceof MeshAttachment)) {
-              const path = (att as RegionAttachment).path ?? att.name
-              const attName = att.name
-              const matchesPrefix = hasPrefixes && prefixes!.some(
-                (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
-              )
-              const matchesExact = hasExact && exact.some(
-                (p) => (path === p) || (attName === p)
-              )
-              if (matchesPrefix || matchesExact) slot.color.a = 0
+            if (!att || !(att instanceof RegionAttachment || att instanceof MeshAttachment)) continue
+            if (wireframe) {
+              slot.color.a = 0
+              continue
             }
+            const path = (att as RegionAttachment).path ?? att.name
+            const attName = att.name
+            const matchesPrefix = hasPrefixes && prefixes!.some(
+              (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
+            )
+            const matchesExact = hasExact && exact.some(
+              (p) => (path === p) || (attName === p)
+            )
+            if (matchesPrefix || matchesExact) slot.color.a = 0
           }
         }
 
@@ -1468,7 +1544,7 @@ export const SpineBase = (props: SpineProps) => {
       y={y}
       eventMode={eventMode}
       cursor={cursor}
-      filters={filters}
+      filters={mergedFilters}
       layout={layout}
       zIndex={zIndex}
       {...passthroughProps}

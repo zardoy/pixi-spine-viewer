@@ -73,6 +73,18 @@ function wrapSpineError(error: unknown, operation: string, spineKey: string, deb
   return new Error(msg, { cause: error })
 }
 
+/**
+ * Call after `skeleton.updateWorldTransform` when not going through Spine._updateAndApplyState.
+ * That pipeline runs `afterUpdateWorldTransforms` before batching; manual paths skip it, so
+ * forceHideAttachment (slot.color.a = 0) never applied and ref_ attachments can flash for a frame.
+ * Also sets _stateChanged so _validateAndTransformAttachments does not no-op after the last render cleared it.
+ */
+function spineAfterManualWorldTransform(spine: SpineInstance): void {
+  spine.afterUpdateWorldTransforms(spine)
+  ;(spine as unknown as { _stateChanged: boolean })._stateChanged = true
+  spine._validateAndTransformAttachments()
+}
+
 /** Apply spine state with delta 0 and flush to skeleton (no time advance). Use after setAnimation when you want the first frame visible immediately.
  * When resetSlotsToSetup is true, resets slots to setup pose before apply. This prevents a one-frame blink where slots
  * briefly show the previous animation's end state (e.g. alpha 1) before the new animation's alpha timeline (e.g. 0 at time 0) applies. */
@@ -83,7 +95,7 @@ function immediateUpdate(spine: SpineInstance, resetSlotsToSetup = false): void 
   spine.state.apply(spine.skeleton)
   spine.skeleton.update(0)
   spine.skeleton.updateWorldTransform(Physics.update)
-  spine._validateAndTransformAttachments()
+  spineAfterManualWorldTransform(spine)
 }
 
 /**
@@ -724,6 +736,7 @@ export const SpineBase = (props: SpineProps) => {
     // Apply the state immediately
     spineRef.current.state.apply(spineRef.current.skeleton)
     spineRef.current.skeleton.updateWorldTransform(Physics.update)
+    spineAfterManualWorldTransform(spineRef.current)
   }
 
   // Register spine on mount
@@ -1396,6 +1409,7 @@ export const SpineBase = (props: SpineProps) => {
             spineRef.current.state.apply(spineRef.current.skeleton)
             spineRef.current.skeleton.update(delta)
             spineRef.current.skeleton.updateWorldTransform(Physics.update)
+            spineAfterManualWorldTransform(spineRef.current)
 
             // Restore original timeScale (0 when paused)
             spineRef.current.state.timeScale = previousTimeScale
@@ -1408,6 +1422,7 @@ export const SpineBase = (props: SpineProps) => {
               currentTrack.trackTime = 0
               spineRef.current.state.apply(spineRef.current.skeleton)
               spineRef.current.skeleton.updateWorldTransform(Physics.update)
+              spineAfterManualWorldTransform(spineRef.current)
             }
             mixAnimationFrameRef.current = null
           }

@@ -585,12 +585,9 @@ const PixiAppContent = () => {
     const anim = data.findAnimation?.(state.ui.selectedAnimation);
 
     if (anim) {
-      // Track previous animation before switching (only if different)
-      const currentTrack = spineState.tracks[0];
-      const currentAnimName = currentTrack?.animation?.name;
-      const isAnimSwitch = currentAnimName && currentAnimName !== state.ui.previousAnimation;
-      if (isAnimSwitch) {
-        spineViewerStore.ui.previousAnimation = currentAnimName;
+      // Callers (Controls, SpineViewer keyboard) already set previousAnimation before
+      // changing selectedAnimation. Only handle increaseResetCounterOnAnimSwitch here.
+      if (state.ui.previousAnimation && state.ui.previousAnimation !== state.ui.selectedAnimation) {
         if (state.ui.increaseResetCounterOnAnimSwitch) {
           spineViewerStore.ui.resetCounter += 1;
         }

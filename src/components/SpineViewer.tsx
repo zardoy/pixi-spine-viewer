@@ -105,6 +105,11 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
         spineViewerStore.ui.isPlaying = !spineViewerStore.ui.isPlaying;
         return;
       }
+      if (e.code === "KeyL") {
+        e.preventDefault();
+        spineViewerStore.ui.loop = !spineViewerStore.ui.loop;
+        return;
+      }
       if (e.code === "KeyR") {
         e.preventDefault();
         if (e.shiftKey) {

@@ -98,6 +98,59 @@ function immediateUpdate(spine: SpineInstance, resetSlotsToSetup = false): void 
   spineAfterManualWorldTransform(spine)
 }
 
+/** Find the crossfade duration for an animation transition. Returns null if no rule matches. First match wins. */
+function findCrossfadeDuration(
+  rules: SpineProps['crossfadeRules'],
+  from: string,
+  to: string
+): number | null {
+  if (!rules?.length) return null
+  for (const rule of rules) {
+    const fromMatch = !rule.from || rule.from === from
+    const toMatch = !rule.to || rule.to === to
+    if (fromMatch && toMatch) return rule.duration
+  }
+  return null
+}
+
+/** Set up afterUpdateWorldTransforms to force-hide attachments by prefix/exact name match. */
+function setupForceHideCallback(
+  spine: SpineInstance,
+  wireframeModeRef: { current: boolean },
+  prefixesRef: { current: string[] | null },
+  exactRef: { current: string[] }
+) {
+  const prevAfter = spine.afterUpdateWorldTransforms
+  spine.afterUpdateWorldTransforms = (spineObj) => {
+    prevAfter(spineObj)
+    const wireframe = wireframeModeRef.current
+    const prefixes = prefixesRef.current
+    const exact = exactRef.current
+    const hasPrefixes = prefixes?.length
+    const hasExact = exact?.length
+    if (!wireframe && !hasPrefixes && !hasExact) return
+    const slots = spineObj.skeleton.drawOrder
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]
+      const att = slot.getAttachment()
+      if (!att || !(att instanceof RegionAttachment || att instanceof MeshAttachment)) continue
+      if (wireframe) {
+        slot.color.a = 0
+        continue
+      }
+      const path = (att as RegionAttachment).path ?? att.name
+      const attName = att.name
+      const matchesPrefix = hasPrefixes && prefixes!.some(
+        (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
+      )
+      const matchesExact = hasExact && exact.some(
+        (p) => (path === p) || (attName === p)
+      )
+      if (matchesPrefix || matchesExact) slot.color.a = 0
+    }
+  }
+}
+
 /**
  * Calculate attachment sizes for a spine instance
  * Returns a map of slot names to their size information
@@ -449,6 +502,18 @@ export interface SpineProps
     direction: 'from' | 'to' | 'both'
     mixTime: number
   }>
+  /**
+   * Crossfade rules for smooth visual transitions between animations that don't blend well
+   * skeletally (e.g. animations with no shared bones/slots). When a rule matches, a ghost of
+   * the old animation is rendered on top and fades out while the new animation plays underneath.
+   * Rules are checked in order; first match wins. Omit `from`/`to` to match any animation.
+   * Example: [{ from: 'idle', to: 'attack', duration: 0.3 }]
+   */
+  crossfadeRules?: Array<{
+    from?: string
+    to?: string
+    duration: number
+  }>
   /** Delay before starting animation initially in seconds (default: 0) */
   initialDelay?: number
   /** Delay before resuming animation when playing changes from false->true in seconds (default: 0) */
@@ -534,6 +599,7 @@ export const SpineBase = (props: SpineProps) => {
     animationProgress,
     mixTime: _mixTime = 0.25,
     mixTimeRules,
+    crossfadeRules,
     initialDelay = 0,
     resumeDelay = 0,
     resetOnPause,
@@ -672,6 +738,9 @@ export const SpineBase = (props: SpineProps) => {
   const loopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const prevResetCounterRef = useRef<number>(resetCounter ?? 0)
   const mixAnimationFrameRef = useRef<number | null>(null)
+  const ghostSpinesRef = useRef<Array<{ spine: SpineInstance; tween: gsap.core.Tween }>>([])
+  const crossfadeRulesRef = useRef(crossfadeRules)
+  crossfadeRulesRef.current = crossfadeRules
 
   // Debug tracking refs
   const mountTimeRef = useRef<string>('')
@@ -935,35 +1004,7 @@ export const SpineBase = (props: SpineProps) => {
 
         // Force-hide attachments by texture path prefix (e.g. ref_). Runs after state.apply; sets slot.color.a=0
         // so transformAttachments computes alpha=0 and skipRender, and SpinePipe skips adding to batch.
-        const prevAfter = spine.afterUpdateWorldTransforms
-        spine.afterUpdateWorldTransforms = (spineObj) => {
-          prevAfter(spineObj)
-          const wireframe = textureWireframeModeRef.current
-          const prefixes = forceHideAttachmentPrefixesRef.current
-          const exact = forceHideAttachmentExactRef.current
-          const hasPrefixes = prefixes?.length
-          const hasExact = exact?.length
-          if (!wireframe && !hasPrefixes && !hasExact) return
-          const slots = spineObj.skeleton.drawOrder
-          for (let i = 0; i < slots.length; i++) {
-            const slot = slots[i]
-            const att = slot.getAttachment()
-            if (!att || !(att instanceof RegionAttachment || att instanceof MeshAttachment)) continue
-            if (wireframe) {
-              slot.color.a = 0
-              continue
-            }
-            const path = (att as RegionAttachment).path ?? att.name
-            const attName = att.name
-            const matchesPrefix = hasPrefixes && prefixes!.some(
-              (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
-            )
-            const matchesExact = hasExact && exact.some(
-              (p) => (path === p) || (attName === p)
-            )
-            if (matchesPrefix || matchesExact) slot.color.a = 0
-          }
-        }
+        setupForceHideCallback(spine, textureWireframeModeRef, forceHideAttachmentPrefixesRef, forceHideAttachmentExactRef)
 
         // Sync spineRef prop immediately
         if (spineRefProp && 'current' in spineRefProp) {
@@ -1153,6 +1194,16 @@ export const SpineBase = (props: SpineProps) => {
         mixAnimationFrameRef.current = null
       }
 
+      // Clean up any crossfade ghost spines
+      for (const ghost of ghostSpinesRef.current) {
+        ghost.tween.kill()
+        try {
+          if (ghost.spine.parent) ghost.spine.parent.removeChild(ghost.spine)
+          ghost.spine.destroy()
+        } catch { /* best-effort cleanup */ }
+      }
+      ghostSpinesRef.current = []
+
       if (spineRef.current) {
         // Remove listeners before destroying
         // if (listenerRef.current) {
@@ -1197,6 +1248,18 @@ export const SpineBase = (props: SpineProps) => {
       spineRef.current.state.timeScale = isPlaying ? timeScaleRef.current : 0
     }
   }
+  /** Clean up all active crossfade ghost spines. */
+  const cleanupGhostSpines = () => {
+    for (const ghost of ghostSpinesRef.current) {
+      ghost.tween.kill()
+      try {
+        if (ghost.spine.parent) ghost.spine.parent.removeChild(ghost.spine)
+        ghost.spine.destroy()
+      } catch { /* best-effort cleanup */ }
+    }
+    ghostSpinesRef.current = []
+  }
+
   // Handle animation and loop prop changes (separate effect to avoid re-creating spine)
   useEffect(() => {
     if (!spineRef.current) {
@@ -1215,25 +1278,100 @@ export const SpineBase = (props: SpineProps) => {
         clearTimeout(loopTimeoutRef.current)
         loopTimeoutRef.current = null
       }
-      // Re-apply mix rules before the switch so per-pair mix is current
-      applyMixTimeRules(spineRef.current)
-      try {
-        trackedSetAnimation(spineRef.current, 0, animToUse, loop)
-        trackAnimationStart(animToUse)
-        // When mixTime is 0, apply instant reset behavior (no mix transition)
-        if (mixTime === 0) {
-          const track = spineRef.current.state.tracks[0]
-          if (track) track.mixDuration = 0
+
+      const crossfadeDur = currentAnim
+        ? findCrossfadeDuration(crossfadeRulesRef.current, currentAnim, animToUse)
+        : null
+
+      if (crossfadeDur !== null && crossfadeDur > 0 && ref.current) {
+        // --- Crossfade transition: ghost of old animation fades out on top ---
+        cleanupGhostSpines()
+
+        try {
+          const { spine: ghostSpine } = spineLoader.createSpine(spineKey)
+          ghostSpine.x = spineRef.current!.x
+          ghostSpine.y = spineRef.current!.y
+          ghostSpine.scale.set(spineRef.current!.scale.x, spineRef.current!.scale.y)
+
+          const currentSkin = spineRef.current!.skeleton.skin
+          if (currentSkin) {
+            ghostSpine.skeleton.setSkin(currentSkin)
+            ghostSpine.skeleton.setSlotsToSetupPose()
+          }
+
+          // Set old animation at current playback position so ghost continues seamlessly
+          const oldTrack = spineRef.current!.state.tracks[0]
+          ghostSpine.state.setAnimation(0, currentAnim!, oldTrack?.loop ?? false)
+          const ghostTrack0 = ghostSpine.state.tracks[0]
+          if (ghostTrack0 && oldTrack) {
+            ghostTrack0.trackTime = oldTrack.trackTime
+          }
+
+          // Mirror track 1 if present
+          const oldTrack1 = spineRef.current!.state.tracks[1]
+          if (oldTrack1?.animation) {
+            ghostSpine.state.setAnimation(1, oldTrack1.animation.name, oldTrack1.loop)
+            const gt1 = ghostSpine.state.tracks[1]
+            if (gt1) gt1.trackTime = oldTrack1.trackTime
+          }
+
+          ghostSpine.state.timeScale = spineRef.current!.state.timeScale
+          setupForceHideCallback(ghostSpine, textureWireframeModeRef, forceHideAttachmentPrefixesRef, forceHideAttachmentExactRef)
+          immediateUpdate(ghostSpine)
+
+          ref.current.addChild(ghostSpine)
+
+          const tween = gsap.to(ghostSpine, {
+            alpha: 0,
+            duration: crossfadeDur,
+            ease: 'linear',
+            onComplete: () => {
+              try {
+                if (ghostSpine.parent) ghostSpine.parent.removeChild(ghostSpine)
+                ghostSpine.destroy()
+              } catch { /* best-effort cleanup */ }
+              const idx = ghostSpinesRef.current.findIndex(g => g.spine === ghostSpine)
+              if (idx >= 0) ghostSpinesRef.current.splice(idx, 1)
+            }
+          })
+          ghostSpinesRef.current.push({ spine: ghostSpine, tween })
+        } catch (error) {
+          console.warn('[SpineBase] Failed to create crossfade ghost:', error)
+        }
+
+        // Switch main spine to new animation with no skeletal mix (crossfade handles it visually)
+        applyMixTimeRules(spineRef.current)
+        try {
+          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+          trackAnimationStart(animToUse)
+          const newTrack = spineRef.current.state.tracks[0]
+          if (newTrack) newTrack.mixDuration = 0
           immediateUpdate(spineRef.current, true)
+          if (spineRef.current) {
+            updateDebugResults(spineRef.current, spineKey, app.app)
+          }
+        } catch (error) {
+          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
-        // Update debug results if debug mode is enabled
-        if (spineRef.current) {
-          updateDebugResults(spineRef.current, spineKey, app.app)
+      } else {
+        // --- Normal transition (skeletal mix) ---
+        applyMixTimeRules(spineRef.current)
+        try {
+          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
+          trackAnimationStart(animToUse)
+          if (mixTime === 0) {
+            const track = spineRef.current.state.tracks[0]
+            if (track) track.mixDuration = 0
+            immediateUpdate(spineRef.current, true)
+          }
+          if (spineRef.current) {
+            updateDebugResults(spineRef.current, spineKey, app.app)
+          }
+        } catch (error) {
+          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
-      } catch (error) {
-        throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
       }
-      // Set time scale since we clearn existing loop which might have ben stopped
+
       setTimeScale()
     } else {
       // Animation unchanged, but loop might have changed - need to update it

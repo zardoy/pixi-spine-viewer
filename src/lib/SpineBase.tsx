@@ -61,6 +61,28 @@ export type SpineDebugResults = Record<string, AttachmentSizeInfo | SpineDebugMi
   max: SpineDebugMinMax
 }
 
+/**
+ * Per-slot attachment override for the duration of a skeletal mix transition.
+ * Because Spine's AttachmentTimeline is binary (it either sets an attachment or reverts to
+ * setup — there is no alpha-interpolation), controlling per-slot attachment appearance during
+ * a mix must be done post-apply by patching slot.attachment directly.
+ *
+ * SpineBase snapshots the FROM animation's slot attachments immediately before calling
+ * setAnimation, then applies these overrides every frame inside afterUpdateWorldTransforms
+ * while `track.mixingFrom` is non-null.
+ *
+ * duringMix values:
+ * - 'from'   → hold the old animation's attachment until the mix fully completes
+ * - 'to'     → immediately show the new animation's attachment (Spine default, no override)
+ * - 'setup'  → show the slot's setup-pose attachment for the duration of the mix
+ * - 'hide'   → hide this slot entirely (slot.color.a = 0) during the mix
+ */
+export interface AttachmentMixRule {
+  /** Slot name to control */
+  slot: string
+  duringMix: 'from' | 'to' | 'setup' | 'hide'
+}
+
 function getAnimToUse(animation: string | undefined, spine: SpineInstance | null): string | null {
   if (animation) return animation
   if (!spine) return null
@@ -217,8 +239,9 @@ function calculateAttachmentSizes(
 /**
  * Calculate and store debug results for texture sizes
  */
-function updateDebugResults(spine: SpineInstance, spineKey: string, app: Application): void {
+function updateDebugResults(spine: SpineInstance, spineKey: string, app: Application | null | undefined): void {
   if (globalDebugMode !== 'texture-sizes') return
+  if (!app?.renderer) return
 
   const pixelRatio = app.renderer.resolution
   const attachmentSizes = calculateAttachmentSizes(spine, pixelRatio)
@@ -506,6 +529,14 @@ export interface SpineProps
   forceHideAttachment?: boolean | string | string[]
   /** Exact path/name match - hide when path === p or name === p. Used for per-attachment toggles. */
   forceHideAttachmentExact?: string[]
+  /**
+   * Per-slot attachment control during animation mix transitions.
+   * Lets you decide — per slot — what is visible while two animations are blending:
+   * hold the old attachment ('from'), show the new one immediately ('to', default),
+   * revert to setup pose ('setup'), or hide the slot entirely ('hide').
+   * Rules are matched by exact slot name; unlisted slots follow Spine's default behavior.
+   */
+  attachmentMixRules?: AttachmentMixRule[]
   /** When true, Region/Mesh slots render with alpha 0 so only wireframe overlay (SpineDebugRenderer) shows fills. */
   textureWireframeMode?: boolean
   /** Render mode: 'silhouette' = flat color preserving texture alpha (shows exact shapes), 'ghosted' = fully desaturated gray. Default 'normal'. */
@@ -581,6 +612,7 @@ export const SpineBase = (props: SpineProps) => {
     attachmentsFollow,
     forceHideAttachment,
     forceHideAttachmentExact,
+    attachmentMixRules,
     textureWireframeMode = false,
     renderMode = 'normal',
 
@@ -672,6 +704,11 @@ export const SpineBase = (props: SpineProps) => {
   const loopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const prevResetCounterRef = useRef<number>(resetCounter ?? 0)
   const mixAnimationFrameRef = useRef<number | null>(null)
+  const attachmentMixRulesRef = useRef(attachmentMixRules)
+  attachmentMixRulesRef.current = attachmentMixRules
+  // Snapshot of slot attachment names captured just before a setAnimation call.
+  // Read by afterUpdateWorldTransforms to implement 'from' duringMix rules.
+  const fromAttachmentSnapshotRef = useRef<Record<string, string | null> | null>(null)
 
   // Debug tracking refs
   const mountTimeRef = useRef<string>('')
@@ -933,35 +970,87 @@ export const SpineBase = (props: SpineProps) => {
         // Add spine to container
         spineRef.current = spine
 
-        // Force-hide attachments by texture path prefix (e.g. ref_). Runs after state.apply; sets slot.color.a=0
-        // so transformAttachments computes alpha=0 and skipRender, and SpinePipe skips adding to batch.
+        // afterUpdateWorldTransforms runs after state.apply() each frame.
+        // Pass 1: force-hide by prefix/exact (slot.color.a=0 → SpinePipe skips batch).
+        // Pass 2: per-slot attachment overrides during mix transitions (attachmentMixRules).
+        //   Spine's AttachmentTimeline is binary — last writer wins; the only safe per-slot
+        //   override point is here, after the full state is applied to the skeleton.
         const prevAfter = spine.afterUpdateWorldTransforms
         spine.afterUpdateWorldTransforms = (spineObj) => {
           prevAfter(spineObj)
+
+          // --- Pass 1: force-hide ---
           const wireframe = textureWireframeModeRef.current
           const prefixes = forceHideAttachmentPrefixesRef.current
           const exact = forceHideAttachmentExactRef.current
           const hasPrefixes = prefixes?.length
           const hasExact = exact?.length
-          if (!wireframe && !hasPrefixes && !hasExact) return
-          const slots = spineObj.skeleton.drawOrder
-          for (let i = 0; i < slots.length; i++) {
-            const slot = slots[i]
-            const att = slot.getAttachment()
-            if (!att || !(att instanceof RegionAttachment || att instanceof MeshAttachment)) continue
-            if (wireframe) {
-              slot.color.a = 0
-              continue
+          if (wireframe || hasPrefixes || hasExact) {
+            const slots = spineObj.skeleton.drawOrder
+            for (let i = 0; i < slots.length; i++) {
+              const slot = slots[i]
+              const att = slot.getAttachment()
+              if (!att || !(att instanceof RegionAttachment || att instanceof MeshAttachment)) continue
+              if (wireframe) {
+                slot.color.a = 0
+                continue
+              }
+              const path = (att as RegionAttachment).path ?? att.name
+              const attName = att.name
+              const matchesPrefix = hasPrefixes && prefixes!.some(
+                (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
+              )
+              const matchesExact = hasExact && exact.some(
+                (p) => (path === p) || (attName === p)
+              )
+              if (matchesPrefix || matchesExact) slot.color.a = 0
             }
-            const path = (att as RegionAttachment).path ?? att.name
-            const attName = att.name
-            const matchesPrefix = hasPrefixes && prefixes!.some(
-              (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
-            )
-            const matchesExact = hasExact && exact.some(
-              (p) => (path === p) || (attName === p)
-            )
-            if (matchesPrefix || matchesExact) slot.color.a = 0
+          }
+
+          // --- Pass 2: attachment mix rules ---
+          const mixRules = attachmentMixRulesRef.current
+          if (!mixRules?.length) return
+
+          const track = spineObj.state.tracks[0]
+          const isMixing = !!track?.mixingFrom
+
+          if (!isMixing) {
+            // Mix completed — clear snapshot so rules don't fire outside a transition
+            if (fromAttachmentSnapshotRef.current !== null) fromAttachmentSnapshotRef.current = null
+            return
+          }
+
+          const snapshot = fromAttachmentSnapshotRef.current
+          const skeleton = spineObj.skeleton
+
+          for (const rule of mixRules) {
+            if (rule.duringMix === 'to') continue // default Spine behavior, no override
+
+            const slot = skeleton.findSlot(rule.slot)
+            if (!slot) continue
+
+            switch (rule.duringMix) {
+              case 'from': {
+                if (!snapshot) break
+                const fromAttName = snapshot[rule.slot]
+                if (fromAttName === undefined) break // slot wasn't snapshotted
+                const att = fromAttName != null
+                  ? skeleton.getAttachment(slot.data.index, fromAttName)
+                  : null
+                slot.setAttachment(att)
+                break
+              }
+              case 'setup': {
+                const setupName = slot.data.attachmentName
+                const att = setupName ? skeleton.getAttachment(slot.data.index, setupName) : null
+                slot.setAttachment(att)
+                break
+              }
+              case 'hide': {
+                slot.color.a = 0
+                break
+              }
+            }
           }
         }
 
@@ -1215,6 +1304,18 @@ export const SpineBase = (props: SpineProps) => {
         clearTimeout(loopTimeoutRef.current)
         loopTimeoutRef.current = null
       }
+      // Snapshot FROM attachments for slots that have 'from' mix rules, before the switch
+      const mixRulesNow = attachmentMixRulesRef.current
+      if (mixRulesNow?.some(r => r.duringMix === 'from')) {
+        const snap: Record<string, string | null> = {}
+        for (const rule of mixRulesNow) {
+          if (rule.duringMix !== 'from') continue
+          const slot = spineRef.current.skeleton.findSlot(rule.slot)
+          snap[rule.slot] = slot?.attachment?.name ?? null
+        }
+        fromAttachmentSnapshotRef.current = snap
+      }
+
       // Re-apply mix rules before the switch so per-pair mix is current
       applyMixTimeRules(spineRef.current)
       try {
@@ -1540,13 +1641,16 @@ export const SpineBase = (props: SpineProps) => {
     }
 
     if (scaleAnimationDuration === 0) {
+      gsap.killTweensOf(ref.current.scale)
       ref.current.scale.set(currentScaleObj.x, currentScaleObj.y)
       return
     }
 
-    // Animate scale change
-    gsap.to(ref.current, {
-      pixi: { scaleX: currentScaleObj.x, scaleY: currentScaleObj.y },
+    // Tween scale.x / scale.y (no PixiPlugin — avoids gsap.registerPlugin(PixiPlugin))
+    gsap.killTweensOf(ref.current.scale)
+    gsap.to(ref.current.scale, {
+      x: currentScaleObj.x,
+      y: currentScaleObj.y,
       duration: scaleAnimationDuration ?? 0.3,
       ease: 'power1.out',
     })

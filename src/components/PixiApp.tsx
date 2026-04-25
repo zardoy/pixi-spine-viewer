@@ -1094,6 +1094,7 @@ const PixiAppContent = () => {
                 ? `${SPINE_KEY}/${state.ui.selectedSkeleton}`
                 : SPINE_KEY
             }
+            // attachmentMixRules={[{ slot: 'eye', duringMix: 'from' }]}
             animation={state.ui.selectedAnimation}
             loop={state.ui.loop}
             timeScale={state.ui.speed}

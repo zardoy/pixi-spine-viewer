@@ -46,6 +46,8 @@ const Index = () => {
   const [spinesMapUrl, setSpinesMapUrl] = useState<string | null>(null);
   const [loadingFromUrl, setLoadingFromUrl] = useState(false);
   const [pendingSkeletonSelection, setPendingSkeletonSelection] = useState<PendingSkeletonSelection | null>(null);
+  /** Must run before any early return (same order every render). */
+  const storeSnapshot = useSnapshot(spineViewerStore);
 
   const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
@@ -220,7 +222,6 @@ const Index = () => {
     );
   }
 
-  const storeSnapshot = useSnapshot(spineViewerStore);
   const storePending = storeSnapshot.pendingSkeletonSelection as
     | { current?: PendingSkeletonSelection }
     | null

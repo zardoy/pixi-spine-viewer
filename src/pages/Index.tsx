@@ -6,6 +6,7 @@ import { SpinesMapViewer } from "../components/SpinesMapViewer";
 import { SpineTester } from "../components/SpineTester";
 import { Playground } from "../components/Playground";
 import { OverridePlayground } from "../components/OverridePlayground";
+import { PlaygroundAtPosition } from "../components/PlaygroundAtPosition";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
@@ -52,11 +53,12 @@ const Index = () => {
   const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
 
-    // Check for tester, playground, or override playground first
+    // Check for tester, playground, override playground, or atPosition first
     const tester = params.get("tester");
     const playground = params.get("playground");
     const overridePlayground = params.get("overridePlayground");
-    if (tester !== null || playground !== null || overridePlayground !== null) {
+    const atPosition = params.get("atPosition");
+    if (tester !== null || playground !== null || overridePlayground !== null || atPosition !== null) {
       // These are handled by the component render logic below
       return;
     }
@@ -183,11 +185,12 @@ const Index = () => {
     }
   };
 
-  // Check URL params for tester, playground, or override playground
+  // Check URL params for tester, playground, override playground, or atPosition
   const params = new URLSearchParams(window.location.search);
   const tester = params.get("tester");
   const playground = params.get("playground");
   const overridePlayground = params.get("overridePlayground");
+  const atPosition = params.get("atPosition");
 
   if (tester !== null) {
     return <SpineTester />;
@@ -199,6 +202,10 @@ const Index = () => {
 
   if (overridePlayground !== null) {
     return <OverridePlayground />;
+  }
+
+  if (atPosition !== null) {
+    return <PlaygroundAtPosition />;
   }
 
   // Show loading state while loading from URL

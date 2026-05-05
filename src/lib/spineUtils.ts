@@ -1,5 +1,12 @@
-import { Skeleton, AnimationState, AnimationStateData, Physics } from '@esotericsoftware/spine-core'
-import type { SkeletonData } from '@esotericsoftware/spine-core'
+import {
+  Skeleton,
+  AnimationState,
+  AnimationStateData,
+  Physics,
+  MixBlend,
+  MixDirection,
+} from '@esotericsoftware/spine-core'
+import type { Animation, SkeletonData } from '@esotericsoftware/spine-core'
 
 export interface SpineBounds {
   x: number
@@ -48,12 +55,49 @@ export function computeFirstFrameBounds(
 }
 
 /**
- * Compute the UNION bounding box of every sampled frame across the full
- * duration of the given animation (or the first animation if none is named).
+ * Build distinct sample times = uniform grid (`timeStep`) ∪ every authored key
+ * time on {@link Animation.timelines} (rotate / translate / RGBA / deform /
+ * attachments / IK / etc.). Curve peaks can still fall strictly between keys,
+ * so the temporal grid stays.
+ */
+function collectMaxAnimationSampleTimes(anim: Animation, timeStep: number): number[] {
+  const duration = anim.duration
+  const times = new Set<number>()
+
+  const add = (raw: number) => {
+    if (!Number.isFinite(raw)) return
+    times.add(Math.max(0, Math.min(raw, duration)))
+  }
+
+  add(0)
+  add(duration)
+
+  const gridSteps = Math.max(Math.ceil(duration / timeStep), 2)
+  for (let i = 1; i < gridSteps; i++) {
+    add(Math.min(i * timeStep, duration))
+  }
+
+  for (const timeline of anim.timelines) {
+    const stride = timeline.getFrameEntries()
+    const frames = timeline.frames
+    for (let i = 0; i < frames.length; i += stride) {
+      add(frames[i])
+    }
+  }
+
+  return [...times].sort((a, b) => a - b)
+}
+
+/**
+ * Compute the UNION bounding box across the full duration of the given
+ * animation (or the first animation if none is named).
  *
- * This is the "max AABB" approach used by SkinsAndAnimationBoundsProvider in
- * the official Spine runtime: it steps through the animation at `timeStep`
- * intervals and accumulates the tightest box that fits all positions.
+ * Samples at each merged time from {@link collectMaxAnimationSampleTimes}:
+ * uniform stepping plus every timeline keyframe time from skeleton data (same
+ * sources as Spine JSON like Horse.json → `activation` bone/slot keys).
+ *
+ * Each pose is evaluated with {@link Animation.apply}(…, t, t, …) from setup
+ * pose (matches {@link SpineDisplay.calculateAnimationViewport}).
  *
  * Falls back to `computeFirstFrameBounds` for zero-duration animations
  * (single-frame / static spines) and when no animation is found.
@@ -64,7 +108,6 @@ export function computeMaxAnimationBounds(
   timeStep = 0.05,
 ): SpineBounds | null {
   const skeleton = new Skeleton(skeletonData)
-  const animState = new AnimationState(new AnimationStateData(skeletonData))
 
   const anim = animationName
     ? skeletonData.findAnimation(animationName)
@@ -75,18 +118,14 @@ export function computeMaxAnimationBounds(
     return computeFirstFrameBounds(skeletonData, animationName)
   }
 
-  animState.setAnimationWith(0, anim, false)
-
-  let minX = Infinity,  minY = Infinity
+  let minX = Infinity, minY = Infinity
   let maxX = -Infinity, maxY = -Infinity
 
-  const steps = Math.max(Math.ceil(anim.duration / timeStep), 2)
+  const sampleTimes = collectMaxAnimationSampleTimes(anim, timeStep)
 
-  for (let i = 0; i < steps; i++) {
-    const delta = i === 0 ? 0 : timeStep
-    animState.update(delta)
-    animState.apply(skeleton)
-    skeleton.update(delta)
+  for (const t of sampleTimes) {
+    skeleton.setToSetupPose()
+    anim.apply(skeleton, t, t, false, [], 1, MixBlend.setup, MixDirection.mixIn)
     skeleton.updateWorldTransform(Physics.update)
 
     const r = skeleton.getBoundsRect()

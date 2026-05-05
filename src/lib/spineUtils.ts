@@ -142,6 +142,30 @@ export function computeMaxAnimationBounds(
 }
 
 /**
+ * Union of `computeMaxAnimationBounds` across every animation in the skeleton.
+ * Produces the tightest AABB that encloses all poses from all animations.
+ */
+export function computeAllAnimationsBounds(
+  skeletonData: SkeletonData,
+  timeStep = 0.05,
+): SpineBounds | null {
+  let minX = Infinity, minY = Infinity
+  let maxX = -Infinity, maxY = -Infinity
+
+  for (const anim of skeletonData.animations) {
+    const b = computeMaxAnimationBounds(skeletonData, anim.name, timeStep)
+    if (!b) continue
+    minX = Math.min(minX, b.x)
+    minY = Math.min(minY, b.y)
+    maxX = Math.max(maxX, b.x + b.width)
+    maxY = Math.max(maxY, b.y + b.height)
+  }
+
+  if (!isFinite(minX)) return null
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+/**
  * Given a first-frame bounds rect, return the PIXI position and uniform scale
  * that centres the spine's visual AABB inside the given canvas area.
  *

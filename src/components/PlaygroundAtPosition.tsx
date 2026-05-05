@@ -2,74 +2,19 @@ import 'pixi.js/prepare'
 import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react'
 import { Application, useTick, useExtend } from '@pixi/react'
 import { Container, Graphics } from 'pixi.js'
-import {
-  Skeleton,
-  AnimationState,
-  AnimationStateData,
-  Physics,
-} from '@esotericsoftware/spine-core'
 import type { SkeletonData } from '@esotericsoftware/spine-core'
 import JSZip from 'jszip'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
 import { fetchSpineFilesFromUrl } from '../lib/urlFetcher'
 import { SPINE_EXAMPLES } from '../lib/spineExamples'
+import { computeFirstFrameBounds, computeMaxAnimationBounds } from '../lib/spineUtils'
+import type { SpineBounds } from '../lib/spineUtils'
 import { Button } from './ui/button'
 import { ArrowLeft, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 
 const SPINE_KEY = 'at-position-spine'
-
-// ---------------------------------------------------------------------------
-// Bounds computation
-// ---------------------------------------------------------------------------
-
-export interface SpineBounds {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-/**
- * Compute the bounding box at time=0 (first frame) of the given animation,
- * or the setup pose if no animation is provided or found.
- *
- * This creates a temporary, isolated skeleton so it never touches the live
- * PIXI Spine instance. Returns null when the skeleton has no visible attachments.
- *
- * Why not use skeletonData.x / .y / .width / .height?
- *   Those come from the JSON's `skeleton.bounds` block and represent the
- *   setup-pose AABB as exported by the Spine editor — NOT the first frame
- *   of any animation. When an animation immediately offsets bones at time=0
- *   the numbers differ, sometimes significantly.
- */
-export function computeFirstFrameBounds(
-  skeletonData: SkeletonData,
-  animationName?: string,
-): SpineBounds | null {
-  const skeleton = new Skeleton(skeletonData)
-  const animState = new AnimationState(new AnimationStateData(skeletonData))
-
-  const anim = animationName
-    ? skeletonData.findAnimation(animationName)
-    : (skeletonData.animations[0] ?? null)
-
-  if (anim) {
-    animState.setAnimationWith(0, anim, false)
-    animState.update(0)
-    animState.apply(skeleton)
-  } else {
-    skeleton.setToSetupPose()
-  }
-
-  skeleton.update(0)
-  skeleton.updateWorldTransform(Physics.update)
-
-  const r = skeleton.getBoundsRect()
-  if (r.width === Number.NEGATIVE_INFINITY || r.width <= 0) return null
-  return { x: r.x, y: r.y, width: r.width, height: r.height }
-}
 
 // ---------------------------------------------------------------------------
 // Transform math
@@ -129,6 +74,8 @@ interface DemoConfig {
   anchorY: number
   fitBy: 'width' | 'height'
   selectedAnim: string
+  boundsMode: 'first-frame' | 'full-animation'
+  paused: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -137,18 +84,18 @@ interface DemoConfig {
 
 interface ContentProps {
   loader: FileSpineLoader
-  firstFrameBounds: SpineBounds
+  bounds: SpineBounds
   config: DemoConfig
 }
 
-const PlaygroundAtPositionContent = ({ loader, firstFrameBounds, config }: ContentProps) => {
+const PlaygroundAtPositionContent = ({ loader, bounds, config }: ContentProps) => {
   useExtend({ Container, Graphics })
 
-  const { containerX, containerY, containerW, containerH, anchorX, anchorY, fitBy, selectedAnim } =
+  const { containerX, containerY, containerW, containerH, anchorX, anchorY, fitBy, selectedAnim, boundsMode, paused } =
     config
 
   const { spineX, spineY, scale } = computeSpineTransform(
-    firstFrameBounds,
+    bounds,
     containerX,
     containerY,
     containerW,
@@ -158,11 +105,14 @@ const PlaygroundAtPositionContent = ({ loader, firstFrameBounds, config }: Conte
     fitBy,
   )
 
-  // Spine's first-frame AABB in canvas (screen) space
-  const bCX = spineX + firstFrameBounds.x * scale
-  const bCY = spineY + firstFrameBounds.y * scale
-  const bCW = firstFrameBounds.width * scale
-  const bCH = firstFrameBounds.height * scale
+  // Active AABB in canvas (screen) space
+  const bCX = spineX + bounds.x * scale
+  const bCY = spineY + bounds.y * scale
+  const bCW = bounds.width * scale
+  const bCH = bounds.height * scale
+
+  // Color depends on bounds mode
+  const aabbColor = boundsMode === 'full-animation' ? 0xffbb00 : 0x00ff88
 
   // Two Graphics layers: background (grid) and overlay (container + bounds)
   const bgRef = useRef<Graphics | null>(null)
@@ -172,11 +122,11 @@ const PlaygroundAtPositionContent = ({ loader, firstFrameBounds, config }: Conte
   const dirtyRef = useRef(true)
   const drawParamsRef = useRef({
     containerX, containerY, containerW, containerH,
-    anchorX, anchorY, bCX, bCY, bCW, bCH,
+    anchorX, anchorY, bCX, bCY, bCW, bCH, aabbColor,
   })
-  drawParamsRef.current = { containerX, containerY, containerW, containerH, anchorX, anchorY, bCX, bCY, bCW, bCH }
+  drawParamsRef.current = { containerX, containerY, containerW, containerH, anchorX, anchorY, bCX, bCY, bCW, bCH, aabbColor }
 
-  useEffect(() => { dirtyRef.current = true }, [containerX, containerY, containerW, containerH, anchorX, anchorY, bCX, bCY, bCW, bCH])
+  useEffect(() => { dirtyRef.current = true }, [containerX, containerY, containerW, containerH, anchorX, anchorY, bCX, bCY, bCW, bCH, aabbColor])
 
   useTick(() => {
     if (!dirtyRef.current) return
@@ -225,14 +175,14 @@ const PlaygroundAtPositionContent = ({ loader, firstFrameBounds, config }: Conte
     fg.lineTo(p.containerX - 10, p.containerY + p.containerH)
     fg.stroke()
 
-    // First-frame AABB overlay (green) — this should coincide with the container anchor
-    fg.setStrokeStyle({ color: 0x00ff88, width: 2, alpha: 0.9 })
+    // AABB overlay — green for first-frame, amber for full-animation
+    fg.setStrokeStyle({ color: p.aabbColor, width: 2, alpha: 0.9 })
     fg.rect(p.bCX, p.bCY, p.bCW, p.bCH)
     fg.stroke()
 
     // Dot at AABB top-left
     fg.circle(p.bCX, p.bCY, 4)
-    fg.fill({ color: 0x00ff88, alpha: 1 })
+    fg.fill({ color: p.aabbColor, alpha: 1 })
 
     // Anchor crosshair (orange)
     const ax = p.containerX + p.anchorX * p.containerW
@@ -246,7 +196,7 @@ const PlaygroundAtPositionContent = ({ loader, firstFrameBounds, config }: Conte
     fg.fill({ color: 0xff6600, alpha: 1 })
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
+
   const noop = () => {}
 
   return (
@@ -257,8 +207,10 @@ const PlaygroundAtPositionContent = ({ loader, firstFrameBounds, config }: Conte
       <SpineBase
         spine={SPINE_KEY}
         animation={selectedAnim || undefined}
-        loop
-        paused={false}
+        loop={!paused}
+        paused={paused}
+        resetOnPause
+        resetCounter={paused ? 1 : 0}
         spineLoader={loader}
         x={spineX}
         y={spineY}
@@ -340,7 +292,7 @@ export const PlaygroundAtPosition = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [loader, setLoader] = useState<FileSpineLoader | null>(null)
   const [skeletonData, setSkeletonData] = useState<SkeletonData | null>(null)
-  const [firstFrameBounds, setFirstFrameBounds] = useState<SpineBounds | null>(null)
+  const [activeBounds, setActiveBounds] = useState<SpineBounds | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const canvasWrapperRef = useRef<HTMLDivElement>(null)
 
@@ -353,6 +305,8 @@ export const PlaygroundAtPosition = () => {
     anchorY: 0,
     fitBy: 'width',
     selectedAnim: '',
+    boundsMode: 'first-frame',
+    paused: false,
   })
 
   const [selectedExample, setSelectedExample] = useState(SPINE_EXAMPLES[2].name) // Owl
@@ -367,7 +321,7 @@ export const PlaygroundAtPosition = () => {
     setIsLoading(true)
     setLoader(null)
     setSkeletonData(null)
-    setFirstFrameBounds(null)
+    setActiveBounds(null)
 
     try {
       toast.loading(`Loading ${skeletonFile.name}…`)
@@ -383,8 +337,8 @@ export const PlaygroundAtPosition = () => {
 
       setLoader(newLoader)
       setSkeletonData(sd)
-      setFirstFrameBounds(bounds)
-      setConfig(c => ({ ...c, selectedAnim: sd.animations[0]?.name ?? '' }))
+      setActiveBounds(bounds)
+      setConfig(c => ({ ...c, selectedAnim: sd.animations[0]?.name ?? '', boundsMode: 'first-frame' }))
       setIsLoading(false)
       toast.dismiss()
       toast.success(`Loaded: ${skeletonFile.name}`)
@@ -426,7 +380,7 @@ export const PlaygroundAtPosition = () => {
     setIsLoading(true)
     setLoader(null)
     setSkeletonData(null)
-    setFirstFrameBounds(null)
+    setActiveBounds(null)
 
     try {
       toast.loading(`Loading ${exampleName}…`)
@@ -445,8 +399,8 @@ export const PlaygroundAtPosition = () => {
 
       setLoader(newLoader)
       setSkeletonData(sd)
-      setFirstFrameBounds(bounds)
-      setConfig(c => ({ ...c, selectedAnim: sd.animations[0]?.name ?? '' }))
+      setActiveBounds(bounds)
+      setConfig(c => ({ ...c, selectedAnim: sd.animations[0]?.name ?? '', boundsMode: 'first-frame' }))
       setIsLoading(false)
       toast.dismiss()
       toast.success(`${exampleName} loaded`)
@@ -468,12 +422,16 @@ export const PlaygroundAtPosition = () => {
 
   useEffect(() => { loadExample(selectedExample) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-compute first-frame bounds when the positioning animation changes
+  // Re-compute bounds whenever the animation or bounds mode changes
   useEffect(() => {
     if (!skeletonData) return
-    const b = computeFirstFrameBounds(skeletonData, config.selectedAnim || undefined)
-    setFirstFrameBounds(b)
-  }, [config.selectedAnim, skeletonData])
+    const animName = config.selectedAnim || undefined
+    const b =
+      config.boundsMode === 'full-animation'
+        ? computeMaxAnimationBounds(skeletonData, animName)
+        : computeFirstFrameBounds(skeletonData, animName)
+    setActiveBounds(b)
+  }, [config.selectedAnim, config.boundsMode, skeletonData])
 
   const update = (patch: Partial<DemoConfig>) => setConfig(c => ({ ...c, ...patch }))
 
@@ -485,9 +443,9 @@ export const PlaygroundAtPosition = () => {
   const animations = skeletonData?.animations?.map(a => a.name) ?? []
 
   const info =
-    firstFrameBounds
+    activeBounds
       ? computeSpineTransform(
-          firstFrameBounds,
+          activeBounds,
           config.containerX,
           config.containerY,
           config.containerW,
@@ -580,7 +538,7 @@ export const PlaygroundAtPosition = () => {
           {/* Positioning animation */}
           {animations.length > 0 && (
             <section>
-              <div className="font-medium mb-1">Bounds from animation</div>
+              <div className="font-medium mb-1">Animation</div>
               <select
                 className="w-full bg-secondary border border-border rounded px-2 py-1.5 text-sm"
                 value={config.selectedAnim}
@@ -588,11 +546,53 @@ export const PlaygroundAtPosition = () => {
               >
                 {animations.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
-              <p className="text-xs text-muted-foreground mt-1">
-                First frame (t=0) used for bounds & scale. Spine plays this animation.
-              </p>
             </section>
           )}
+
+          {/* Bounds mode */}
+          <section>
+            <div className="font-medium mb-1.5">Bounds source</div>
+            <div className="flex gap-2">
+              {([
+                ['first-frame', 'First frame'] as const,
+                ['full-animation', 'Full anim'] as const,
+              ]).map(([v, label]) => (
+                <button
+                  key={v}
+                  className={`flex-1 py-1.5 rounded border text-xs font-medium transition-colors ${
+                    config.boundsMode === v
+                      ? v === 'full-animation'
+                        ? 'bg-amber-500 text-black border-amber-400'
+                        : 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-secondary border-border hover:bg-secondary/80'
+                  }`}
+                  onClick={() => update({ boundsMode: v })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {config.boundsMode === 'full-animation'
+                ? 'Union AABB across all keyframes of the animation (amber box).'
+                : 'Bounding box at t=0 of the animation (green box).'}
+            </p>
+          </section>
+
+          {/* Pause at first frame */}
+          <section>
+            <div className="font-medium mb-1.5">Playback</div>
+            <button
+              className={`w-full py-1.5 rounded border text-sm font-medium transition-colors ${
+                config.paused
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-secondary border-border hover:bg-secondary/80'
+              }`}
+              onClick={() => update({ paused: !config.paused })}
+            >
+              {config.paused ? '⏸ Paused at first frame' : '▶ Playing'}
+            </button>
+          </section>
 
           {/* Fit by */}
           <section>
@@ -698,8 +698,13 @@ export const PlaygroundAtPosition = () => {
               <span className="text-muted-foreground">Container bounds</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: '#00ff88' }} />
-              <span className="text-muted-foreground">First-frame AABB (computed)</span>
+              <span
+                className="inline-block w-3 h-3 rounded-sm shrink-0"
+                style={{ background: config.boundsMode === 'full-animation' ? '#ffbb00' : '#00ff88' }}
+              />
+              <span className="text-muted-foreground">
+                {config.boundsMode === 'full-animation' ? 'Full-animation AABB' : 'First-frame AABB'}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ background: '#ff6600' }} />
@@ -708,14 +713,16 @@ export const PlaygroundAtPosition = () => {
           </section>
 
           {/* Computed info */}
-          {firstFrameBounds && info && (
+          {activeBounds && info && (
             <section className="border border-border rounded p-3 bg-secondary/30 text-xs space-y-2">
               <div className="font-semibold">Debug info</div>
 
               <div>
-                <div className="text-muted-foreground font-medium">First-frame AABB (skeleton space)</div>
-                <div>x: {firstFrameBounds.x.toFixed(1)}&ensp;y: {firstFrameBounds.y.toFixed(1)}</div>
-                <div>w: {firstFrameBounds.width.toFixed(1)}&ensp;h: {firstFrameBounds.height.toFixed(1)}</div>
+                <div className="text-muted-foreground font-medium">
+                  {config.boundsMode === 'full-animation' ? 'Full-animation AABB' : 'First-frame AABB'} (skeleton space)
+                </div>
+                <div>x: {activeBounds.x.toFixed(1)}&ensp;y: {activeBounds.y.toFixed(1)}</div>
+                <div>w: {activeBounds.width.toFixed(1)}&ensp;h: {activeBounds.height.toFixed(1)}</div>
               </div>
 
               {setupPoseBounds && (
@@ -725,10 +732,10 @@ export const PlaygroundAtPosition = () => {
                   </div>
                   <div>x: {setupPoseBounds.x.toFixed(1)}&ensp;y: {setupPoseBounds.y.toFixed(1)}</div>
                   <div>w: {setupPoseBounds.width.toFixed(1)}&ensp;h: {setupPoseBounds.height.toFixed(1)}</div>
-                  {(Math.abs(setupPoseBounds.x - firstFrameBounds.x) > 1 ||
-                    Math.abs(setupPoseBounds.y - firstFrameBounds.y) > 1) && (
+                  {(Math.abs(setupPoseBounds.x - activeBounds.x) > 1 ||
+                    Math.abs(setupPoseBounds.y - activeBounds.y) > 1) && (
                     <div className="text-yellow-400 mt-0.5">
-                      ⚠ Differs from first-frame bounds — using skeletonData directly would misposition
+                      ⚠ Differs from computed bounds — using skeletonData directly would misposition
                     </div>
                   )}
                 </div>
@@ -770,7 +777,7 @@ export const PlaygroundAtPosition = () => {
             </div>
           )}
 
-          {!isLoading && loader && firstFrameBounds && (
+          {!isLoading && loader && activeBounds && (
             <Application
               backgroundColor={0x1a1a1a}
               resizeTo={canvasWrapperRef}
@@ -780,7 +787,7 @@ export const PlaygroundAtPosition = () => {
             >
               <PlaygroundAtPositionContent
                 loader={loader}
-                firstFrameBounds={firstFrameBounds}
+                bounds={activeBounds}
                 config={config}
               />
             </Application>

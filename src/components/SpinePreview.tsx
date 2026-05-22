@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from 'react'
-import { Application, useApplication, useExtend } from '@pixi/react'
+import { useEffect, useState } from 'react'
+import { Application, useExtend } from '@pixi/react'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
-import { computeFirstFrameBounds, boundsToContainTransform } from '../lib/spineUtils'
+import { fetchAndLoadSpinePreview } from '../lib/spinePreviewLoader'
+import { boundsToContainTransform, computeMaxAnimationBounds } from '../lib/spineUtils'
 import { Container } from 'pixi.js'
 import { Loader2 } from 'lucide-react'
 
@@ -14,7 +15,7 @@ const PADDING = 14
 interface SpinePreviewProps {
   jsonUrl: string
   atlasUrl: string
-  pngUrl?: string    // legacy
+  pngUrl?: string // legacy
   pngUrls?: string[]
   className?: string
 }
@@ -33,38 +34,16 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, pngUrls, className }: 
         setError(null)
 
         const imageUrls = pngUrls || (pngUrl ? [pngUrl] : [])
+        if (imageUrls.length === 0) throw new Error('No image URLs')
 
-        const responses = await Promise.all([
-          fetch(jsonUrl),
-          fetch(atlasUrl),
-          ...imageUrls.map(url => fetch(url)),
-        ])
-
-        if (!responses[0].ok || !responses[1].ok || responses.slice(2).some(r => !r.ok)) {
-          throw new Error('Failed to fetch spine files')
-        }
-        if (cancelled) return
-
-        const blobs = await Promise.all(responses.map(r => r.blob()))
-        if (cancelled) return
-
-        const jsonFile = new File([blobs[0]], 'spine.json', { type: 'application/json' })
-        const atlasFile = new File([blobs[1]], 'spine.atlas', { type: 'text/plain' })
-        const imageFiles = blobs.slice(2).map((blob, i) =>
-          new File([blob], `spine${i > 0 ? i + 1 : ''}.png`, { type: blob.type || 'image/png' }),
+        const spineLoader = await fetchAndLoadSpinePreview(
+          jsonUrl,
+          atlasUrl,
+          imageUrls,
+          PREVIEW_KEY,
         )
 
-        const isSkel = jsonUrl.toLowerCase().endsWith('.skel')
-        const skeletonData = isSkel ? await jsonFile.arrayBuffer() : await jsonFile.text()
-        const atlasText = await atlasFile.text()
-
         if (cancelled) return
-
-        const spineLoader = new FileSpineLoader(skeletonData, atlasText, imageFiles)
-        await spineLoader.loadSpine(PREVIEW_KEY)
-
-        if (cancelled) return
-
         setLoader(spineLoader)
         setLoading(false)
       } catch (err) {
@@ -75,7 +54,9 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, pngUrls, className }: 
     }
 
     load()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [jsonUrl, atlasUrl, pngUrl, pngUrls])
 
   if (loading) {
@@ -119,16 +100,13 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, pngUrls, className }: 
   )
 }
 
-// ---------------------------------------------------------------------------
-// PIXI content — positions the spine so its first-frame AABB is centred and
-// contained within the fixed CANVAS_W × CANVAS_H preview canvas.
-// ---------------------------------------------------------------------------
-
 const SpinePreviewContent = ({ loader }: { loader: FileSpineLoader }) => {
   useExtend({ Container })
 
   const skeletonData = loader.getSkeletonData(PREVIEW_KEY)
-  const bounds = skeletonData ? computeFirstFrameBounds(skeletonData) : null
+  const firstAnim = skeletonData?.animations[0]?.name
+  const bounds =
+    skeletonData && firstAnim ? computeMaxAnimationBounds(skeletonData, firstAnim) : null
   const transform = bounds
     ? boundsToContainTransform(bounds, CANVAS_W, CANVAS_H, PADDING)
     : { x: CANVAS_W / 2, y: CANVAS_H / 2, scale: 0.5 }

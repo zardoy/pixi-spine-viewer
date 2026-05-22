@@ -15,6 +15,19 @@ export interface SpineBounds {
   height: number
 }
 
+function applySkeletonSkin(
+  skeleton: Skeleton,
+  skeletonData: SkeletonData,
+  skinName?: string,
+): void {
+  if (!skinName) return
+  const skin = skeletonData.findSkin(skinName)
+  if (skin) {
+    skeleton.setSkin(skin)
+    skeleton.setSlotsToSetupPose()
+  }
+}
+
 /**
  * Compute the bounding box at t=0 (first frame) of the given animation,
  * or the setup pose when no animation is provided.
@@ -30,8 +43,10 @@ export interface SpineBounds {
 export function computeFirstFrameBounds(
   skeletonData: SkeletonData,
   animationName?: string,
+  skinName?: string,
 ): SpineBounds | null {
   const skeleton = new Skeleton(skeletonData)
+  applySkeletonSkin(skeleton, skeletonData, skinName)
   const animState = new AnimationState(new AnimationStateData(skeletonData))
 
   const anim = animationName
@@ -106,8 +121,10 @@ export function computeMaxAnimationBounds(
   skeletonData: SkeletonData,
   animationName?: string,
   timeStep = 0.05,
+  skinName?: string,
 ): SpineBounds | null {
   const skeleton = new Skeleton(skeletonData)
+  applySkeletonSkin(skeleton, skeletonData, skinName)
 
   const anim = animationName
     ? skeletonData.findAnimation(animationName)
@@ -115,7 +132,7 @@ export function computeMaxAnimationBounds(
 
   // No animation or zero-duration → fall back to first-frame
   if (!anim || anim.duration <= 0) {
-    return computeFirstFrameBounds(skeletonData, animationName)
+    return computeFirstFrameBounds(skeletonData, animationName, skinName)
   }
 
   let minX = Infinity, minY = Infinity
@@ -125,6 +142,7 @@ export function computeMaxAnimationBounds(
 
   for (const t of sampleTimes) {
     skeleton.setToSetupPose()
+    applySkeletonSkin(skeleton, skeletonData, skinName)
     anim.apply(skeleton, t, t, false, [], 1, MixBlend.setup, MixDirection.mixIn)
     skeleton.updateWorldTransform(Physics.update)
 
@@ -148,12 +166,13 @@ export function computeMaxAnimationBounds(
 export function computeAllAnimationsBounds(
   skeletonData: SkeletonData,
   timeStep = 0.05,
+  skinName?: string,
 ): SpineBounds | null {
   let minX = Infinity, minY = Infinity
   let maxX = -Infinity, maxY = -Infinity
 
   for (const anim of skeletonData.animations) {
-    const b = computeMaxAnimationBounds(skeletonData, anim.name, timeStep)
+    const b = computeMaxAnimationBounds(skeletonData, anim.name, timeStep, skinName)
     if (!b) continue
     minX = Math.min(minX, b.x)
     minY = Math.min(minY, b.y)

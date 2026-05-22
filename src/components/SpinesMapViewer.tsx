@@ -1,34 +1,34 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Application } from "@pixi/react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
+import { Label } from "./ui/label";
+import { Checkbox } from "./ui/checkbox";
 import { toast } from "sonner";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { SpineFiles } from "../pages/Index";
-import { Sparkles, Loader2, MoreVertical } from "lucide-react";
-import { SpinePreview } from "./SpinePreview";
+import { Sparkles, Loader2 } from "lucide-react";
 import { spineViewerStore } from "../store/spineViewerStore";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@radix-ui/react-dropdown-menu";
+import { fetchAndLoadSpinePreview } from "../lib/spinePreviewLoader";
+import { getSortedPngUrlsFromEntry, spineKeyFromMapPath } from "../lib/spinesMapHelpers";
+import { pruneSpineMapTileModels, clearAllSpineMapTileModels } from "../lib/spineMapTileModel";
+import type { SpineEntry, SpineAction } from "../types/spinesMap";
+import { SpineMapTilePixi, SpineMapTileChrome, SpineMapTilePlaceholder } from "./SpineMapTile";
+import type { FileSpineLoader } from "../lib/FileSpineLoader";
 
-export interface SpineAction {
-  type: "fetch";
-  url: string;
-}
+export type { SpineEntry, SpineAction } from "../types/spinesMap";
 
-export interface SpineEntry {
-  name: string;
-  path: string;
-  json: string;
-  atlas: string;
-  png: string;
-  actions?: Record<string, SpineAction>;
-  // Support multiple PNG keys: png2, png3, etc.
-  [key: string]: string | Record<string, SpineAction> | undefined;
-}
+const TILE_W = 300;
+const CANVAS_H = 200;
+const CHROME_H = 188;
+const GAP = 16;
+const CELL_W = TILE_W + GAP;
+const CELL_H = CHROME_H + CANVAS_H + GAP;
+
+type LoaderMap = Record<
+  string,
+  FileSpineLoader | { error: string } | "loading" | undefined
+>;
 
 interface SpinesMapViewerProps {
   spinesMapUrl: string;
@@ -40,6 +40,10 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingSpine, setLoadingSpine] = useState<string | null>(null);
+  const [loaders, setLoaders] = useState<LoaderMap>({});
+  const [boundsFollowAnim, setBoundsFollowAnim] = useState(false);
+  const [cols, setCols] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadSpinesMap = async () => {
@@ -67,13 +71,74 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     loadSpinesMap();
   }, [spinesMapUrl]);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      const w = el.clientWidth;
+      const c = Math.max(1, Math.floor((w + GAP) / CELL_W));
+      setCols(c);
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const valid = new Set(spines.map((s) => s.path));
+    pruneSpineMapTileModels(valid);
+  }, [spines]);
+
+  useEffect(() => () => clearAllSpineMapTileModels(), []);
+
+  useEffect(() => {
+    if (spines.length === 0) {
+      setLoaders({});
+      return;
+    }
+
+    const initial: LoaderMap = {};
+    for (const s of spines) {
+      initial[s.path] = "loading";
+    }
+    setLoaders(initial);
+
+    let cancelled = false;
+
+    for (const spine of spines) {
+      const pngUrls = getSortedPngUrlsFromEntry(spine);
+      const key = spineKeyFromMapPath(spine.path);
+      void fetchAndLoadSpinePreview(spine.json, spine.atlas, pngUrls, key)
+        .then((loader) => {
+          if (cancelled) return;
+          setLoaders((prev) => ({ ...prev, [spine.path]: loader }));
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          const message = err instanceof Error ? err.message : "Load failed";
+          setLoaders((prev) => ({ ...prev, [spine.path]: { error: message } }));
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [spines]);
+
+  const rows = useMemo(() => Math.max(1, Math.ceil(spines.length / cols)), [spines.length, cols]);
+  const gridW = cols * CELL_W - GAP;
+  const gridH = rows * CELL_H - GAP;
+
   const handleActionClick = async (
     spine: SpineEntry,
     actionName: string,
     action: SpineAction,
-    e: React.MouseEvent
+    e: React.MouseEvent,
   ) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
 
     try {
       if (action.type === "fetch") {
@@ -84,7 +149,6 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
           throw new Error(`Action failed: ${response.statusText} (${response.status})`);
         }
 
-        // Try to parse as JSON, but don't fail if it's not
         let result: unknown;
         const contentType = response.headers.get("content-type");
         if (contentType?.includes("application/json")) {
@@ -111,23 +175,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
       setLoadingSpine(spine.name);
       toast.loading(`Loading ${spine.name}...`);
 
-      // Collect all PNG keys (png, png2, png3, etc.)
-      const pngUrls: string[] = [];
-      for (const [key, value] of Object.entries(spine)) {
-        if (key.startsWith('png') && typeof value === 'string' && value) {
-          // Sort: png, png2, png3, etc. (png comes before png2 lexicographically, but we want numeric order)
-          pngUrls.push(value);
-        }
-      }
-      // Sort by key name to ensure png, png2, png3 order
-      const pngKeys = Object.keys(spine).filter(k => k.startsWith('png') && typeof spine[k] === 'string').sort((a, b) => {
-        const numA = a === 'png' ? 0 : parseInt(a.replace('png', '')) || 0;
-        const numB = b === 'png' ? 0 : parseInt(b.replace('png', '')) || 0;
-        return numA - numB;
-      });
-      const sortedPngUrls = pngKeys.map(k => spine[k] as string).filter(Boolean);
+      const sortedPngUrls = getSortedPngUrlsFromEntry(spine);
 
-      // Download spine files from URLs (pass all PNG URLs)
       const files = await fetchSpineFilesFromUrl(spine.json, spine.atlas, sortedPngUrls);
 
       const spineFiles: SpineFiles = {
@@ -138,17 +187,15 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
 
       toast.dismiss();
       toast.success(`Loaded ${spine.name}`);
-      
-      // Update URL to include spine URLs as params (pushState for browser back/forward)
+
       const params = new URLSearchParams();
       params.set("jsonUrl", encodeURIComponent(spine.json));
       params.set("atlasUrl", encodeURIComponent(spine.atlas));
-      // Add all PNG URLs as separate params
       sortedPngUrls.forEach((url, index) => {
         params.set(index === 0 ? "pngUrl" : `pngUrl${index + 1}`, encodeURIComponent(url));
       });
       window.history.pushState({}, "", `?${params.toString()}`);
-      
+
       spineViewerStore.ui.particleGeneratorPanelVisible = false;
       onSpineSelect(spineFiles);
     } catch (err) {
@@ -159,6 +206,13 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
       setLoadingSpine(null);
     }
   };
+
+  const isReadyLoader = useCallback(
+    (v: LoaderMap[string]): v is FileSpineLoader => {
+      return v != null && v !== "loading" && !("error" in v);
+    },
+    [],
+  );
 
   if (loading) {
     return (
@@ -193,91 +247,138 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     <div className="min-h-screen p-6 bg-gradient-to-br from-background via-background to-secondary">
       <div className="max-w-6xl mx-auto">
         <Card className="p-6 mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            <h1 className="text-2xl font-bold">Spines Map</h1>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <h1 className="text-2xl font-bold">Spines Map</h1>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Found {spines.length} spine{spines.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+              <Checkbox
+                id="bounds-follow-anim"
+                checked={boundsFollowAnim}
+                onCheckedChange={(v) => setBoundsFollowAnim(v === true)}
+              />
+              <Label htmlFor="bounds-follow-anim" className="text-sm cursor-pointer leading-snug">
+                Fit preview bounds to current animation
+              </Label>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Found {spines.length} spine{spines.length !== 1 ? "s" : ""}
+          <p className="mt-2 text-xs text-muted-foreground">
+            When off, bounds use each entry&apos;s <code className="rounded bg-muted px-1">boundsAnimation</code>{" "}
+            (or the skeleton&apos;s first animation). Single WebGL context for all previews.
           </p>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {spines.map((spine) => (
-            <Card
-              key={spine.path}
-              className="p-4 hover:border-primary/50 transition-colors cursor-pointer flex flex-col"
-              onClick={() => handleSpineClick(spine)}
+        <Card className="p-4 overflow-hidden">
+          <div ref={containerRef} className="w-full max-h-[85vh] overflow-y-auto rounded-md border border-border bg-muted/20">
+            <div
+              className="relative mx-auto"
+              style={{ width: gridW, height: gridH }}
             >
-              <div className="space-y-2 flex-1 flex flex-col">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-lg">{spine.name}</h3>
-                  {loadingSpine === spine.name && (
-                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  )}
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground font-mono">{spine.path}</p>
-                  {spine.actions && Object.keys(spine.actions).length > 0 && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-[200px] bg-popover text-popover-foreground border border-border rounded-md shadow-md p-1 z-50">
-                        {Object.entries(spine.actions).map(([actionName, action]) => (
-                          <DropdownMenuItem
-                            key={actionName}
-                            className="cursor-pointer px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground"
-                            onClick={(e) => handleActionClick(spine, actionName, action, e)}
-                          >
-                            {actionName}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-                
-                {/* Spine Preview */}
-                <div className="flex-1 min-h-[200px] my-2">
-                  <SpinePreview
-                    jsonUrl={spine.json}
-                    atlasUrl={spine.atlas}
-                    pngUrls={Object.keys(spine)
-                      .filter(k => k.startsWith('png') && typeof spine[k] === 'string')
-                      .sort((a, b) => {
-                        const numA = a === 'png' ? 0 : parseInt(a.replace('png', '')) || 0;
-                        const numB = b === 'png' ? 0 : parseInt(b.replace('png', '')) || 0;
-                        return numA - numB;
-                      })
-                      .map(k => spine[k] as string)
-                      .filter(Boolean)}
-                    className="w-full h-full"
-                  />
-                </div>
-
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  disabled={loadingSpine !== null}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSpineClick(spine);
-                  }}
+              <div
+                className="absolute left-0 top-0 z-0 overflow-hidden rounded-sm"
+                style={{ width: gridW, height: gridH }}
+              >
+                <Application
+                  width={gridW}
+                  height={gridH}
+                  backgroundColor={0x2a2a2a}
+                  backgroundAlpha={1}
+                  antialias
+                  resolution={1}
+                  autoDensity={false}
                 >
-                  {loadingSpine === spine.name ? "Loading..." : "View Spine"}
-                </Button>
+                  {spines.map((spine, i) => {
+                    const L = loaders[spine.path];
+                    if (!isReadyLoader(L)) return null;
+                    const col = i % cols;
+                    const row = Math.floor(i / cols);
+                    const pixiX = col * CELL_W;
+                    const pixiY = row * CELL_H + CHROME_H;
+                    return (
+                      <SpineMapTilePixi
+                        key={spine.path}
+                        spine={spine}
+                        loader={L}
+                        spineKey={spineKeyFromMapPath(spine.path)}
+                        tileW={TILE_W}
+                        canvasH={CANVAS_H}
+                        pixiX={pixiX}
+                        pixiY={pixiY}
+                        boundsFollowAnim={boundsFollowAnim}
+                      />
+                    );
+                  })}
+                </Application>
               </div>
-            </Card>
-          ))}
-        </div>
+
+              <div
+                className="pointer-events-none absolute left-0 top-0 z-10"
+                style={{ width: gridW, height: gridH }}
+              >
+                {spines.map((spine, i) => {
+                  const L = loaders[spine.path];
+                  const col = i % cols;
+                  const row = Math.floor(i / cols);
+                  const chromeLeft = col * CELL_W;
+                  const chromeTop = row * CELL_H;
+                  if (L === "loading" || L === undefined) {
+                    return (
+                      <SpineMapTilePlaceholder
+                        key={`ph-${spine.path}`}
+                        spine={spine}
+                        chromeLeft={chromeLeft}
+                        chromeTop={chromeTop}
+                        tileW={TILE_W}
+                        tileTotalH={CHROME_H + CANVAS_H}
+                        status="loading"
+                      />
+                    );
+                  }
+                  if (L && typeof L === "object" && "error" in L) {
+                    return (
+                      <SpineMapTilePlaceholder
+                        key={`ph-${spine.path}`}
+                        spine={spine}
+                        chromeLeft={chromeLeft}
+                        chromeTop={chromeTop}
+                        tileW={TILE_W}
+                        tileTotalH={CHROME_H + CANVAS_H}
+                        status={{ error: L.error }}
+                      />
+                    );
+                  }
+                  if (!isReadyLoader(L)) return null;
+                  return (
+                    <SpineMapTileChrome
+                      key={`chrome-${spine.path}`}
+                      spine={spine}
+                      loader={L}
+                      spineKey={spineKeyFromMapPath(spine.path)}
+                      tileW={TILE_W}
+                      chromeH={CHROME_H}
+                      chromeLeft={chromeLeft}
+                      chromeTop={chromeTop}
+                      onOpenViewer={(e) => {
+                        e.stopPropagation();
+                        void handleSpineClick(spine);
+                      }}
+                      viewerLoading={loadingSpine === spine.name}
+                      onActionClick={(name, action, ev) =>
+                        void handleActionClick(spine, name, action, ev)
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );

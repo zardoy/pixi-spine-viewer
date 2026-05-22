@@ -48,6 +48,7 @@ function buildFilename(
   fileHash: string,
   mode: BoundsMode,
   animName: string,
+  skinName: string,
   scale: number,
   w: number,
   h: number,
@@ -56,8 +57,9 @@ function buildFilename(
   const modeTag = mode === 'first-frame' ? 'ff' : mode === 'full-animation' ? 'fa' : 'aa'
   const scaleTag = scale === Math.floor(scale) ? `${scale}x` : `${scale.toFixed(2)}x`
   const animPart = animName ? `_${animName}` : ''
+  const skinPart = skinName && skinName !== 'default' ? `_${skinName}` : ''
   const hashPart = fileHash ? `_${fileHash}` : ''
-  return `${baseName}${animPart}_${modeTag}_${scaleTag}_${w}x${h}${hashPart}_${date}.png`
+  return `${baseName}${animPart}${skinPart}_${modeTag}_${scaleTag}_${w}x${h}${hashPart}_${date}.png`
 }
 
 // ---------------------------------------------------------------------------
@@ -69,12 +71,14 @@ const SpineScreenshotContent = ({
   bounds,
   outputScale,
   animName,
+  skinName,
   onCapture,
 }: {
   loader: FileSpineLoader
   bounds: SpineBounds
   outputScale: number
   animName: string
+  skinName?: string
   onCapture: (app: PIXIApplication) => void
 }) => {
   useExtend({ Container })
@@ -95,6 +99,7 @@ const SpineScreenshotContent = ({
     <SpineBase
       spine={SPINE_KEY}
       animation={animName || undefined}
+      skin={skinName}
       paused
       loop={false}
       spineLoader={loader}
@@ -159,6 +164,7 @@ export const SpineScreenshot = () => {
       : 'first-frame'
   })
   const [selectedAnim, setSelectedAnim] = useState('')
+  const [selectedSkin, setSelectedSkin] = useState('')
   const [outputScale, setOutputScale] = useState(1)
   const [isDragOver, setIsDragOver] = useState(false)
   const [status, setStatus] = useState('')
@@ -171,16 +177,17 @@ export const SpineScreenshot = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const animations = skeletonData?.animations.map(a => a.name) ?? []
+  const skins = skeletonData?.skins.map(s => s.name) ?? []
 
   const canvasW = activeBounds ? Math.max(1, Math.ceil(activeBounds.width * outputScale)) : 1
   const canvasH = activeBounds ? Math.max(1, Math.ceil(activeBounds.height * outputScale)) : 1
 
   // Stable ref so the stable `handleCapture` always reads fresh values
   const captureParamsRef = useRef({
-    baseName, fileHash, boundsMode, selectedAnim, outputScale, canvasW, canvasH, activeBounds,
+    baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH, activeBounds,
   })
   captureParamsRef.current = {
-    baseName, fileHash, boundsMode, selectedAnim, outputScale, canvasW, canvasH, activeBounds,
+    baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH, activeBounds,
   }
 
   // Recompute bounds (deferred so UI can show "Computing…" first)
@@ -190,18 +197,19 @@ export const SpineScreenshot = () => {
     setActiveBounds(null)
     const id = setTimeout(() => {
       const animArg = boundsMode !== 'all-animations' ? (selectedAnim || undefined) : undefined
+      const skinArg = selectedSkin || undefined
       const b =
         boundsMode === 'first-frame'
-          ? computeFirstFrameBounds(skeletonData, animArg)
+          ? computeFirstFrameBounds(skeletonData, animArg, skinArg)
           : boundsMode === 'full-animation'
-          ? computeMaxAnimationBounds(skeletonData, animArg)
-          : computeAllAnimationsBounds(skeletonData)
-      console.log('[SpineScreenshot] Computed bounds', { boundsMode, animArg, bounds: b })
+          ? computeMaxAnimationBounds(skeletonData, animArg, 0.05, skinArg)
+          : computeAllAnimationsBounds(skeletonData, 0.05, skinArg)
+      console.log('[SpineScreenshot] Computed bounds', { boundsMode, animArg, skinArg, bounds: b })
       setActiveBounds(b)
       setStatus(b ? '' : 'No visible bounds found for this configuration')
     }, 10)
     return () => clearTimeout(id)
-  }, [boundsMode, selectedAnim, skeletonData])
+  }, [boundsMode, selectedAnim, selectedSkin, skeletonData])
 
   // When bounds or scale change, trigger a fresh render + capture
   useEffect(() => {
@@ -210,14 +218,14 @@ export const SpineScreenshot = () => {
   }, [activeBounds, outputScale])
 
   const handleCapture = useCallback((app: PIXIApplication) => {
-    const { baseName, fileHash, boundsMode, selectedAnim, outputScale, canvasW, canvasH, activeBounds } =
+    const { baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH, activeBounds } =
       captureParamsRef.current
-    const filename = buildFilename(baseName, fileHash, boundsMode, selectedAnim, outputScale, canvasW, canvasH)
+    const filename = buildFilename(baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH)
 
     // Log everything so we can diagnose size / cropping issues
     const stageBounds = app.stage.getBounds()
     console.log('[SpineScreenshot] Capturing', {
-      filename, boundsMode, selectedAnim, outputScale, canvasW, canvasH,
+      filename, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH,
     })
     console.log('[SpineScreenshot] Computed bounds (Spine space)', activeBounds)
     console.log('[SpineScreenshot] PIXI stage.getBounds()', {
@@ -268,6 +276,8 @@ export const SpineScreenshot = () => {
       setLoader(newLoader)
       setSkeletonData(sd)
       setSelectedAnim(sd.animations[0]?.name ?? '')
+      const skinNames = sd.skins.map(s => s.name)
+      setSelectedSkin(skinNames.find(n => n === 'default') ?? skinNames[0] ?? '')
       hashFiles([skeletonFile, atlasFile, ...imageFiles]).then(setFileHash)
       setStatus('')
       toast.dismiss()
@@ -431,6 +441,19 @@ export const SpineScreenshot = () => {
               </section>
             )}
 
+            {skins.length > 1 && (
+              <section>
+                <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Skin</div>
+                <select
+                  className="w-full bg-secondary border border-border rounded px-2 py-1.5 text-sm"
+                  value={selectedSkin}
+                  onChange={e => setSelectedSkin(e.target.value)}
+                >
+                  {skins.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </section>
+            )}
+
             {/* Output scale */}
             <section>
               <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1.5">Output scale</div>
@@ -542,6 +565,7 @@ export const SpineScreenshot = () => {
                       bounds={activeBounds}
                       outputScale={outputScale}
                       animName={selectedAnim}
+                      skinName={selectedSkin || undefined}
                       onCapture={handleCapture}
                     />
                   </Application>

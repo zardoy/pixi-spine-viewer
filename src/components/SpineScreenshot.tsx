@@ -8,9 +8,16 @@ import JSZip from 'jszip'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
 import {
-  computeFirstFrameBounds,
+  SCREENSHOT_FPS,
+  buildSpineScreenshotFilename,
+  boundsModeToTag,
+  computeBoundsAtTime,
   computeMaxAnimationBounds,
   computeAllAnimationsBounds,
+  frameIndexToAnimationProgress,
+  frameIndexToTime,
+  getAnimationDuration,
+  getMaxScreenshotFrameIndex,
 } from '../lib/spineUtils'
 import type { SpineBounds } from '../lib/spineUtils'
 import { Button } from './ui/button'
@@ -20,6 +27,43 @@ import { toast } from 'sonner'
 const SPINE_KEY = 'screenshot-spine'
 
 type BoundsMode = 'first-frame' | 'full-animation' | 'all-animations'
+
+type BoundsDeps = {
+  boundsMode: BoundsMode
+  selectedAnim: string
+  selectedSkin: string
+  frameIndex: number
+}
+
+/** True if the extracted frame has any pixel with alpha > 0. */
+function rendererFrameHasVisiblePixels(
+  app: PIXIApplication,
+  width: number,
+  height: number,
+): boolean {
+  if (width <= 0 || height <= 0) return false
+  try {
+    const result = app.renderer.extract.pixels({
+      target: app.stage,
+      frame: new Rectangle(0, 0, width, height),
+      clearColor: [0, 0, 0, 0],
+    })
+    const data =
+      result instanceof Uint8Array
+        ? result
+        : 'pixels' in result
+          ? result.pixels
+          : null
+    if (!data?.length) return false
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] > 0) return true
+    }
+    return false
+  } catch (err) {
+    console.warn('[SpineScreenshot] Could not read pixels for empty check', err)
+    return false
+  }
+}
 
 const BOUNDS_LABELS: Record<BoundsMode, string> = {
   'first-frame': 'First frame',
@@ -43,25 +87,6 @@ async function hashFiles(files: File[]): Promise<string> {
     .slice(0, 7)
 }
 
-function buildFilename(
-  baseName: string,
-  fileHash: string,
-  mode: BoundsMode,
-  animName: string,
-  skinName: string,
-  scale: number,
-  w: number,
-  h: number,
-): string {
-  const date = new Date().toISOString().slice(0, 10)
-  const modeTag = mode === 'first-frame' ? 'ff' : mode === 'full-animation' ? 'fa' : 'aa'
-  const scaleTag = scale === Math.floor(scale) ? `${scale}x` : `${scale.toFixed(2)}x`
-  const animPart = animName ? `_${animName}` : ''
-  const skinPart = skinName && skinName !== 'default' ? `_${skinName}` : ''
-  const hashPart = fileHash ? `_${fileHash}` : ''
-  return `${baseName}${animPart}${skinPart}_${modeTag}_${scaleTag}_${w}x${h}${hashPart}_${date}.png`
-}
-
 // ---------------------------------------------------------------------------
 // PIXI inner component — renders the spine and auto-captures after 2 frames
 // ---------------------------------------------------------------------------
@@ -72,6 +97,8 @@ const SpineScreenshotContent = ({
   outputScale,
   animName,
   skinName,
+  animationProgress,
+  autoDownload,
   onCapture,
 }: {
   loader: FileSpineLoader
@@ -79,6 +106,8 @@ const SpineScreenshotContent = ({
   outputScale: number
   animName: string
   skinName?: string
+  animationProgress: number
+  autoDownload: boolean
   onCapture: (app: PIXIApplication) => void
 }) => {
   useExtend({ Container })
@@ -89,7 +118,7 @@ const SpineScreenshotContent = ({
   // Wait several ticks so SpineBase's async useLayoutEffect has time to run
   useTick(() => {
     tickCount.current += 1
-    if (captured.current || tickCount.current < 6) return
+    if (!autoDownload || captured.current || tickCount.current < 6) return
     captured.current = true
     // Two rAF passes ensure WebGL has flushed the draw commands
     requestAnimationFrame(() => requestAnimationFrame(() => onCapture(app)))
@@ -100,6 +129,7 @@ const SpineScreenshotContent = ({
       spine={SPINE_KEY}
       animation={animName || undefined}
       skin={skinName}
+      animationProgress={animationProgress}
       paused
       loop={false}
       spineLoader={loader}
@@ -165,29 +195,49 @@ export const SpineScreenshot = () => {
   })
   const [selectedAnim, setSelectedAnim] = useState('')
   const [selectedSkin, setSelectedSkin] = useState('')
+  const [frameIndex, setFrameIndex] = useState(0)
   const [outputScale, setOutputScale] = useState(1)
   const [isDragOver, setIsDragOver] = useState(false)
   const [status, setStatus] = useState('')
   const [baseName, setBaseName] = useState('spine')
   const [fileHash, setFileHash] = useState('')
-  // Incrementing this forces the PIXI Application to remount → fresh capture
+  // Incrementing this remounts the capture child → optional auto-download
   const [renderKey, setRenderKey] = useState(0)
+  const [autoDownload, setAutoDownload] = useState(true)
 
   const dropRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const hadBoundsRef = useRef(false)
+  const boundsDepsRef = useRef<BoundsDeps>({
+    boundsMode,
+    selectedAnim,
+    selectedSkin,
+    frameIndex,
+  })
 
   const animations = skeletonData?.animations.map(a => a.name) ?? []
   const skins = skeletonData?.skins.map(s => s.name) ?? []
+
+  const captureAnimName =
+    boundsMode !== 'all-animations' ? (selectedAnim || (animations[0] ?? '')) : ''
+  const animDuration = skeletonData ? getAnimationDuration(skeletonData, captureAnimName || undefined) : 0
+  const maxFrameIndex = skeletonData
+    ? boundsMode === 'all-animations'
+      ? 0
+      : getMaxScreenshotFrameIndex(skeletonData, captureAnimName || undefined)
+    : 0
+  const captureTime = frameIndexToTime(frameIndex)
+  const animationProgress = frameIndexToAnimationProgress(frameIndex, animDuration)
 
   const canvasW = activeBounds ? Math.max(1, Math.ceil(activeBounds.width * outputScale)) : 1
   const canvasH = activeBounds ? Math.max(1, Math.ceil(activeBounds.height * outputScale)) : 1
 
   // Stable ref so the stable `handleCapture` always reads fresh values
   const captureParamsRef = useRef({
-    baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH, activeBounds,
+    baseName, fileHash, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH, activeBounds,
   })
   captureParamsRef.current = {
-    baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH, activeBounds,
+    baseName, fileHash, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH, activeBounds,
   }
 
   // Recompute bounds (deferred so UI can show "Computing…" first)
@@ -198,34 +248,69 @@ export const SpineScreenshot = () => {
     const id = setTimeout(() => {
       const animArg = boundsMode !== 'all-animations' ? (selectedAnim || undefined) : undefined
       const skinArg = selectedSkin || undefined
+      const timeArg = frameIndexToTime(frameIndex)
       const b =
         boundsMode === 'first-frame'
-          ? computeFirstFrameBounds(skeletonData, animArg, skinArg)
+          ? computeBoundsAtTime(skeletonData, animArg, timeArg, skinArg)
           : boundsMode === 'full-animation'
           ? computeMaxAnimationBounds(skeletonData, animArg, 0.05, skinArg)
           : computeAllAnimationsBounds(skeletonData, 0.05, skinArg)
-      console.log('[SpineScreenshot] Computed bounds', { boundsMode, animArg, skinArg, bounds: b })
+      console.log('[SpineScreenshot] Computed bounds', { boundsMode, animArg, skinArg, frameIndex, timeArg, bounds: b })
       setActiveBounds(b)
       setStatus(b ? '' : 'No visible bounds found for this configuration')
     }, 10)
     return () => clearTimeout(id)
-  }, [boundsMode, selectedAnim, selectedSkin, skeletonData])
+  }, [boundsMode, selectedAnim, selectedSkin, frameIndex, skeletonData])
 
-  // When bounds or scale change, trigger a fresh render + capture
+  // Clamp frame when animation or duration changes
+  useEffect(() => {
+    if (frameIndex > maxFrameIndex) setFrameIndex(maxFrameIndex)
+  }, [frameIndex, maxFrameIndex])
+
+  useEffect(() => {
+    setFrameIndex(0)
+  }, [selectedAnim, boundsMode])
+
+  // Auto-download when bounds/scale change, but not when only the frame slider moved
   useEffect(() => {
     if (!activeBounds) return
+
+    const prev = boundsDepsRef.current
+    const frameOnly =
+      hadBoundsRef.current &&
+      prev.boundsMode === boundsMode &&
+      prev.selectedAnim === selectedAnim &&
+      prev.selectedSkin === selectedSkin &&
+      prev.frameIndex !== frameIndex
+
+    boundsDepsRef.current = { boundsMode, selectedAnim, selectedSkin, frameIndex }
+    hadBoundsRef.current = true
+
+    if (frameOnly) return
+
+    setAutoDownload(true)
     setRenderKey(k => k + 1)
-  }, [activeBounds, outputScale])
+  }, [activeBounds, outputScale, boundsMode, selectedAnim, selectedSkin, frameIndex])
 
   const handleCapture = useCallback((app: PIXIApplication) => {
-    const { baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH, activeBounds } =
+    const { baseName, fileHash, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH, activeBounds } =
       captureParamsRef.current
-    const filename = buildFilename(baseName, fileHash, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH)
+    const filename = buildSpineScreenshotFilename({
+      base: baseName,
+      anim: boundsMode === 'all-animations' ? 'all' : (selectedAnim || 'none'),
+      skin: selectedSkin || 'default',
+      mode: boundsModeToTag(boundsMode),
+      frame: frameIndex,
+      scale: outputScale,
+      width: canvasW,
+      height: canvasH,
+      hash: fileHash || '0000000',
+    })
 
     // Log everything so we can diagnose size / cropping issues
     const stageBounds = app.stage.getBounds()
     console.log('[SpineScreenshot] Capturing', {
-      filename, boundsMode, selectedAnim, selectedSkin, outputScale, canvasW, canvasH,
+      filename, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH,
     })
     console.log('[SpineScreenshot] Computed bounds (Spine space)', activeBounds)
     console.log('[SpineScreenshot] PIXI stage.getBounds()', {
@@ -235,6 +320,13 @@ export const SpineScreenshot = () => {
     console.log('[SpineScreenshot] Renderer size', {
       w: app.renderer.width, h: app.renderer.height,
     })
+
+    if (!rendererFrameHasVisiblePixels(app, canvasW, canvasH)) {
+      console.log('[SpineScreenshot] Skipped download — canvas has no non-transparent pixels')
+      setStatus('Skipped download — empty canvas (fully transparent)')
+      toast.info('Skipped download — nothing visible in the frame')
+      return
+    }
 
     setStatus('Downloading…')
     try {
@@ -263,6 +355,7 @@ export const SpineScreenshot = () => {
     setLoader(null)
     setSkeletonData(null)
     setActiveBounds(null)
+    hadBoundsRef.current = false
 
     try {
       toast.loading(`Loading ${skeletonFile.name}…`)
@@ -454,6 +547,50 @@ export const SpineScreenshot = () => {
               </section>
             )}
 
+            {boundsMode !== 'all-animations' && (
+              <section>
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <div className="text-muted-foreground text-xs uppercase tracking-wide">Capture frame</div>
+                  <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+                    {frameIndex}/{maxFrameIndex}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={maxFrameIndex}
+                  step={1}
+                  value={frameIndex}
+                  onChange={e => setFrameIndex(Number(e.target.value))}
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1 tabular-nums">
+                  <span>{captureTime.toFixed(2)}s</span>
+                  <span>@ {SCREENSHOT_FPS} fps</span>
+                </div>
+                <div className="flex gap-1 mt-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxFrameIndex}
+                    step={1}
+                    className="w-full bg-secondary border border-border rounded px-2 py-1 text-xs font-mono"
+                    value={frameIndex}
+                    onChange={e => {
+                      const n = Number(e.target.value)
+                      if (!Number.isFinite(n)) return
+                      setFrameIndex(Math.min(maxFrameIndex, Math.max(0, Math.round(n))))
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  {boundsMode === 'first-frame'
+                    ? 'Canvas fits this pose. Scrub to preview; use Re-capture to download.'
+                    : 'Canvas is the full animation bounds. Scrub to preview, then Re-capture.'}
+                </p>
+              </section>
+            )}
+
             {/* Output scale */}
             <section>
               <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1.5">Output scale</div>
@@ -503,6 +640,12 @@ export const SpineScreenshot = () => {
                   <span className="text-muted-foreground">Preview</span>
                   <span className="font-mono">{(previewScale * 100).toFixed(0)}%</span>
                 </div>
+                {boundsMode !== 'all-animations' && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Frame</span>
+                    <span className="font-mono">{frameIndex} ({captureTime.toFixed(2)}s)</span>
+                  </div>
+                )}
               </section>
             )}
 
@@ -523,7 +666,11 @@ export const SpineScreenshot = () => {
               variant="outline"
               className="w-full"
               disabled={!activeBounds}
-              onClick={() => { if (activeBounds) setRenderKey(k => k + 1) }}
+              onClick={() => {
+                if (!activeBounds) return
+                setAutoDownload(true)
+                setRenderKey(k => k + 1)
+              }}
             >
               <Camera className="w-4 h-4 mr-2" />
               Re-capture &amp; download
@@ -552,7 +699,6 @@ export const SpineScreenshot = () => {
                   }}
                 >
                   <Application
-                    key={renderKey}
                     width={canvasW}
                     height={canvasH}
                     backgroundAlpha={0}
@@ -561,11 +707,14 @@ export const SpineScreenshot = () => {
                     autoDensity={false}
                   >
                     <SpineScreenshotContent
+                      key={renderKey}
                       loader={loader}
                       bounds={activeBounds}
                       outputScale={outputScale}
-                      animName={selectedAnim}
+                      animName={captureAnimName}
                       skinName={selectedSkin || undefined}
+                      animationProgress={animationProgress}
+                      autoDownload={autoDownload}
                       onCapture={handleCapture}
                     />
                   </Application>

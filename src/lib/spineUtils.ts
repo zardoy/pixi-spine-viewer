@@ -15,6 +15,101 @@ export interface SpineBounds {
   height: number
 }
 
+/** Assumed playback rate for screenshot frame picker (frame index ↔ time). */
+export const SCREENSHOT_FPS = 30
+
+/**
+ * Fixed screenshot export filename pattern. All placeholders are always emitted;
+ * use sentinel values (e.g. skin `default`, anim `none`) when not applicable.
+ */
+export const SPINE_SCREENSHOT_FILENAME_TEMPLATE =
+  '$base_$anim_$skin_$mode_$frame_$scale_$size_$hash_$date.png'
+
+export type SpineScreenshotBoundsModeTag = 'ff' | 'fa' | 'aa'
+
+export interface SpineScreenshotFilenameFields {
+  base: string
+  anim: string
+  skin: string
+  mode: SpineScreenshotBoundsModeTag
+  frame: number
+  scale: number
+  width: number
+  height: number
+  hash: string
+  date?: string
+}
+
+export function boundsModeToTag(
+  mode: 'first-frame' | 'full-animation' | 'all-animations',
+): SpineScreenshotBoundsModeTag {
+  return mode === 'first-frame' ? 'ff' : mode === 'full-animation' ? 'fa' : 'aa'
+}
+
+export function formatScreenshotFrame(frameIndex: number): string {
+  return `f${String(Math.max(0, Math.round(frameIndex))).padStart(4, '0')}`
+}
+
+export function formatScreenshotScale(scale: number): string {
+  return scale === Math.floor(scale) ? `${scale}x` : `${scale.toFixed(2)}x`
+}
+
+export function frameIndexToTime(frameIndex: number, fps = SCREENSHOT_FPS): number {
+  return Math.max(0, frameIndex) / fps
+}
+
+export function timeToFrameIndex(time: number, fps = SCREENSHOT_FPS): number {
+  return Math.max(0, Math.round(time * fps))
+}
+
+export function getAnimationDuration(
+  skeletonData: SkeletonData,
+  animationName?: string,
+): number {
+  const anim = animationName
+    ? skeletonData.findAnimation(animationName)
+    : (skeletonData.animations[0] ?? null)
+  return anim?.duration ?? 0
+}
+
+export function getMaxScreenshotFrameIndex(
+  skeletonData: SkeletonData,
+  animationName?: string,
+  fps = SCREENSHOT_FPS,
+): number {
+  const duration = getAnimationDuration(skeletonData, animationName)
+  return Math.max(0, Math.round(duration * fps))
+}
+
+export function frameIndexToAnimationProgress(
+  frameIndex: number,
+  duration: number,
+  fps = SCREENSHOT_FPS,
+): number {
+  if (duration <= 0) return 0
+  const time = Math.min(frameIndexToTime(frameIndex, fps), duration)
+  return Math.min(1, time / duration)
+}
+
+export function buildSpineScreenshotFilename(fields: SpineScreenshotFilenameFields): string {
+  const date = fields.date ?? new Date().toISOString().slice(0, 10)
+  const replacements: Record<string, string> = {
+    base: fields.base,
+    anim: fields.anim,
+    skin: fields.skin,
+    mode: fields.mode,
+    frame: formatScreenshotFrame(fields.frame),
+    scale: formatScreenshotScale(fields.scale),
+    size: `${fields.width}x${fields.height}`,
+    hash: fields.hash,
+    date,
+  }
+  return SPINE_SCREENSHOT_FILENAME_TEMPLATE.replace(
+    /\$(\w+)/g,
+    (_, key: string) => replacements[key] ?? '',
+  )
+}
+
 function applySkeletonSkin(
   skeleton: Skeleton,
   skeletonData: SkeletonData,
@@ -57,6 +152,39 @@ export function computeFirstFrameBounds(
     animState.setAnimationWith(0, anim, false)
     animState.update(0)
     animState.apply(skeleton)
+  } else {
+    skeleton.setToSetupPose()
+  }
+
+  skeleton.update(0)
+  skeleton.updateWorldTransform(Physics.update)
+
+  const r = skeleton.getBoundsRect()
+  if (r.width === Number.NEGATIVE_INFINITY || r.width <= 0) return null
+  return { x: r.x, y: r.y, width: r.width, height: r.height }
+}
+
+/**
+ * Bounding box for a single pose at `time` seconds on the given animation.
+ */
+export function computeBoundsAtTime(
+  skeletonData: SkeletonData,
+  animationName: string | undefined,
+  time: number,
+  skinName?: string,
+): SpineBounds | null {
+  const skeleton = new Skeleton(skeletonData)
+  applySkeletonSkin(skeleton, skeletonData, skinName)
+
+  const anim = animationName
+    ? skeletonData.findAnimation(animationName)
+    : (skeletonData.animations[0] ?? null)
+
+  if (anim && anim.duration > 0) {
+    const t = Math.max(0, Math.min(time, anim.duration))
+    skeleton.setToSetupPose()
+    applySkeletonSkin(skeleton, skeletonData, skinName)
+    anim.apply(skeleton, t, t, false, [], 1, MixBlend.setup, MixDirection.mixIn)
   } else {
     skeleton.setToSetupPose()
   }

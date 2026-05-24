@@ -10,6 +10,7 @@ import { FileSpineLoader } from '../lib/FileSpineLoader'
 import {
   SCREENSHOT_FPS,
   buildSpineScreenshotFilename,
+  buildScreenshotAutoCaptureSignature,
   boundsModeToTag,
   computeBoundsAtTime,
   computeMaxAnimationBounds,
@@ -35,26 +36,12 @@ type BoundsDeps = {
   frameIndex: number
 }
 
-/** True if the extracted frame has any pixel with alpha > 0. */
-function rendererFrameHasVisiblePixels(
-  app: PIXIApplication,
-  width: number,
-  height: number,
-): boolean {
-  if (width <= 0 || height <= 0) return false
+/** True if canvas pixel data has any alpha > 0. */
+function canvasHasVisiblePixels(canvas: HTMLCanvasElement): boolean {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx || canvas.width <= 0 || canvas.height <= 0) return false
   try {
-    const result = app.renderer.extract.pixels({
-      target: app.stage,
-      frame: new Rectangle(0, 0, width, height),
-      clearColor: [0, 0, 0, 0],
-    })
-    const data =
-      result instanceof Uint8Array
-        ? result
-        : 'pixels' in result
-          ? result.pixels
-          : null
-    if (!data?.length) return false
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
     for (let i = 3; i < data.length; i += 4) {
       if (data[i] > 0) return true
     }
@@ -63,6 +50,15 @@ function rendererFrameHasVisiblePixels(
     console.warn('[SpineScreenshot] Could not read pixels for empty check', err)
     return false
   }
+}
+
+function downloadExtractedCanvas(canvas: HTMLCanvasElement, filename: string): void {
+  const link = document.createElement('a')
+  link.download = filename
+  link.href = canvas.toDataURL('image/png')
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 const BOUNDS_LABELS: Record<BoundsMode, string> = {
@@ -99,6 +95,7 @@ const SpineScreenshotContent = ({
   skinName,
   animationProgress,
   autoDownload,
+  captureSession,
   onCapture,
 }: {
   loader: FileSpineLoader
@@ -108,7 +105,8 @@ const SpineScreenshotContent = ({
   skinName?: string
   animationProgress: number
   autoDownload: boolean
-  onCapture: (app: PIXIApplication) => void
+  captureSession: number
+  onCapture: (app: PIXIApplication, session: number) => void
 }) => {
   useExtend({ Container })
   const { app } = useApplication()
@@ -121,7 +119,7 @@ const SpineScreenshotContent = ({
     if (!autoDownload || captured.current || tickCount.current < 6) return
     captured.current = true
     // Two rAF passes ensure WebGL has flushed the draw commands
-    requestAnimationFrame(() => requestAnimationFrame(() => onCapture(app)))
+    requestAnimationFrame(() => requestAnimationFrame(() => onCapture(app, captureSession)))
   })
 
   return (
@@ -202,12 +200,19 @@ export const SpineScreenshot = () => {
   const [baseName, setBaseName] = useState('spine')
   const [fileHash, setFileHash] = useState('')
   // Incrementing this remounts the capture child → optional auto-download
-  const [renderKey, setRenderKey] = useState(0)
+  const [captureSession, setCaptureSession] = useState(0)
   const [autoDownload, setAutoDownload] = useState(true)
 
   const dropRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const hadBoundsRef = useRef(false)
+  const completedCaptureSessionRef = useRef(-1)
+  const lastAutoCaptureSigRef = useRef('')
+  const autoCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Set by frame slider before bounds recompute; suppresses one auto-download. */
+  const skipNextBoundsAutoCaptureRef = useRef(false)
+  const spineLoadIdRef = useRef(0)
+  const autoCapturedForLoadIdRef = useRef(-1)
   const boundsDepsRef = useRef<BoundsDeps>({
     boundsMode,
     selectedAnim,
@@ -240,11 +245,15 @@ export const SpineScreenshot = () => {
     baseName, fileHash, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH, activeBounds,
   }
 
-  // Recompute bounds (deferred so UI can show "Computing…" first)
+  const requestCapture = useCallback((withAutoDownload: boolean) => {
+    setAutoDownload(withAutoDownload)
+    setCaptureSession(s => s + 1)
+  }, [])
+
+  // Recompute bounds (deferred; keep previous bounds visible to avoid remount/capture loops)
   useEffect(() => {
     if (!skeletonData) return
     setStatus('Computing bounds…')
-    setActiveBounds(null)
     const id = setTimeout(() => {
       const animArg = boundsMode !== 'all-animations' ? (selectedAnim || undefined) : undefined
       const skinArg = selectedSkin || undefined
@@ -271,28 +280,70 @@ export const SpineScreenshot = () => {
     setFrameIndex(0)
   }, [selectedAnim, boundsMode])
 
-  // Auto-download when bounds/scale change, but not when only the frame slider moved
+  // Allow a new auto-capture when user changes anim/skin/mode/scale (not on frame scrub)
+  useEffect(() => {
+    autoCapturedForLoadIdRef.current = -1
+  }, [selectedAnim, selectedSkin, boundsMode, outputScale])
+
+  const onFrameIndexChange = useCallback((nextFrame: number) => {
+    skipNextBoundsAutoCaptureRef.current = true
+    setFrameIndex(nextFrame)
+  }, [])
+
+  // Auto-download when bounds/scale/anim/skin change — not when frame slider moved
   useEffect(() => {
     if (!activeBounds) return
 
-    const prev = boundsDepsRef.current
-    const frameOnly =
-      hadBoundsRef.current &&
-      prev.boundsMode === boundsMode &&
-      prev.selectedAnim === selectedAnim &&
-      prev.selectedSkin === selectedSkin &&
-      prev.frameIndex !== frameIndex
+    if (skipNextBoundsAutoCaptureRef.current) {
+      skipNextBoundsAutoCaptureRef.current = false
+      boundsDepsRef.current = { boundsMode, selectedAnim, selectedSkin, frameIndex }
+      console.log('[SpineScreenshot] Auto-capture skipped (frame slider → bounds update)', { frameIndex })
+      return
+    }
 
     boundsDepsRef.current = { boundsMode, selectedAnim, selectedSkin, frameIndex }
     hadBoundsRef.current = true
 
-    if (frameOnly) return
+    const sig = buildScreenshotAutoCaptureSignature(
+      boundsMode,
+      selectedAnim,
+      selectedSkin,
+      outputScale,
+      activeBounds,
+    )
 
-    setAutoDownload(true)
-    setRenderKey(k => k + 1)
-  }, [activeBounds, outputScale, boundsMode, selectedAnim, selectedSkin, frameIndex])
+    if (autoCaptureTimerRef.current) clearTimeout(autoCaptureTimerRef.current)
+    autoCaptureTimerRef.current = setTimeout(() => {
+      autoCaptureTimerRef.current = null
+      if (lastAutoCaptureSigRef.current === sig) {
+        console.log('[SpineScreenshot] Auto-capture skipped (duplicate signature)', { sig })
+        return
+      }
+      const loadId = spineLoadIdRef.current
+      if (autoCapturedForLoadIdRef.current === loadId) {
+        console.log('[SpineScreenshot] Auto-capture skipped (already captured this load)', { loadId, sig })
+        return
+      }
+      lastAutoCaptureSigRef.current = sig
+      autoCapturedForLoadIdRef.current = loadId
+      console.log('[SpineScreenshot] Auto-capture requested', { loadId, sig, frameIndex })
+      requestCapture(true)
+    }, 80)
 
-  const handleCapture = useCallback((app: PIXIApplication) => {
+    return () => {
+      if (autoCaptureTimerRef.current) {
+        clearTimeout(autoCaptureTimerRef.current)
+        autoCaptureTimerRef.current = null
+      }
+    }
+  }, [activeBounds, outputScale, boundsMode, selectedAnim, selectedSkin, requestCapture])
+
+  const handleCapture = useCallback((app: PIXIApplication, session: number) => {
+    if (completedCaptureSessionRef.current === session) {
+      console.log('[SpineScreenshot] Capture skipped (session already completed)', { session })
+      return
+    }
+
     const { baseName, fileHash, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH, activeBounds } =
       captureParamsRef.current
     const filename = buildSpineScreenshotFilename({
@@ -310,7 +361,15 @@ export const SpineScreenshot = () => {
     // Log everything so we can diagnose size / cropping issues
     const stageBounds = app.stage.getBounds()
     console.log('[SpineScreenshot] Capturing', {
-      filename, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH,
+      session,
+      filename,
+      boundsMode,
+      selectedAnim,
+      selectedSkin,
+      frameIndex,
+      outputScale,
+      canvasW,
+      canvasH,
     })
     console.log('[SpineScreenshot] Computed bounds (Spine space)', activeBounds)
     console.log('[SpineScreenshot] PIXI stage.getBounds()', {
@@ -321,24 +380,31 @@ export const SpineScreenshot = () => {
       w: app.renderer.width, h: app.renderer.height,
     })
 
-    if (!rendererFrameHasVisiblePixels(app, canvasW, canvasH)) {
+    const frame = new Rectangle(0, 0, canvasW, canvasH)
+    let canvas: HTMLCanvasElement
+    try {
+      canvas = app.renderer.extract.canvas({
+        target: app.stage,
+        frame,
+        clearColor: [0, 0, 0, 0],
+      }) as HTMLCanvasElement
+    } catch (err) {
+      console.error('[SpineScreenshot] Extract failed', err)
+      setStatus('Capture failed — see console')
+      return
+    }
+
+    if (!canvasHasVisiblePixels(canvas)) {
       console.log('[SpineScreenshot] Skipped download — canvas has no non-transparent pixels')
       setStatus('Skipped download — empty canvas (fully transparent)')
       toast.info('Skipped download — nothing visible in the frame')
       return
     }
 
+    completedCaptureSessionRef.current = session
     setStatus('Downloading…')
     try {
-      // Use an explicit frame matching our canvas dimensions so the output is always
-      // canvasW × canvasH — without frame, PIXI extracts the stage content bounding box
-      // (which is always the first-frame pose size) and ignores the canvas dimensions.
-      app.renderer.extract.download({
-        target: app.stage,
-        filename,
-        frame: new Rectangle(0, 0, canvasW, canvasH),
-        clearColor: [0, 0, 0, 0],
-      })
+      downloadExtractedCanvas(canvas, filename)
       setStatus(`✓ ${filename}`)
     } catch (err) {
       console.error('[SpineScreenshot] Capture failed', err)
@@ -356,6 +422,14 @@ export const SpineScreenshot = () => {
     setSkeletonData(null)
     setActiveBounds(null)
     hadBoundsRef.current = false
+    completedCaptureSessionRef.current = -1
+    lastAutoCaptureSigRef.current = ''
+    autoCapturedForLoadIdRef.current = -1
+    spineLoadIdRef.current += 1
+    if (autoCaptureTimerRef.current) {
+      clearTimeout(autoCaptureTimerRef.current)
+      autoCaptureTimerRef.current = null
+    }
 
     try {
       toast.loading(`Loading ${skeletonFile.name}…`)
@@ -561,7 +635,7 @@ export const SpineScreenshot = () => {
                   max={maxFrameIndex}
                   step={1}
                   value={frameIndex}
-                  onChange={e => setFrameIndex(Number(e.target.value))}
+                  onChange={e => onFrameIndexChange(Number(e.target.value))}
                   className="w-full accent-primary"
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-1 tabular-nums">
@@ -579,7 +653,7 @@ export const SpineScreenshot = () => {
                     onChange={e => {
                       const n = Number(e.target.value)
                       if (!Number.isFinite(n)) return
-                      setFrameIndex(Math.min(maxFrameIndex, Math.max(0, Math.round(n))))
+                      onFrameIndexChange(Math.min(maxFrameIndex, Math.max(0, Math.round(n))))
                     }}
                   />
                 </div>
@@ -668,8 +742,7 @@ export const SpineScreenshot = () => {
               disabled={!activeBounds}
               onClick={() => {
                 if (!activeBounds) return
-                setAutoDownload(true)
-                setRenderKey(k => k + 1)
+                requestCapture(true)
               }}
             >
               <Camera className="w-4 h-4 mr-2" />
@@ -707,7 +780,7 @@ export const SpineScreenshot = () => {
                     autoDensity={false}
                   >
                     <SpineScreenshotContent
-                      key={renderKey}
+                      key={captureSession}
                       loader={loader}
                       bounds={activeBounds}
                       outputScale={outputScale}
@@ -715,6 +788,7 @@ export const SpineScreenshot = () => {
                       skinName={selectedSkin || undefined}
                       animationProgress={animationProgress}
                       autoDownload={autoDownload}
+                      captureSession={captureSession}
                       onCapture={handleCapture}
                     />
                   </Application>

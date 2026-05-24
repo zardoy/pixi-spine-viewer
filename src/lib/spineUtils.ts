@@ -91,23 +91,49 @@ export function frameIndexToAnimationProgress(
   return Math.min(1, time / duration)
 }
 
+function sanitizeScreenshotFilenamePart(value: string): string {
+  return value.replace(/[/\\?%*:|"<>$]/g, '_').replace(/\s+/g, '_') || 'none'
+}
+
+/** Build export filename from {@link SPINE_SCREENSHOT_FILENAME_TEMPLATE} placeholders (no `$` in output). */
+/** Stable key for auto-capture dedupe (excludes frame — frame scrub must not re-download). */
+export function buildScreenshotAutoCaptureSignature(
+  boundsMode: string,
+  selectedAnim: string,
+  selectedSkin: string,
+  outputScale: number,
+  activeBounds: SpineBounds | null,
+): string {
+  return JSON.stringify({
+    boundsMode,
+    selectedAnim,
+    selectedSkin,
+    outputScale,
+    bounds: activeBounds
+      ? {
+          x: Math.round(activeBounds.x * 100) / 100,
+          y: Math.round(activeBounds.y * 100) / 100,
+          w: Math.round(activeBounds.width),
+          h: Math.round(activeBounds.height),
+        }
+      : null,
+  })
+}
+
 export function buildSpineScreenshotFilename(fields: SpineScreenshotFilenameFields): string {
   const date = fields.date ?? new Date().toISOString().slice(0, 10)
-  const replacements: Record<string, string> = {
-    base: fields.base,
-    anim: fields.anim,
-    skin: fields.skin,
-    mode: fields.mode,
-    frame: formatScreenshotFrame(fields.frame),
-    scale: formatScreenshotScale(fields.scale),
-    size: `${fields.width}x${fields.height}`,
-    hash: fields.hash,
+  const parts = [
+    sanitizeScreenshotFilenamePart(fields.base),
+    sanitizeScreenshotFilenamePart(fields.anim),
+    sanitizeScreenshotFilenamePart(fields.skin),
+    fields.mode,
+    formatScreenshotFrame(fields.frame),
+    formatScreenshotScale(fields.scale),
+    `${Math.max(0, Math.round(fields.width))}x${Math.max(0, Math.round(fields.height))}`,
+    sanitizeScreenshotFilenamePart(fields.hash),
     date,
-  }
-  return SPINE_SCREENSHOT_FILENAME_TEMPLATE.replace(
-    /\$(\w+)/g,
-    (_, key: string) => replacements[key] ?? '',
-  )
+  ]
+  return `${parts.join('_')}.png`
 }
 
 function applySkeletonSkin(

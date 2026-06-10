@@ -18,12 +18,18 @@ export interface SpineBounds {
 /** Assumed playback rate for screenshot frame picker (frame index ↔ time). */
 export const SCREENSHOT_FPS = 30
 
+/** Segment delimiter — single `_` is ambiguous when base/anim/skin contain underscores. */
+export const SPINE_SCREENSHOT_FILENAME_SEGMENT_SEP = '__'
+
 /**
  * Fixed screenshot export filename pattern. All placeholders are always emitted;
  * use sentinel values (e.g. skin `default`, anim `none`) when not applicable.
+ * Segments are joined with {@link SPINE_SCREENSHOT_FILENAME_SEGMENT_SEP}.
  */
 export const SPINE_SCREENSHOT_FILENAME_TEMPLATE =
-  '$base_$anim_$skin_$mode_$frame_$scale_$size_$hash_$date.png'
+  '$base__$anim__$skin__$mode__$frame__$scale__$size__$hash__$date.png'
+
+const SPINE_SCREENSHOT_SEGMENT_COUNT = 9
 
 export type SpineScreenshotBoundsModeTag = 'ff' | 'fa' | 'aa'
 
@@ -92,7 +98,30 @@ export function frameIndexToAnimationProgress(
 }
 
 function sanitizeScreenshotFilenamePart(value: string): string {
-  return value.replace(/[/\\?%*:|"<>$]/g, '_').replace(/\s+/g, '_') || 'none'
+  return value
+    .replace(/[/\\?%*:|"<>$]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/__+/g, '_')
+    || 'none'
+}
+
+function isBoundsModeTag(value: string): value is SpineScreenshotBoundsModeTag {
+  return value === 'ff' || value === 'fa' || value === 'aa'
+}
+
+function parseScreenshotFrameSegment(segment: string): number | null {
+  const match = segment.match(/^f(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+function parseScreenshotScaleSegment(segment: string): number | null {
+  const match = segment.match(/^(\d+(?:\.\d+)?)x$/)
+  return match ? Number(match[1]) : null
+}
+
+function parseScreenshotSizeSegment(segment: string): { width: number; height: number } | null {
+  const match = segment.match(/^(\d+)x(\d+)$/)
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : null
 }
 
 /** Build export filename from {@link SPINE_SCREENSHOT_FILENAME_TEMPLATE} placeholders (no `$` in output). */
@@ -133,7 +162,36 @@ export function buildSpineScreenshotFilename(fields: SpineScreenshotFilenameFiel
     sanitizeScreenshotFilenamePart(fields.hash),
     date,
   ]
-  return `${parts.join('_')}.png`
+  return `${parts.join(SPINE_SCREENSHOT_FILENAME_SEGMENT_SEP)}.png`
+}
+
+/** Parse a filename produced by {@link buildSpineScreenshotFilename}. */
+export function parseSpineScreenshotFilename(filename: string): SpineScreenshotFilenameFields | null {
+  const stem = filename.replace(/\.png$/i, '')
+  const segments = stem.split(SPINE_SCREENSHOT_FILENAME_SEGMENT_SEP)
+  if (segments.length !== SPINE_SCREENSHOT_SEGMENT_COUNT) return null
+
+  const [base, anim, skin, mode, frameSeg, scaleSeg, sizeSeg, hash, date] = segments
+  if (!isBoundsModeTag(mode)) return null
+
+  const frame = parseScreenshotFrameSegment(frameSeg)
+  const scale = parseScreenshotScaleSegment(scaleSeg)
+  const size = parseScreenshotSizeSegment(sizeSeg)
+  if (frame === null || scale === null || size === null) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+
+  return {
+    base,
+    anim,
+    skin,
+    mode,
+    frame,
+    scale,
+    width: size.width,
+    height: size.height,
+    hash,
+    date,
+  }
 }
 
 function applySkeletonSkin(

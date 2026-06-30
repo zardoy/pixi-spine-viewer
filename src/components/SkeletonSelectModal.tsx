@@ -37,7 +37,6 @@ export const SkeletonSelectModal = ({ pending, onSelect, onClose }: SkeletonSele
   const handleSelect = async (jsonFile: File) => {
     if (selecting) return;
     setSelecting(true);
-    const toastId = toast.loading(`Loading ${jsonFile.name}...`);
 
     const files: SpineFiles = {
       jsonFile,
@@ -52,10 +51,7 @@ export const SkeletonSelectModal = ({ pending, onSelect, onClose }: SkeletonSele
 
     try {
       onSelect(files);
-      toast.dismiss(toastId);
-      toast.success(`Loaded ${jsonFile.name}`);
     } catch (err) {
-      toast.dismiss(toastId);
       toast.error(err instanceof Error ? err.message : 'Failed to load skeleton');
       setSelecting(false);
     }

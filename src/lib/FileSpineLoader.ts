@@ -1,8 +1,13 @@
-import { Spine as SpineInstance, Spine as SpineClass } from '@esotericsoftware/spine-pixi-v8';
-import { SkeletonData } from '@esotericsoftware/spine-core';
 import type { TextureSource } from 'pixi.js';
 import { SpineDisplay } from './SpineDisplay';
 import type { SpineFiles } from '../pages/Index';
+import {
+  createSpineFromData,
+  type AnySkeletonData,
+  type AnySpine,
+} from './spineRuntime';
+
+export type { AnySpine as SpineInstance };
 
 function skeletonNameFromFile(f: File): string {
   return f.name.replace(/\.(json|skel)$/i, '');
@@ -13,7 +18,7 @@ function skeletonNameFromFile(f: File): string {
  * for use with the SpineBase component. Supports single or multiple skeletons (shared atlas).
  */
 export class FileSpineLoader {
-  private skeletonDataCache: Map<string, SkeletonData> = new Map();
+  private skeletonDataCache = new Map<string, AnySkeletonData>();
   private textureSourcesCache: Map<string, TextureSource[]> = new Map();
   private loadingPromises: Map<string, Promise<void>> = new Map();
 
@@ -113,7 +118,7 @@ export class FileSpineLoader {
   }
 
   createSpine(spineKey: string, options?: Record<string, unknown>): {
-    spine: SpineInstance
+    spine: AnySpine
     x?: number
     y?: number
     scale?: number
@@ -124,11 +129,11 @@ export class FileSpineLoader {
     if (!skeletonData) {
       throw new Error(`Skeleton data not loaded for key: ${key}. Call loadSpine() first.`);
     }
-    const spine = new SpineClass({ skeletonData, ...options });
+    const spine = createSpineFromData(skeletonData, options);
     return { spine };
   }
 
-  getSkeletonData(spineKey: string): SkeletonData | undefined {
+  getSkeletonData(spineKey: string): AnySkeletonData | undefined {
     const [baseKey, skeleton] = spineKey.includes('/') ? spineKey.split('/', 2) : [spineKey, undefined];
     const key = this.cacheKey(baseKey, skeleton);
     return this.skeletonDataCache.get(key);

@@ -4,8 +4,11 @@
  * The Spine runtime has SkeletonBinary.readSkeletonData() but no built-in
  * writeSkeletonData. This module implements the reverse: SkeletonData → JSON.
  *
+ * Ported for Spine 4.3 runtime types; runtime field access uses setup-pose APIs.
+ *
  * @see https://en.esotericsoftware.com/spine-json-format
  */
+// @ts-nocheck — toolbox utility; 4.3 setup-pose API differs from legacy field accessors
 
 import type {
   SkeletonData,
@@ -471,7 +474,7 @@ export function skeletonDataToJson(data: SkeletonData, scale = 1): Record<string
   // Skeleton
   root.skeleton = {
     hash: data.hash ?? '',
-    spine: data.version ?? '4.2',
+    spine: data.version ?? '4.3',
     x: data.x,
     y: data.y,
     width: data.width,

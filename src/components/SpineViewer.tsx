@@ -12,6 +12,7 @@ import { getAnimationKeyframeTimes } from "../lib/animationUtils";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 import { AttachmentHidePanel } from "./AttachmentHidePanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
+import { AtlasExplorerModal } from "./AtlasExplorerModal";
 import JSZip from "jszip";
 import { Download, Sparkles, Wrench } from "lucide-react";
 import {
@@ -24,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@radix-ui/react-dropdown-menu";
 import { skeletonDataToJson, parseAtlasRegions, downloadAttachmentAsImage } from "../spine-toolbox";
+import { resetPageTitle, setSkeletonPageTitle } from "../lib/pageTitle";
 
 interface SpineViewerProps {
   files: SpineFiles;
@@ -45,6 +47,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
 
   // Set files in store on mount, wrapped in ref() to prevent proxying (File objects need proper this context)
   useEffect(() => {
+    setSkeletonPageTitle(files.jsonFile.name);
     spineViewerStore.files = ref(files);
     spineViewerStore.ui.selectedSkeleton = files.jsonFile.name.replace(/\.(json|skel)$/i, '');
     spineViewerStore.ui.availableSkeletonNames = files.skeletonFiles?.map((f) =>
@@ -57,6 +60,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
     spineViewerStore.ui.secondSelectedAnimation = null;
     spineViewerStore.ui.secondAnimations = [];
     return () => {
+      resetPageTitle();
       resetSpineViewerState();
     };
   }, [files]);
@@ -497,6 +501,9 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       {/* Fullscreen attachment download modal */}
       <AttachmentDownloadModal />
 
+      {/* Atlas region explorer modal */}
+      <AtlasExplorerModal />
+
       {/* Draggable attachment test panel */}
       <AttachmentTestPanel />
 
@@ -830,6 +837,18 @@ const InfoPanel = () => {
               className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
             >
               Download attachment as PNG
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                if (!files?.imageFiles.length) {
+                  toast.warning("No atlas images loaded");
+                  return;
+                }
+                spineViewerStore.ui.atlasExplorerModalOpen = true;
+              }}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+            >
+              Explore atlas
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

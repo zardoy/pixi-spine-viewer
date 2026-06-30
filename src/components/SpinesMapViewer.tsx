@@ -7,10 +7,14 @@ import { Checkbox } from "./ui/checkbox";
 import { toast } from "sonner";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { SpineFiles } from "../pages/Index";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { spineViewerStore } from "../store/spineViewerStore";
 import { fetchAndLoadSpinePreview } from "../lib/spinePreviewLoader";
-import { getSortedPngUrlsFromEntry, spineKeyFromMapPath } from "../lib/spinesMapHelpers";
+import {
+  getSortedPngUrlsFromEntry,
+  spineKeyFromMapPath,
+  resolveSpineBoundsData,
+} from "../lib/spinesMapHelpers";
 import { pruneSpineMapTileModels, clearAllSpineMapTileModels } from "../lib/spineMapTileModel";
 import type { SpineEntry, SpineAction } from "../types/spinesMap";
 import { SpineMapTilePixi, SpineMapTileChrome, SpineMapTilePlaceholder } from "./SpineMapTile";
@@ -18,12 +22,19 @@ import type { FileSpineLoader } from "../lib/FileSpineLoader";
 
 export type { SpineEntry, SpineAction } from "../types/spinesMap";
 
-const TILE_W = 300;
-const CANVAS_H = 200;
-const CHROME_H = 188;
+/** Each spine lives in a fixed square tile; the grid paginates to fit the screen. */
+const TILE = 400;
 const GAP = 16;
-const CELL_W = TILE_W + GAP;
-const CELL_H = CHROME_H + CANVAS_H + GAP;
+const CELL = TILE + GAP;
+
+/** Build a windowed list of page numbers (0-based) around the current page. */
+function buildPageWindow(current: number, total: number, span = 2): number[] {
+  const pages: number[] = [];
+  const start = Math.max(0, current - span);
+  const end = Math.min(total - 1, current + span);
+  for (let i = start; i <= end; i++) pages.push(i);
+  return pages;
+}
 
 type LoaderMap = Record<
   string,
@@ -43,6 +54,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
   const [loaders, setLoaders] = useState<LoaderMap>({});
   const [boundsFollowAnim, setBoundsFollowAnim] = useState(false);
   const [cols, setCols] = useState(1);
+  const [rows, setRows] = useState(1);
+  const [page, setPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,8 +90,9 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
 
     const compute = () => {
       const w = el.clientWidth;
-      const c = Math.max(1, Math.floor((w + GAP) / CELL_W));
-      setCols(c);
+      const h = el.clientHeight;
+      setCols(Math.max(1, Math.floor((w + GAP) / CELL)));
+      setRows(Math.max(1, Math.floor((h + GAP) / CELL)));
     };
 
     compute();
@@ -128,9 +142,21 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     };
   }, [spines]);
 
-  const rows = useMemo(() => Math.max(1, Math.ceil(spines.length / cols)), [spines.length, cols]);
-  const gridW = cols * CELL_W - GAP;
-  const gridH = rows * CELL_H - GAP;
+  const pageSize = Math.max(1, cols * rows);
+  const totalPages = Math.max(1, Math.ceil(spines.length / pageSize));
+
+  // Keep the current page in range whenever the layout (page size) changes.
+  useEffect(() => {
+    setPage((p) => Math.min(p, totalPages - 1));
+  }, [totalPages]);
+
+  const pageSpines = useMemo(
+    () => spines.slice(page * pageSize, page * pageSize + pageSize),
+    [spines, page, pageSize],
+  );
+
+  const gridW = cols * CELL - GAP;
+  const gridH = rows * CELL - GAP;
 
   const handleActionClick = async (
     spine: SpineEntry,
@@ -244,142 +270,199 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
   }
 
   return (
-    <div className="min-h-screen p-6 bg-gradient-to-br from-background via-background to-secondary">
-      <div className="max-w-6xl mx-auto">
-        <Card className="p-6 mb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-5 h-5 text-primary" />
-                <h1 className="text-2xl font-bold">Spines Map</h1>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Found {spines.length} spine{spines.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
-              <Checkbox
-                id="bounds-follow-anim"
-                checked={boundsFollowAnim}
-                onCheckedChange={(v) => setBoundsFollowAnim(v === true)}
-              />
-              <Label htmlFor="bounds-follow-anim" className="text-sm cursor-pointer leading-snug">
-                Fit preview bounds to current animation
-              </Label>
-            </div>
+    <div className="flex h-screen flex-col gap-3 overflow-hidden bg-gradient-to-br from-background via-background to-secondary p-4">
+      <Card className="shrink-0 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <h1 className="text-xl font-bold">Spines Map</h1>
+            <span className="text-sm text-muted-foreground">
+              {spines.length} spine{spines.length !== 1 ? "s" : ""}
+            </span>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            When off, bounds use each entry&apos;s <code className="rounded bg-muted px-1">boundsAnimation</code>{" "}
-            (or the skeleton&apos;s first animation). Single WebGL context for all previews.
-          </p>
-        </Card>
 
-        <Card className="p-4 overflow-hidden">
-          <div ref={containerRef} className="w-full max-h-[85vh] overflow-y-auto rounded-md border border-border bg-muted/20">
+          {/* Pagination controls */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="First page"
+              disabled={page <= 0}
+              onClick={() => setPage(0)}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="Previous page"
+              disabled={page <= 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {buildPageWindow(page, totalPages).map((p) => (
+              <Button
+                key={p}
+                variant={p === page ? "default" : "outline"}
+                size="icon"
+                className="h-8 w-8 text-xs"
+                aria-label={`Page ${p + 1}`}
+                aria-current={p === page ? "page" : undefined}
+                onClick={() => setPage(p)}
+              >
+                {p + 1}
+              </Button>
+            ))}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="Next page"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="Last page"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage(totalPages - 1)}
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+            <span className="ml-2 text-xs text-muted-foreground">
+              Page {page + 1} / {totalPages}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
+            <Checkbox
+              id="bounds-follow-anim"
+              checked={boundsFollowAnim}
+              onCheckedChange={(v) => setBoundsFollowAnim(v === true)}
+            />
+            <Label htmlFor="bounds-follow-anim" className="cursor-pointer text-sm leading-snug">
+              Fit bounds to current animation
+            </Label>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="flex min-h-0 flex-1 overflow-hidden p-3">
+        <div
+          ref={containerRef}
+          className="flex h-full w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/20"
+        >
+          <div className="relative" style={{ width: gridW, height: gridH }}>
             <div
-              className="relative mx-auto"
+              className="absolute left-0 top-0 z-0 overflow-hidden rounded-sm"
               style={{ width: gridW, height: gridH }}
             >
-              <div
-                className="absolute left-0 top-0 z-0 overflow-hidden rounded-sm"
-                style={{ width: gridW, height: gridH }}
+              <Application
+                width={gridW}
+                height={gridH}
+                backgroundColor={0x2a2a2a}
+                backgroundAlpha={1}
+                antialias
+                resolution={1}
+                autoDensity={false}
               >
-                <Application
-                  width={gridW}
-                  height={gridH}
-                  backgroundColor={0x2a2a2a}
-                  backgroundAlpha={1}
-                  antialias
-                  resolution={1}
-                  autoDensity={false}
-                >
-                  {spines.map((spine, i) => {
-                    const L = loaders[spine.path];
-                    if (!isReadyLoader(L)) return null;
-                    const col = i % cols;
-                    const row = Math.floor(i / cols);
-                    const pixiX = col * CELL_W;
-                    const pixiY = row * CELL_H + CHROME_H;
-                    return (
-                      <SpineMapTilePixi
-                        key={spine.path}
-                        spine={spine}
-                        loader={L}
-                        spineKey={spineKeyFromMapPath(spine.path)}
-                        tileW={TILE_W}
-                        canvasH={CANVAS_H}
-                        pixiX={pixiX}
-                        pixiY={pixiY}
-                        boundsFollowAnim={boundsFollowAnim}
-                      />
-                    );
-                  })}
-                </Application>
-              </div>
-
-              <div
-                className="pointer-events-none absolute left-0 top-0 z-10"
-                style={{ width: gridW, height: gridH }}
-              >
-                {spines.map((spine, i) => {
+                {pageSpines.map((spine, i) => {
                   const L = loaders[spine.path];
+                  if (!isReadyLoader(L)) return null;
                   const col = i % cols;
                   const row = Math.floor(i / cols);
-                  const chromeLeft = col * CELL_W;
-                  const chromeTop = row * CELL_H;
-                  if (L === "loading" || L === undefined) {
-                    return (
-                      <SpineMapTilePlaceholder
-                        key={`ph-${spine.path}`}
-                        spine={spine}
-                        chromeLeft={chromeLeft}
-                        chromeTop={chromeTop}
-                        tileW={TILE_W}
-                        tileTotalH={CHROME_H + CANVAS_H}
-                        status="loading"
-                      />
-                    );
-                  }
-                  if (L && typeof L === "object" && "error" in L) {
-                    return (
-                      <SpineMapTilePlaceholder
-                        key={`ph-${spine.path}`}
-                        spine={spine}
-                        chromeLeft={chromeLeft}
-                        chromeTop={chromeTop}
-                        tileW={TILE_W}
-                        tileTotalH={CHROME_H + CANVAS_H}
-                        status={{ error: L.error }}
-                      />
-                    );
-                  }
-                  if (!isReadyLoader(L)) return null;
+                  const spineKey = spineKeyFromMapPath(spine.path);
+                  const boundsData = resolveSpineBoundsData(
+                    spine,
+                    L.getSkeletonData(spineKey)?.name,
+                  );
                   return (
-                    <SpineMapTileChrome
-                      key={`chrome-${spine.path}`}
+                    <SpineMapTilePixi
+                      key={spine.path}
                       spine={spine}
                       loader={L}
-                      spineKey={spineKeyFromMapPath(spine.path)}
-                      tileW={TILE_W}
-                      chromeH={CHROME_H}
-                      chromeLeft={chromeLeft}
-                      chromeTop={chromeTop}
-                      onOpenViewer={(e) => {
-                        e.stopPropagation();
-                        void handleSpineClick(spine);
-                      }}
-                      viewerLoading={loadingSpine === spine.name}
-                      onActionClick={(name, action, ev) =>
-                        void handleActionClick(spine, name, action, ev)
-                      }
+                      spineKey={spineKey}
+                      tileW={TILE}
+                      tileH={TILE}
+                      pixiX={col * CELL}
+                      pixiY={row * CELL}
+                      boundsFollowAnim={boundsFollowAnim}
+                      boundsData={boundsData}
                     />
                   );
                 })}
-              </div>
+              </Application>
+            </div>
+
+            <div
+              className="pointer-events-none absolute left-0 top-0 z-10"
+              style={{ width: gridW, height: gridH }}
+            >
+              {pageSpines.map((spine, i) => {
+                const L = loaders[spine.path];
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                const left = col * CELL;
+                const top = row * CELL;
+                if (L === "loading" || L === undefined) {
+                  return (
+                    <SpineMapTilePlaceholder
+                      key={`ph-${spine.path}`}
+                      spine={spine}
+                      left={left}
+                      top={top}
+                      tileW={TILE}
+                      tileH={TILE}
+                      status="loading"
+                    />
+                  );
+                }
+                if (L && typeof L === "object" && "error" in L) {
+                  return (
+                    <SpineMapTilePlaceholder
+                      key={`ph-${spine.path}`}
+                      spine={spine}
+                      left={left}
+                      top={top}
+                      tileW={TILE}
+                      tileH={TILE}
+                      status={{ error: L.error }}
+                    />
+                  );
+                }
+                if (!isReadyLoader(L)) return null;
+                return (
+                  <SpineMapTileChrome
+                    key={`chrome-${spine.path}`}
+                    spine={spine}
+                    loader={L}
+                    spineKey={spineKeyFromMapPath(spine.path)}
+                    tileW={TILE}
+                    tileH={TILE}
+                    left={left}
+                    top={top}
+                    onOpenViewer={(e) => {
+                      e.stopPropagation();
+                      void handleSpineClick(spine);
+                    }}
+                    viewerLoading={loadingSpine === spine.name}
+                    onActionClick={(name, action, ev) =>
+                      void handleActionClick(spine, name, action, ev)
+                    }
+                  />
+                );
+              })}
             </div>
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
     </div>
   );
 };

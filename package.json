@@ -14,8 +14,8 @@
         "test:watch": "vitest"
     },
     "dependencies": {
-        "@esotericsoftware/spine-core": "^4.2.103",
-        "@esotericsoftware/spine-pixi-v8": "^4.2.103",
+        "@esotericsoftware/spine-core": "4.3.9",
+        "@esotericsoftware/spine-pixi-v8": "4.3.9",
         "@floating-ui/react-dom": "^2.1.7",
         "@hookform/resolvers": "^3.10.0",
         "@pixi/layout": "^3.2.0",
@@ -40,6 +40,7 @@
         "react": "^19.2.3",
         "react-dom": "^19.2.3",
         "react-router-dom": "^7.11.0",
+        "sharp": "^0.35.2",
         "sonner": "^1.7.4",
         "tailwind-merge": "^2.6.0",
         "tailwindcss-animate": "^1.0.7",

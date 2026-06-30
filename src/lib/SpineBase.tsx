@@ -2,8 +2,16 @@ import 'pixi.js/prepare' // Ensures prepare system is available for texture prel
 import { Application, Container, Filter, GlProgram, ColorMatrixFilter, type TextureSource } from 'pixi.js'
 import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
 import { useEffect, useLayoutEffect, useMemo, useRef, type Ref, type RefObject } from 'react'
-import { AABBRectangleBoundsProvider, Spine as SpineInstance } from '@esotericsoftware/spine-pixi-v8'
-import { Physics, RegionAttachment, MeshAttachment } from '@esotericsoftware/spine-core'
+import { Physics } from '@esotericsoftware/spine-core'
+import { resolveSkinName, skeletonApplySkin, skeletonSetupPoseSlots } from './spineCompat'
+import type { AnySpine } from './spineRuntime'
+import { spinePixi } from './spineRuntime'
+import {
+  computeDrawableAttachmentBounds,
+  isDrawableAttachment,
+  isRegionLikeAttachment,
+} from './spineAttachments'
+import { getSkeletonDrawOrderSlots, slotGetAttachment, slotSetAlpha, slotSetAttachment } from './spineSlot'
 import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
@@ -13,10 +21,12 @@ declare global {
   var spineDebugResults: Record<string, SpineDebugResults> | undefined
 }
 
+type SpineInstance = AnySpine
+
 interface SpineLoader {
   loadSpine: (spineKey: string) => Promise<unknown>
   createSpine: (spineKey: string, options?: Record<string, unknown>) => {
-    spine: SpineInstance
+    spine: AnySpine
     x?: number
     y?: number
     scale?: number
@@ -102,7 +112,7 @@ function wrapSpineError(error: unknown, operation: string, spineKey: string, deb
  * Also sets _stateChanged so _validateAndTransformAttachments does not no-op after the last render cleared it.
  */
 function spineAfterManualWorldTransform(spine: SpineInstance): void {
-  spine.afterUpdateWorldTransforms(spine)
+  ;(spine as AnySpine & { afterUpdateWorldTransforms: (spine: unknown) => void }).afterUpdateWorldTransforms(spine)
   ;(spine as unknown as { _stateChanged: boolean })._stateChanged = true
   spine._validateAndTransformAttachments()
 }
@@ -112,7 +122,7 @@ function spineAfterManualWorldTransform(spine: SpineInstance): void {
  * briefly show the previous animation's end state (e.g. alpha 1) before the new animation's alpha timeline (e.g. 0 at time 0) applies. */
 function immediateUpdate(spine: SpineInstance, resetSlotsToSetup = false): void {
   if (spine.state.tracks.length === 0) return
-  if (resetSlotsToSetup) spine.skeleton.setSlotsToSetupPose()
+  if (resetSlotsToSetup) skeletonSetupPoseSlots(spine.skeleton)
   spine.state.update(0)
   spine.state.apply(spine.skeleton)
   spine.skeleton.update(0)
@@ -131,7 +141,7 @@ function calculateAttachmentSizes(
   // Ensure skeleton is updated
   spine._validateAndTransformAttachments()
 
-  const slots = spine.skeleton.slots
+  const slots = getSkeletonDrawOrderSlots(spine.skeleton) as typeof spine.skeleton.slots
   const result: Record<string, AttachmentSizeInfo> = {}
 
   // Get Spine container's world transform for screen space conversion
@@ -143,34 +153,17 @@ function calculateAttachmentSizes(
     const slot = slots[i]
     if (!slot.bone.active) continue
 
-    const attachment = slot.getAttachment()
+    const attachment = slotGetAttachment(slot)
     if (!attachment) continue
 
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    const bounds = computeDrawableAttachmentBounds(
+      attachment,
+      slot,
+      spine.skeleton,
+    )
+    if (!bounds) continue
 
-    // Calculate world vertices bounds
-    if (attachment instanceof RegionAttachment) {
-      const vertices = new Float32Array(8)
-      attachment.computeWorldVertices(slot, vertices, 0, 2)
-      for (let j = 0; j < 8; j += 2) {
-        minX = Math.min(minX, vertices[j])
-        maxX = Math.max(maxX, vertices[j])
-        minY = Math.min(minY, vertices[j + 1])
-        maxY = Math.max(maxY, vertices[j + 1])
-      }
-    } else if (attachment instanceof MeshAttachment) {
-      const vertices = new Float32Array(attachment.worldVerticesLength)
-      attachment.computeWorldVertices(slot, 0, attachment.worldVerticesLength, vertices, 0, 2)
-      for (let j = 0; j < vertices.length; j += 2) {
-        minX = Math.min(minX, vertices[j])
-        maxX = Math.max(maxX, vertices[j])
-        minY = Math.min(minY, vertices[j + 1])
-        maxY = Math.max(maxY, vertices[j + 1])
-      }
-    } else {
-      // Skip other attachment types (PathAttachment, ClippingAttachment, etc.)
-      continue
-    }
+    const { minX, minY, maxX, maxY } = bounds
 
     // Transform to screen space (accounting for Spine container's transform)
     const localWidth = maxX - minX
@@ -192,20 +185,20 @@ function calculateAttachmentSizes(
     let renderedWidth: number | null = null
     let renderedHeight: number | null = null
 
-    if (attachment instanceof RegionAttachment || attachment instanceof MeshAttachment) {
-      const region = attachment.region
+    if (isDrawableAttachment(attachment)) {
+      const region = (attachment as { region?: { originalWidth?: number; originalHeight?: number; width?: number; height?: number } }).region
       if (region) {
         // Use originalWidth/originalHeight for the actual texture source size
         // These represent the original image dimensions before atlas packing
-        textureWidth = region.originalWidth || region.width
-        textureHeight = region.originalHeight || region.height
+        textureWidth = region.originalWidth ?? region.width ?? null
+        textureHeight = region.originalHeight ?? region.height ?? null
 
         // Calculate oversize ratio: texture size / rendered size
         // Account for device pixel ratio since textures render at devicePixelRatio
         // > 1.0 means texture is bigger than rendered (oversized)
         // < 1.0 means texture is smaller than rendered (undersized)
         // = 1.0 means perfect match
-        if (screenWidth > 0 && screenHeight > 0) {
+        if (screenWidth > 0 && screenHeight > 0 && textureWidth != null && textureHeight != null) {
           renderedWidth = screenWidth * pixelRatio
           renderedHeight = screenHeight * pixelRatio
           oversizeX = textureWidth / renderedWidth
@@ -221,8 +214,8 @@ function calculateAttachmentSizes(
         height: screenHeight,
         x: screenX,
         y: screenY,
-        attachmentName: attachment.name,
-        attachmentType: attachment.constructor.name,
+        attachmentName: (attachment as { name: string }).name,
+        attachmentType: (attachment as { constructor: { name: string } }).constructor.name,
         renderedWidth,
         renderedHeight,
         textureWidth,
@@ -348,27 +341,33 @@ export interface SpineEvent<TName extends string = string> {
   trackIndex: number
 }
 
+function readBoneWorldTransform(bone: unknown): { x: number; y: number; scaleX: number; scaleY: number } {
+  const b = bone as {
+    worldX?: number
+    worldY?: number
+    getWorldX?: () => number
+    getWorldY?: () => number
+    getWorldScaleX?: () => number
+    getWorldScaleY?: () => number
+  }
+  return {
+    x: b.worldX ?? b.getWorldX?.() ?? 0,
+    y: b.worldY ?? b.getWorldY?.() ?? 0,
+    scaleX: b.getWorldScaleX?.() ?? 1,
+    scaleY: b.getWorldScaleY?.() ?? 1,
+  }
+}
+
 function getFollowTransform(spine: SpineInstance, item: AttachmentsFollowItem): { x: number; y: number; scaleX: number; scaleY: number } | null {
   if (item.slotName) {
     const slot = spine.skeleton.findSlot(item.slotName)
     if (!slot) return null
-    const bone = slot.bone
-    return {
-      x: bone.worldX,
-      y: bone.worldY,
-      scaleX: bone.getWorldScaleX(),
-      scaleY: bone.getWorldScaleY(),
-    }
+    return readBoneWorldTransform(slot.bone)
   }
   if (item.boneName) {
     const bone = spine.skeleton.findBone(item.boneName)
     if (!bone) return null
-    return {
-      x: bone.worldX,
-      y: bone.worldY,
-      scaleX: bone.getWorldScaleX(),
-      scaleY: bone.getWorldScaleY(),
-    }
+    return readBoneWorldTransform(bone)
   }
   return null
 }
@@ -944,7 +943,7 @@ export const SpineBase = (props: SpineProps) => {
         // Create a new Spine instance from the cached skeleton data
         const { spine, x: spineX = 0, y: spineY = 0, scale: spineScale = 0 } = spineLoader.createSpine(spineKey, {
           ...(xBounds && yBounds && widthBounds && heightBounds ? {
-            boundsProvider: new AABBRectangleBoundsProvider(xBounds, yBounds, widthBounds, heightBounds),
+            boundsProvider: new spinePixi.AABBRectangleBoundsProvider(xBounds, yBounds, widthBounds, heightBounds),
           } : {}),
         })
 
@@ -976,8 +975,8 @@ export const SpineBase = (props: SpineProps) => {
         //   Spine's AttachmentTimeline is binary — last writer wins; the only safe per-slot
         //   override point is here, after the full state is applied to the skeleton.
         const prevAfter = spine.afterUpdateWorldTransforms
-        spine.afterUpdateWorldTransforms = (spineObj) => {
-          prevAfter(spineObj)
+        spine.afterUpdateWorldTransforms = (spineObj: AnySpine) => {
+          prevAfter(spineObj as never)
 
           // --- Pass 1: force-hide ---
           const wireframe = textureWireframeModeRef.current
@@ -986,24 +985,29 @@ export const SpineBase = (props: SpineProps) => {
           const hasPrefixes = prefixes?.length
           const hasExact = exact?.length
           if (wireframe || hasPrefixes || hasExact) {
-            const slots = spineObj.skeleton.drawOrder
+            const drawOrder = getSkeletonDrawOrderSlots(spineObj.skeleton)
+            const slots = drawOrder.length > 0 ? drawOrder : [...spineObj.skeleton.slots]
             for (let i = 0; i < slots.length; i++) {
-              const slot = slots[i]
-              const att = slot.getAttachment()
-              if (!att || !(att instanceof RegionAttachment || att instanceof MeshAttachment)) continue
+              const slot = slots[i] as {
+                data: { name: string; attachmentName?: string }
+                setAttachment?: (name: string | null) => void
+                color?: { a: number }
+              }
+              const att = slotGetAttachment(slot)
+              if (!att || !isDrawableAttachment(att)) continue
               if (wireframe) {
-                slot.color.a = 0
+                slotSetAlpha(slot, 0)
                 continue
               }
-              const path = (att as RegionAttachment).path ?? att.name
-              const attName = att.name
+              const path = (isRegionLikeAttachment(att) ? att.path : undefined) ?? (att as { name: string }).name
+              const attName = (att as { name: string }).name
               const matchesPrefix = hasPrefixes && prefixes!.some(
                 (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
               )
               const matchesExact = hasExact && exact.some(
                 (p) => (path === p) || (attName === p)
               )
-              if (matchesPrefix || matchesExact) slot.color.a = 0
+              if (matchesPrefix || matchesExact) slotSetAlpha(slot, 0)
             }
           }
 
@@ -1026,7 +1030,11 @@ export const SpineBase = (props: SpineProps) => {
           for (const rule of mixRules) {
             if (rule.duringMix === 'to') continue // default Spine behavior, no override
 
-            const slot = skeleton.findSlot(rule.slot)
+            const slot = skeleton.findSlot(rule.slot) as {
+              data: { index: number; attachmentName?: string }
+              setAttachment?: (att: unknown) => void
+              color?: { a: number }
+            } | null
             if (!slot) continue
 
             switch (rule.duringMix) {
@@ -1037,17 +1045,17 @@ export const SpineBase = (props: SpineProps) => {
                 const att = fromAttName != null
                   ? skeleton.getAttachment(slot.data.index, fromAttName)
                   : null
-                slot.setAttachment(att)
+                slotSetAttachment(slot, att)
                 break
               }
               case 'setup': {
                 const setupName = slot.data.attachmentName
                 const att = setupName ? skeleton.getAttachment(slot.data.index, setupName) : null
-                slot.setAttachment(att)
+                slotSetAttachment(slot, att)
                 break
               }
               case 'hide': {
-                slot.color.a = 0
+                slotSetAlpha(slot, 0)
                 break
               }
             }
@@ -1057,6 +1065,19 @@ export const SpineBase = (props: SpineProps) => {
         // Sync spineRef prop immediately
         if (spineRefProp && 'current' in spineRefProp) {
           spineRefProp.current = spine
+        }
+
+        // Set skin before animation so bones/slots activate (required for Spine 4.3 skinRequired items)
+        const initialSkinName = resolveSkinName(spine.skeleton.data, skin)
+        if (initialSkinName) {
+          try {
+            const skinData = spine.skeleton.data.findSkin(initialSkinName)
+            if (skinData) {
+              skeletonApplySkin(spine, skinData)
+            }
+          } catch (error) {
+            throw wrapSpineError(error, `Failed to set skin '${initialSkinName}'`, spineKey, debugKey)
+          }
         }
 
         // Set animation with initial delay if provided
@@ -1123,19 +1144,6 @@ export const SpineBase = (props: SpineProps) => {
         // Apply initial animation progress if provided
         if (animationProgress !== undefined) {
           updateAnimationProgress()
-        }
-
-        // Set skin if provided
-        if (skin) {
-          try {
-            const skinData = spine.skeleton.data.findSkin(skin)
-            if (skinData) {
-              spine.skeleton.setSkin(skinData)
-              spine.skeleton.setSlotsToSetupPose()
-            }
-          } catch (error) {
-            throw wrapSpineError(error, `Failed to set skin '${skin}'`, spineKey, debugKey)
-          }
         }
 
         // Set up animation complete listener
@@ -1311,7 +1319,7 @@ export const SpineBase = (props: SpineProps) => {
         for (const rule of mixRulesNow) {
           if (rule.duringMix !== 'from') continue
           const slot = spineRef.current.skeleton.findSlot(rule.slot)
-          snap[rule.slot] = slot?.attachment?.name ?? null
+          snap[rule.slot] = (slot ? (slotGetAttachment(slot) as { name?: string } | null)?.name : null) ?? null
         }
         fromAttachmentSnapshotRef.current = snap
       }
@@ -1575,18 +1583,19 @@ export const SpineBase = (props: SpineProps) => {
 
   // Handle skin changes
   useEffect(() => {
-    if (!spineRef.current || !skin) return
+    if (!spineRef.current) return
+    const skinName = resolveSkinName(spineRef.current.skeleton.data, skin)
+    if (!skinName) return
 
     try {
-      const skinData = spineRef.current.skeleton.data.findSkin(skin)
+      const skinData = spineRef.current.skeleton.data.findSkin(skinName)
       if (skinData) {
-        spineRef.current.skeleton.setSkin(skinData)
-        spineRef.current.skeleton.setSlotsToSetupPose()
-        // Update debug results if debug mode is enabled
+        skeletonApplySkin(spineRef.current, skinData)
+        spineAfterManualWorldTransform(spineRef.current)
         updateDebugResults(spineRef.current, spineKey, app.app)
       }
     } catch (error) {
-      throw wrapSpineError(error, `Failed to set skin '${skin}'`, spineKey, debugKey)
+      throw wrapSpineError(error, `Failed to set skin '${skinName}'`, spineKey, debugKey)
     }
   }, [skin, spineKey])
 

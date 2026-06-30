@@ -1,12 +1,17 @@
 import {
-  Skeleton,
   AnimationState,
   AnimationStateData,
   Physics,
-  MixBlend,
-  MixDirection,
+  Skeleton,
 } from '@esotericsoftware/spine-core'
-import type { Animation, SkeletonData } from '@esotericsoftware/spine-core'
+import type { Animation } from '@esotericsoftware/spine-core'
+import type { AnySkeletonData } from './spineRuntime'
+import {
+  applyAnimationAtTime,
+  setAnimationObject,
+  skeletonSetupPose,
+  skeletonSetupPoseSlots,
+} from './spineCompat'
 
 export interface SpineBounds {
   x: number
@@ -69,7 +74,7 @@ export function timeToFrameIndex(time: number, fps = SCREENSHOT_FPS): number {
 }
 
 export function getAnimationDuration(
-  skeletonData: SkeletonData,
+  skeletonData: AnySkeletonData,
   animationName?: string,
 ): number {
   const anim = animationName
@@ -79,7 +84,7 @@ export function getAnimationDuration(
 }
 
 export function getMaxScreenshotFrameIndex(
-  skeletonData: SkeletonData,
+  skeletonData: AnySkeletonData,
   animationName?: string,
   fps = SCREENSHOT_FPS,
 ): number {
@@ -195,15 +200,15 @@ export function parseSpineScreenshotFilename(filename: string): SpineScreenshotF
 }
 
 function applySkeletonSkin(
-  skeleton: Skeleton,
-  skeletonData: SkeletonData,
+  skeleton: { setSkin(skin: unknown): void },
+  skeletonData: AnySkeletonData,
   skinName?: string,
 ): void {
   if (!skinName) return
   const skin = skeletonData.findSkin(skinName)
   if (skin) {
     skeleton.setSkin(skin)
-    skeleton.setSlotsToSetupPose()
+    skeletonSetupPoseSlots(skeleton as never)
   }
 }
 
@@ -220,24 +225,24 @@ function applySkeletonSkin(
  *   significantly from the actual first-frame visual extent.
  */
 export function computeFirstFrameBounds(
-  skeletonData: SkeletonData,
+  skeletonData: AnySkeletonData,
   animationName?: string,
   skinName?: string,
 ): SpineBounds | null {
   const skeleton = new Skeleton(skeletonData)
   applySkeletonSkin(skeleton, skeletonData, skinName)
-  const animState = new AnimationState(new AnimationStateData(skeletonData))
+  const animState = new AnimationState(new AnimationStateData(skeletonData as never) as never)
 
   const anim = animationName
     ? skeletonData.findAnimation(animationName)
     : (skeletonData.animations[0] ?? null)
 
   if (anim) {
-    animState.setAnimationWith(0, anim, false)
+    setAnimationObject(animState, 0, anim, false)
     animState.update(0)
-    animState.apply(skeleton)
+    ;(animState as { apply: (skeleton: unknown) => void }).apply(skeleton)
   } else {
-    skeleton.setToSetupPose()
+    skeletonSetupPose(skeleton)
   }
 
   skeleton.update(0)
@@ -252,7 +257,7 @@ export function computeFirstFrameBounds(
  * Bounding box for a single pose at `time` seconds on the given animation.
  */
 export function computeBoundsAtTime(
-  skeletonData: SkeletonData,
+  skeletonData: AnySkeletonData,
   animationName: string | undefined,
   time: number,
   skinName?: string,
@@ -266,11 +271,11 @@ export function computeBoundsAtTime(
 
   if (anim && anim.duration > 0) {
     const t = Math.max(0, Math.min(time, anim.duration))
-    skeleton.setToSetupPose()
+    skeletonSetupPose(skeleton)
     applySkeletonSkin(skeleton, skeletonData, skinName)
-    anim.apply(skeleton, t, t, false, [], 1, MixBlend.setup, MixDirection.mixIn)
+    applyAnimationAtTime(skeleton, anim, t)
   } else {
-    skeleton.setToSetupPose()
+    skeletonSetupPose(skeleton)
   }
 
   skeleton.update(0)
@@ -330,7 +335,7 @@ function collectMaxAnimationSampleTimes(anim: Animation, timeStep: number): numb
  * (single-frame / static spines) and when no animation is found.
  */
 export function computeMaxAnimationBounds(
-  skeletonData: SkeletonData,
+  skeletonData: AnySkeletonData,
   animationName?: string,
   timeStep = 0.05,
   skinName?: string,
@@ -350,12 +355,12 @@ export function computeMaxAnimationBounds(
   let minX = Infinity, minY = Infinity
   let maxX = -Infinity, maxY = -Infinity
 
-  const sampleTimes = collectMaxAnimationSampleTimes(anim, timeStep)
+  const sampleTimes = collectMaxAnimationSampleTimes(anim as never, timeStep)
 
   for (const t of sampleTimes) {
-    skeleton.setToSetupPose()
+    skeletonSetupPose(skeleton)
     applySkeletonSkin(skeleton, skeletonData, skinName)
-    anim.apply(skeleton, t, t, false, [], 1, MixBlend.setup, MixDirection.mixIn)
+    applyAnimationAtTime(skeleton, anim, t)
     skeleton.updateWorldTransform(Physics.update)
 
     const r = skeleton.getBoundsRect()
@@ -376,7 +381,7 @@ export function computeMaxAnimationBounds(
  * Produces the tightest AABB that encloses all poses from all animations.
  */
 export function computeAllAnimationsBounds(
-  skeletonData: SkeletonData,
+  skeletonData: AnySkeletonData,
   timeStep = 0.05,
   skinName?: string,
 ): SpineBounds | null {

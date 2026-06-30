@@ -2,7 +2,7 @@ import 'pixi.js/prepare'
 import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react'
 import { Application, useTick, useExtend } from '@pixi/react'
 import { Container, Graphics } from 'pixi.js'
-import type { SkeletonData } from '@esotericsoftware/spine-core'
+import type { AnySkeletonData } from '../lib/spineRuntime'
 import JSZip from 'jszip'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
@@ -291,7 +291,7 @@ async function resolveSpineFiles(
 export const PlaygroundAtPosition = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [loader, setLoader] = useState<FileSpineLoader | null>(null)
-  const [skeletonData, setSkeletonData] = useState<SkeletonData | null>(null)
+  const [skeletonData, setSkeletonData] = useState<AnySkeletonData | null>(null)
   const [activeBounds, setActiveBounds] = useState<SpineBounds | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const canvasWrapperRef = useRef<HTMLDivElement>(null)

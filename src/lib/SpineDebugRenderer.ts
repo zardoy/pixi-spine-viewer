@@ -28,14 +28,17 @@
  *****************************************************************************/
 
 import { Container, Graphics, Text } from 'pixi.js';
-import { Spine } from '@esotericsoftware/spine-pixi-v8';
+import type { AnySpine } from './spineRuntime';
+import { slotGetAttachment } from './spineSlot';
 import {
-	ClippingAttachment,
-	MeshAttachment,
-	PathAttachment,
-	RegionAttachment,
-	SkeletonBounds
-} from '@esotericsoftware/spine-core';
+	computeMeshWorldVertices,
+	computeRegionWorldVertices,
+	isClippingAttachment,
+	isMeshAttachment,
+	isPathAttachment,
+	isRegionAttachment,
+} from './spineAttachments';
+import { SkeletonBounds } from '@esotericsoftware/spine-core';
 
 import type { AnimationStateListener } from '@esotericsoftware/spine-core';
 
@@ -47,17 +50,17 @@ export interface ISpineDebugRenderer {
 	/**
 	 * This will be called every frame, after the spine has been updated.
 	 */
-	renderDebug: (spine: Spine) => void;
+	renderDebug: (spine: AnySpine) => void;
 
 	/**
 	 *  This is called when the `spine.debug` object is set to null or when the spine is destroyed.
 	 */
-	unregisterSpine: (spine: Spine) => void;
+	unregisterSpine: (spine: AnySpine) => void;
 
 	/**
 	 * This is called when the `spine.debug` object is set to a new instance of a debug renderer.
 	 */
-	registerSpine: (spine: Spine) => void;
+	registerSpine: (spine: AnySpine) => void;
 }
 
 type DebugDisplayObjects = {
@@ -82,7 +85,7 @@ type DebugDisplayObjects = {
  * @public
  */
 export class SpineDebugRenderer implements ISpineDebugRenderer {
-	private readonly registeredSpines: Map<Spine, DebugDisplayObjects> = new Map();
+	private readonly registeredSpines: Map<AnySpine, DebugDisplayObjects> = new Map();
 
 	public drawMeshHull = true;
 	public drawMeshTriangles = true;
@@ -112,7 +115,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 	 * The debug is attached by force to each spine object.
 	 * So we need to create it inside the spine when we get the first update
 	 */
-	public registerSpine (spine: Spine): void {
+	public registerSpine (spine: AnySpine): void {
 		if (this.registeredSpines.has(spine)) {
 			console.warn('SpineDebugRenderer.registerSpine() - this spine is already registered!', spine);
 
@@ -185,7 +188,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		this.registeredSpines.set(spine, debugDisplayObjects);
 	}
 
-	public renderDebug (spine: Spine): void {
+	public renderDebug (spine: AnySpine): void {
 		if (!this.registeredSpines.has(spine)) {
 			// This should never happen. Spines are registered when you assign spine.debug
 			this.registerSpine(spine);
@@ -244,7 +247,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		}
 	}
 
-	private drawBonesFunc (spine: Spine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number, scale: number): void {
+	private drawBonesFunc (spine: AnySpine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number, scale: number): void {
 		const skeleton = spine.skeleton;
 		const skeletonX = skeleton.x;
 		const skeletonY = skeleton.y;
@@ -262,12 +265,22 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		}
 
 		for (let i = 0, len = bones.length; i < len; i++) {
-			const bone = bones[i];
+			const bone = bones[i] as {
+				data: { length: number; name: string; parent: unknown }
+				worldX?: number
+				worldY?: number
+				a?: number
+				b?: number
+				getWorldX?: () => number
+				getWorldY?: () => number
+			}
 			const boneLen = bone.data.length;
-			const starX = skeletonX + bone.worldX;
-			const starY = skeletonY + bone.worldY;
-			const endX = skeletonX + (boneLen * bone.a) + bone.worldX;
-			const endY = skeletonY + (boneLen * bone.b) + bone.worldY;
+			const worldX = bone.worldX ?? bone.getWorldX?.() ?? 0
+			const worldY = bone.worldY ?? bone.getWorldY?.() ?? 0
+			const starX = skeletonX + worldX;
+			const starY = skeletonY + worldY;
+			const endX = skeletonX + (boneLen * (bone.a ?? 1)) + worldX;
+			const endY = skeletonY + (boneLen * (bone.b ?? 0)) + worldY;
 
 			const gp = children[i];
 
@@ -361,23 +374,20 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 			.stroke();
 	}
 
-	private drawRegionAttachmentsFunc (spine: Spine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
+	private drawRegionAttachmentsFunc (spine: AnySpine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
 		const skeleton = spine.skeleton;
 		const slots = skeleton.slots;
 
 		for (let i = 0, len = slots.length; i < len; i++) {
 			const slot = slots[i];
-			const attachment = slot.getAttachment();
+			const attachment = slotGetAttachment(slot);
 
-			if (attachment === null || !(attachment instanceof RegionAttachment)) {
+			if (attachment === null || !isRegionAttachment(attachment)) {
 				continue;
 			}
 
-			const regionAttachment = attachment;
-
 			const vertices = new Float32Array(8);
-
-			regionAttachment.computeWorldVertices(slot, vertices, 0, 2);
+			computeRegionWorldVertices(attachment as { computeWorldVertices: (...args: unknown[]) => void }, slot, skeleton, vertices, 0, 2);
 
 			debugDisplayObjects.regionAttachmentsShape.poly(Array.from(vertices.slice(0, 8)));
 		}
@@ -388,7 +398,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		});
 	}
 
-	private drawMeshHullAndMeshTriangles (spine: Spine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
+	private drawMeshHullAndMeshTriangles (spine: AnySpine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
 		const skeleton = spine.skeleton;
 		const slots = skeleton.slots;
 
@@ -398,19 +408,24 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 			if (!slot.bone.active) {
 				continue;
 			}
-			const attachment = slot.getAttachment();
+			const attachment = slotGetAttachment(slot);
 
-			if (attachment === null || !(attachment instanceof MeshAttachment)) {
+			if (attachment === null || !isMeshAttachment(attachment)) {
 				continue;
 			}
 
-			const meshAttachment = attachment;
+			const meshAttachment = attachment as {
+				worldVerticesLength: number
+				triangles: number[]
+				hullLength: number
+				computeWorldVertices: (...args: unknown[]) => void
+			};
 
 			const vertices = new Float32Array(meshAttachment.worldVerticesLength);
 			const triangles = meshAttachment.triangles;
 			let hullLength = meshAttachment.hullLength;
 
-			meshAttachment.computeWorldVertices(slot, 0, meshAttachment.worldVerticesLength, vertices, 0, 2);
+			computeMeshWorldVertices(meshAttachment, slot, skeleton, vertices, 0, 2);
 			// draw the skinned mesh (triangle)
 			if (this.drawMeshTriangles) {
 				for (let i = 0, len = triangles.length; i < len; i += 3) {
@@ -448,7 +463,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		debugDisplayObjects.meshTrianglesLine.stroke({ width: lineWidth, color: this.meshTrianglesColor });
 	}
 
-	drawClippingFunc (spine: Spine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
+	drawClippingFunc (spine: AnySpine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
 		const skeleton = spine.skeleton;
 		const slots = skeleton.slots;
 
@@ -458,18 +473,18 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 			if (!slot.bone.active) {
 				continue;
 			}
-			const attachment = slot.getAttachment();
+			const attachment = slotGetAttachment(slot);
 
-			if (attachment === null || !(attachment instanceof ClippingAttachment)) {
+			if (attachment === null || !isClippingAttachment(attachment)) {
 				continue;
 			}
 
-			const clippingAttachment = attachment;
+			const clippingAttachment = attachment as { worldVerticesLength: number; computeWorldVertices: (...args: unknown[]) => void };
 
 			const nn = clippingAttachment.worldVerticesLength;
 			const world = new Float32Array(nn);
 
-			clippingAttachment.computeWorldVertices(slot, 0, nn, world, 0, 2);
+			clippingAttachment.computeWorldVertices(slot, skeleton, 0, nn, world, 0, 2);
 			debugDisplayObjects.clippingPolygon.poly(Array.from(world));
 		}
 
@@ -478,7 +493,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		});
 	}
 
-	drawBoundingBoxesFunc (spine: Spine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
+	drawBoundingBoxesFunc (spine: AnySpine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
 		// draw the total outline of the bounding box
 		const bounds = new SkeletonBounds();
 		bounds.update(spine.skeleton, true);
@@ -533,7 +548,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		}
 	}
 
-	private drawPathsFunc (spine: Spine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
+	private drawPathsFunc (spine: AnySpine, debugDisplayObjects: DebugDisplayObjects, lineWidth: number): void {
 		const skeleton = spine.skeleton;
 		const slots = skeleton.slots;
 
@@ -543,17 +558,21 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 			if (!slot.bone.active) {
 				continue;
 			}
-			const attachment = slot.getAttachment();
+			const attachment = slotGetAttachment(slot);
 
-			if (attachment === null || !(attachment instanceof PathAttachment)) {
+			if (attachment === null || !isPathAttachment(attachment)) {
 				continue;
 			}
 
-			const pathAttachment = attachment;
+			const pathAttachment = attachment as {
+				worldVerticesLength: number
+				closed?: boolean
+				computeWorldVertices: (...args: unknown[]) => void
+			};
 			let nn = pathAttachment.worldVerticesLength;
 			const world = new Float32Array(nn);
 
-			pathAttachment.computeWorldVertices(slot, 0, nn, world, 0, 2);
+			pathAttachment.computeWorldVertices(slot, skeleton, 0, nn, world, 0, 2);
 			let x1 = world[2];
 			let y1 = world[3];
 			let x2 = 0;
@@ -605,7 +624,7 @@ export class SpineDebugRenderer implements ISpineDebugRenderer {
 		debugDisplayObjects.pathsLine.stroke({ width: lineWidth, color: this.pathsLineColor });
 	}
 
-	public unregisterSpine (spine: Spine): void {
+	public unregisterSpine (spine: AnySpine): void {
 		if (!this.registeredSpines.has(spine)) {
 			console.warn('SpineDebugRenderer.unregisterSpine() - spine is not registered, can\'t unregister!', spine);
 		}

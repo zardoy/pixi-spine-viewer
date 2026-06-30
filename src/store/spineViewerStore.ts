@@ -1,6 +1,6 @@
 import { proxy } from 'valtio';
 import { Container, Application as PIXIApplication } from 'pixi.js';
-import { Spine } from '@esotericsoftware/spine-pixi-v8';
+import type { AnySpine } from '../lib/spineRuntime';
 import { AnimationViewport } from '../lib/SpineDisplay';
 import { SpineFiles } from '../pages/Index';
 
@@ -14,9 +14,9 @@ export interface SpineViewerState {
   refs: {
     container: Container | null;
     app: PIXIApplication | null;
-    spine: Spine | null;
+    spine: AnySpine | null;
     stressTestRunning: boolean;
-    perfSpines: Spine[];
+    perfSpines: AnySpine[];
     spineData: { skeletonData: string | ArrayBuffer; atlasText: string } | null;
     imageFiles: File[] | null;
     currentViewport: AnimationViewport | null;
@@ -85,6 +85,7 @@ export interface SpineViewerState {
     selectedAttachmentBone: string;
     availableBones: string[];
     attachmentDownloadModalOpen: boolean;
+    atlasExplorerModalOpen: boolean;
     skeletonSelectModalOpen: boolean;
     /** When spine has multiple .skel/.json, which skeleton variant is selected (filename without ext) */
     selectedSkeleton: string;
@@ -185,6 +186,7 @@ export const initialState: SpineViewerState = {
     selectedAttachmentBone: '',
     availableBones: [],
     attachmentDownloadModalOpen: false,
+    atlasExplorerModalOpen: false,
     skeletonSelectModalOpen: false,
     selectedSkeleton: '',
     availableSkeletonNames: [],

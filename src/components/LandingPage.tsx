@@ -5,10 +5,11 @@ import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SpineFiles, getBlankParticleFiles } from "../pages/Index";
 import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
-import { SPINE_EXAMPLES } from "../lib/spineExamples";
+import { SPINE_EXAMPLES, openSpineExample } from "../lib/spineExamples";
 import { ref } from "valtio";
 import { spineViewerStore } from "../store/spineViewerStore";
 import JSZip from "jszip";
+import { SUPPORTED_SPINE_VERSIONS_TEXT } from "../lib/spineRuntime";
 import {
   Select,
   SelectContent,
@@ -308,23 +309,8 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
         if (SPINE_EXAMPLES.length > 0) {
           const firstExample = SPINE_EXAMPLES[0];
           setSelectedExample(firstExample.name);
-
-          // Load the example
-          toast.loading(`Loading ${firstExample.name}...`);
-
-          fetchSpineFilesFromUrl(firstExample.jsonUrl, firstExample.atlasUrl)
-            .then((files) => {
-              toast.dismiss();
-              toast.success(`Loaded ${firstExample.name}`);
-              spineViewerStore.syncedDir = null;
-              spineViewerStore.refs.syncedDirHandles = null;
-              spineViewerStore.ui.particleGeneratorPanelVisible = false;
-              onFilesSelect(files);
-            })
-            .catch((error) => {
-              toast.dismiss();
-              toast.error(error instanceof Error ? error.message : 'Failed to load example');
-            });
+          toast.info(`Opening ${firstExample.name} on Spine 4.2 viewer...`);
+          openSpineExample(firstExample);
         }
       }
     };
@@ -342,20 +328,8 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
     const example = SPINE_EXAMPLES.find(ex => ex.name === selectedExample);
     if (!example) return;
 
-    toast.loading(`Loading ${example.name}...`);
-
-    try {
-      const files = await fetchSpineFilesFromUrl(example.jsonUrl, example.atlasUrl);
-      toast.dismiss();
-      toast.success(`Loaded ${example.name}`);
-      spineViewerStore.syncedDir = null;
-      spineViewerStore.refs.syncedDirHandles = null;
-      spineViewerStore.ui.particleGeneratorPanelVisible = false;
-      onFilesSelect(files);
-    } catch (error) {
-      toast.dismiss();
-      toast.error(error instanceof Error ? error.message : 'Failed to load example');
-    }
+    toast.info(`Opening ${example.name} on Spine 4.2 viewer...`);
+    openSpineExample(example);
   };
 
   const handleOpenTester = () => {
@@ -398,6 +372,12 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
         </div>
       </div>
       <Card className="max-w-2xl w-full p-12 text-center border-2 border-dashed border-border hover:border-primary/50 transition-colors relative z-10">
+        <p
+          className="absolute top-4 left-4 text-xs leading-snug text-muted-foreground/65 text-left select-none"
+          title="Spine 4.3 only — 4.2 assets open on pixi-spine-viewer-42.vercel.app"
+        >
+          Supported: {SUPPORTED_SPINE_VERSIONS_TEXT}
+        </p>
         <div className="space-y-8">
           <div className="space-y-4">
             <div className="flex justify-center">

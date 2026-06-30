@@ -1,8 +1,13 @@
-import { Spine, AABBRectangleBoundsProvider } from '@esotericsoftware/spine-pixi-v8'
-import { Container, Graphics, ImageSource } from 'pixi.js'
-import type { TextureSource } from 'pixi.js'
-import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonBinary, SkeletonData, Animation, MixBlend, MixDirection, Physics, Vector2 } from '@esotericsoftware/spine-core'
-import { SpineTexture } from '@esotericsoftware/spine-pixi-v8'
+import { Container, Graphics } from 'pixi.js'
+import { Physics, Vector2 } from '@esotericsoftware/spine-core'
+import { applyAnimationAtTime, skeletonSetupPose } from './spineCompat'
+import {
+  createSpineFromData,
+  loadSpineDataFromFiles as loadSpineDataFromFilesDual,
+  type AnyAnimation,
+  type AnySpine,
+  type LoadedSpineData,
+} from './spineRuntime'
 
 export interface SpineDisplayOptions {
   width: number
@@ -39,7 +44,7 @@ export class SpineDisplay extends Container {
 
   private dimensions: { width: number; height: number }
   private initialGraphic: Graphics
-  private spine: Spine | null = null;
+  private spine: AnySpine | null = null;
 
   constructor(options: SpineDisplayOptions) {
     super()
@@ -80,99 +85,9 @@ export class SpineDisplay extends Container {
     json: string | Record<string, any> | ArrayBuffer | Uint8Array,
     atlasText: string,
     imageFiles: File[]
-  ): Promise<{ skeletonData: SkeletonData; textureSources: TextureSource[] }> {
-    const textureSources: TextureSource[] = []
+  ): Promise<LoadedSpineData> {
     const log = (msg: string) => SpineDisplay.spineLoadDebug && console.log(`[SpineDisplay] ${msg}`)
-
-    log('Creating texture atlas from atlas text')
-    const textureAtlas = new TextureAtlas(atlasText)
-
-    // For each atlas page, find or fallback to an image file, then attach via SpineTexture
-    for (const page of textureAtlas.pages) {
-      log(`Looking for image for atlas page: "${page.name}"`)
-      if (SpineDisplay.spineLoadDebug) console.log(`[SpineDisplay] Available image files:`, imageFiles.map(f => f.name))
-
-      // Extract base filename from page name (handle paths like "./images/a.png" or "a.png")
-      const pageBaseName = page.name.split('/').pop() || page.name
-      const pageNameWithoutExt = pageBaseName.split('.')[0]
-
-      const pageFile =
-        imageFiles.find(f => f.name === page.name) ||
-        imageFiles.find(f => f.name === pageBaseName) ||
-        imageFiles.find(f => {
-          const fileName = f.name.toLowerCase()
-          const baseName = fileName.split('.')[0]
-          return baseName === pageNameWithoutExt.toLowerCase() || fileName.includes(pageNameWithoutExt.toLowerCase())
-        })
-
-      const fileToUse = pageFile || imageFiles[0]
-      if (!fileToUse) {
-        console.error(`[SpineDisplay] No image files provided for Spine atlas page: ${page.name}`)
-        continue
-      }
-
-      log(`Using image file: "${fileToUse.name}" for atlas page: "${page.name}"`)
-
-      try {
-        const url = URL.createObjectURL(fileToUse)
-
-        const img = new Image()
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => {
-            log(`Image decoded (CPU): ${fileToUse.name}`)
-            resolve()
-          }
-          img.onerror = (err) => {
-            console.error(`[SpineDisplay] Image load error for ${fileToUse.name}:`, err)
-            reject(err)
-          }
-          img.crossOrigin = 'anonymous'
-          img.src = url
-        })
-
-        // IMPORTANT: Respect the atlas page's pma (premultiplied alpha) flag!
-        // If pma is true, the texture is already premultiplied, use 'premultiplied-alpha'
-        // If pma is false, PIXI should premultiply on upload (this is the default)
-        // This is critical for correct blending of semi-transparent textures!
-        const alphaMode = page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload'
-        log(`Alpha mode: ${alphaMode} (pma: ${page.pma})`)
-
-        // Create ImageSource with correct alphaMode for proper blending
-        const imageSource = new ImageSource({
-          resource: img,
-          alphaMode: alphaMode as any,
-          autoGenerateMipmaps: true,
-        })
-
-        const spineTex = SpineTexture.from(imageSource)
-        page.setTexture(spineTex)
-        textureSources.push(spineTex.texture.source)
-        log(`Texture set for atlas page: ${page.name} (GPU upload deferred until first render)`)
-
-        URL.revokeObjectURL(url)
-      } catch (err) {
-        console.error(`[SpineDisplay] Failed to load image for atlas page ${page.name}:`, err)
-      }
-    }
-
-    log('Creating atlas loader and parsing skeleton')
-    const atlasLoader = new AtlasAttachmentLoader(textureAtlas)
-
-    // Determine if input is binary (.skel) or JSON
-    const isBinary = json instanceof ArrayBuffer || json instanceof Uint8Array
-
-    let skeletonData: SkeletonData
-    if (isBinary) {
-      const skeletonBinary = new SkeletonBinary(atlasLoader)
-      const binaryData = json instanceof ArrayBuffer ? new Uint8Array(json) : json
-      skeletonData = skeletonBinary.readSkeletonData(binaryData)
-    } else {
-      const skeletonJson = new SkeletonJson(atlasLoader)
-      const jsonData = typeof json === 'string' ? JSON.parse(json) : json
-      skeletonData = skeletonJson.readSkeletonData(jsonData)
-    }
-    log(`Skeleton parsed: ${skeletonData.animations.length} animations, ${textureSources.length} texture source(s)`)
-    return { skeletonData, textureSources }
+    return loadSpineDataFromFilesDual(json, atlasText, imageFiles, log)
   }
 
   /**
@@ -213,35 +128,18 @@ export class SpineDisplay extends Container {
        */
       boundsHeight?: number
     }
-  ): Promise<Spine> {
+  ): Promise<AnySpine> {
     const { skeletonData } = await this.loadSpineDataFromFiles(json, atlasText, imageFiles)
 
-    // Use darkTint option from parameter, fallback to static option, or undefined for auto-detect
     const darkTint = options?.darkTint ?? SpineDisplay.loadSpineOptions.darkTint
 
-    // Create bounds provider if all bounds values are provided
-    let boundsProvider
-    if (
-      options?.boundsX !== undefined &&
-      options?.boundsY !== undefined &&
-      options?.boundsWidth !== undefined &&
-      options?.boundsHeight !== undefined
-    ) {
-      boundsProvider = new AABBRectangleBoundsProvider(
-        options.boundsX,
-        options.boundsY,
-        options.boundsWidth,
-        options.boundsHeight
-      )
-    }
-
-    const spine = new Spine({
-      skeletonData,
-      darkTint, // undefined = auto-detect, false = disable for better blending, true = force enable
-      boundsProvider,
+    return createSpineFromData(skeletonData, {
+      darkTint,
+      boundsX: options?.boundsX,
+      boundsY: options?.boundsY,
+      boundsWidth: options?.boundsWidth,
+      boundsHeight: options?.boundsHeight,
     })
-
-    return spine
   }
 
   /**
@@ -252,16 +150,13 @@ export class SpineDisplay extends Container {
    * @param padding - Padding percentage (default 0.1 = 10%)
    */
   static calculateAnimationViewport(
-    animation: Animation,
-    spine: Spine,
+    animation: AnyAnimation,
+    spine: AnySpine,
     padding: number = 0.1
   ): AnimationViewport {
     const skeleton = spine.skeleton
 
-    // Note: We temporarily modify the skeleton to calculate bounds.
-    // The caller should set the desired animation immediately after this
-    // to restore the skeleton to the correct state.
-    skeleton.setToSetupPose()
+    skeletonSetupPose(skeleton as never)
 
     const steps = 100
     const stepTime = animation.duration ? animation.duration / steps : 0
@@ -274,9 +169,9 @@ export class SpineDisplay extends Container {
     const offset = new Vector2()
     const size = new Vector2()
 
-    // Sample animation at 100 different time points to find bounding box
     for (let i = 0; i < steps; i++, time += stepTime) {
-      animation.apply(skeleton, time, time, false, [], 1, MixBlend.setup, MixDirection.mixIn)
+      skeletonSetupPose(skeleton as never)
+      applyAnimationAtTime(skeleton as never, animation as never, time)
       skeleton.updateWorldTransform(Physics.update)
       skeleton.getBounds(offset, size, [])
 
@@ -333,11 +228,11 @@ export class SpineDisplay extends Container {
    * Useful for stable camera/framing across animation changes.
    */
   static calculateMaxAnimationsViewport(
-    spine: Spine,
+    spine: AnySpine,
     padding: number = 0.1
   ): AnimationViewport | null {
     const skeletonData = spine.skeleton?.data;
-    const animations: Animation[] = (skeletonData?.animations as Animation[]) || [];
+    const animations = skeletonData?.animations ?? [];
     if (!animations.length) return null;
 
     let minX = Infinity;
@@ -480,7 +375,7 @@ export class SpineDisplay extends Container {
   /**
    * Get the spine instance (for advanced usage)
    */
-  getSpine(): Spine | null {
+  getSpine(): AnySpine | null {
     return this.spine
   }
 

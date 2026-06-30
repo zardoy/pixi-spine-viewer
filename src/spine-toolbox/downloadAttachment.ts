@@ -5,9 +5,102 @@
 export interface AtlasRegionInfo {
   name: string;
   pageName: string;
+  /** Raw bounds from the atlas file (packed logical size). */
   bounds: { x: number; y: number; width: number; height: number };
-  rotate: boolean; // true = stored rotated 90° CCW
+  rotate: boolean; // true when degrees is 90
+  /** Rotation in degrees stored in the atlas (0, 90, 180, 270, …). */
+  degrees: number;
   index: number; // for multi-frame regions
+}
+
+/**
+ * Axis-aligned rectangle this region occupies on the atlas page image.
+ * The rotate flag only affects pixel orientation inside this slot — never
+ * apply a visual rotation to the highlight; always use the atlas bounds as-is.
+ */
+export function getAtlasPageAabb(region: AtlasRegionInfo): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  return { ...region.bounds };
+}
+
+function applyRegionProperties(region: Partial<AtlasRegionInfo>, line: string): void {
+  const boundsMatch = line.match(/bounds:\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+  if (boundsMatch) {
+    region.bounds = {
+      x: parseInt(boundsMatch[1], 10),
+      y: parseInt(boundsMatch[2], 10),
+      width: parseInt(boundsMatch[3], 10),
+      height: parseInt(boundsMatch[4], 10),
+    };
+  }
+
+  const rotateMatch = line.match(/rotate:\s*(true|false|\d+)/);
+  if (rotateMatch) {
+    const value = rotateMatch[1];
+    const degrees =
+      value === 'true' ? 90 : value === 'false' ? 0 : parseInt(value, 10) || 0;
+    region.degrees = degrees;
+    region.rotate = degrees === 90;
+  }
+
+  const xyMatch = line.match(/xy:\s*(\d+),\s*(\d+)/);
+  if (xyMatch) {
+    const x = parseInt(xyMatch[1], 10);
+    const y = parseInt(xyMatch[2], 10);
+    region.bounds = {
+      x,
+      y,
+      width: region.bounds?.width ?? 0,
+      height: region.bounds?.height ?? 0,
+    };
+  }
+
+  const sizeMatch = line.match(/size:\s*(\d+),\s*(\d+)/);
+  if (sizeMatch) {
+    region.bounds = {
+      x: region.bounds?.x ?? 0,
+      y: region.bounds?.y ?? 0,
+      width: parseInt(sizeMatch[1], 10),
+      height: parseInt(sizeMatch[2], 10),
+    };
+  }
+
+  const indexMatch = line.match(/index:\s*(-?\d+)/);
+  if (indexMatch) {
+    region.index = parseInt(indexMatch[1], 10);
+  }
+}
+
+export function findAtlasPageImage(pageName: string, imageFiles: File[]): File | undefined {
+  const pageBaseName = pageName.split('/').pop() || pageName;
+  return (
+    imageFiles.find(
+      (f) =>
+        f.name === pageName ||
+        f.name === pageBaseName ||
+        f.name.toLowerCase() === pageBaseName.toLowerCase()
+    ) ?? imageFiles[0]
+  );
+}
+
+/** Ordered atlas page image filenames from atlas text. */
+export function parseAtlasPageNames(atlasText: string): string[] {
+  const lines = atlasText.split('\n');
+  const pageNames: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/\.(png|jpg|jpeg|webp)$/i.test(line)) {
+      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+      if (nextLine.startsWith('size:')) {
+        pageNames.push(line);
+      }
+    }
+  }
+  return pageNames;
 }
 
 export function parseAtlasRegions(atlasText: string): AtlasRegionInfo[] {
@@ -19,11 +112,13 @@ export function parseAtlasRegions(atlasText: string): AtlasRegionInfo[] {
 
   const flushRegion = () => {
     if (currentRegion?.name && currentRegion.bounds) {
+      const degrees = currentRegion.degrees ?? 0;
       regions.push({
         name: currentRegion.name,
         pageName: currentPageName,
         bounds: currentRegion.bounds,
-        rotate: currentRegion.rotate ?? false,
+        rotate: degrees === 90,
+        degrees,
         index: currentRegion.index ?? -1,
       });
     }
@@ -58,32 +153,15 @@ export function parseAtlasRegions(atlasText: string): AtlasRegionInfo[] {
         pageName: currentPageName,
         bounds: undefined as any,
         rotate: false,
+        degrees: 0,
         index: -1,
       };
       continue;
     }
 
     if (currentRegion) {
-      const boundsMatch = line.match(/bounds:\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
-      if (boundsMatch) {
-        currentRegion.bounds = {
-          x: parseInt(boundsMatch[1]),
-          y: parseInt(boundsMatch[2]),
-          width: parseInt(boundsMatch[3]),
-          height: parseInt(boundsMatch[4]),
-        };
-        continue;
-      }
-      const rotateMatch = line.match(/rotate:\s*(true|false|\d+)/);
-      if (rotateMatch) {
-        currentRegion.rotate = rotateMatch[1] === 'true' || parseInt(rotateMatch[1]) === 90;
-        continue;
-      }
-      const indexMatch = line.match(/index:\s*(-?\d+)/);
-      if (indexMatch) {
-        currentRegion.index = parseInt(indexMatch[1]);
-        continue;
-      }
+      applyRegionProperties(currentRegion, line);
+      continue;
     }
   }
   flushRegion();
@@ -112,13 +190,7 @@ export async function downloadAttachmentAsImage(
     throw new Error(`Region "${regionName}"${regionIndex >= 0 ? ` (index ${regionIndex})` : ''} not found in atlas`);
   }
 
-  const pageBaseName = region.pageName.split('/').pop() || region.pageName;
-  const pageFile = imageFiles.find(
-    (f) =>
-      f.name === region.pageName ||
-      f.name === pageBaseName ||
-      f.name.toLowerCase() === pageBaseName.toLowerCase()
-  ) || imageFiles[0];
+  const pageFile = findAtlasPageImage(region.pageName, imageFiles);
 
   if (!pageFile) {
     throw new Error('No image file found for atlas page');

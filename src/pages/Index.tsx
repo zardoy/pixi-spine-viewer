@@ -9,6 +9,7 @@ import { OverridePlayground } from "../components/OverridePlayground";
 import { PlaygroundAtPosition } from "../components/PlaygroundAtPosition";
 import { SpineScreenshot } from "../components/SpineScreenshot";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
+import { checkSpineFilesAndRedirect, assertSpine43OrRedirect } from "../lib/spine42Redirect";
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
 import { SkeletonSelectModal } from "../components/SkeletonSelectModal";
@@ -24,7 +25,7 @@ export interface SpineFiles {
 /** Blank spine files used when opening particle generator; shared for QS restore. */
 export function getBlankParticleFiles(): SpineFiles {
   const blankJson = JSON.stringify({
-    skeleton: { hash: 'particles', spine: '4.2', x: 0, y: 0, width: 12000, height: 12000, images: './' },
+    skeleton: { hash: 'particles', spine: '4.3', x: 0, y: 0, width: 12000, height: 12000, images: './' },
     bones: [{ name: 'root' }],
     slots: [],
     skins: [{ name: 'default', attachments: {} }],
@@ -115,6 +116,12 @@ const Index = () => {
 
           const files = await fetchSpineFilesFromUrl(decodedJsonUrl, decodedAtlasUrl, decodedPngUrls);
 
+          const isSkel = files.jsonFile.name.toLowerCase().endsWith('.skel');
+          const skeletonData = isSkel
+            ? await files.jsonFile.arrayBuffer()
+            : await files.jsonFile.text();
+          assertSpine43OrRedirect(skeletonData);
+
           const spineFiles: SpineFiles = {
             jsonFile: files.jsonFile,
             atlasFile: files.atlasFile,
@@ -157,11 +164,13 @@ const Index = () => {
     };
   }, []);
 
-  const handleFilesSelect = (files: SpineFiles) => {
+  const handleFilesSelect = async (files: SpineFiles) => {
+    if (await checkSpineFilesAndRedirect(files)) return;
     setSpineFiles(files);
   };
 
-  const handleSkeletonSelect = (files: SpineFiles) => {
+  const handleSkeletonSelect = async (files: SpineFiles) => {
+    if (await checkSpineFilesAndRedirect(files)) return;
     spineViewerStore.syncedDir = null;
     spineViewerStore.refs.syncedDirHandles = null;
     spineViewerStore.ui.particleGeneratorPanelVisible = false;

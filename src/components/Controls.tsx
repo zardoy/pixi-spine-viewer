@@ -32,7 +32,9 @@ export const Controls = ({
   const state = useSnapshot(spineViewerStore);
   const { ui } = state;
   const spine = spineViewerStore.refs.spine;
-  const anim = spine?.skeleton?.data?.findAnimation?.(ui.selectedAnimation);
+  const anim = ui.selectedAnimation
+    ? spine?.skeleton?.data?.findAnimation?.(ui.selectedAnimation)
+    : undefined;
   const animEvents = anim ? getAnimationEvents(anim as Parameters<typeof getAnimationEvents>[0]) : [];
   return (
     <Card className="p-6 rounded-none border-x-0 border-t-0 border-b border-border relative">

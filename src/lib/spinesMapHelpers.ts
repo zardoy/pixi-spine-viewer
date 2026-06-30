@@ -1,4 +1,4 @@
-import type { SpineEntry } from '../types/spinesMap'
+import type { SpineEntry, SpineBoundsData } from '../types/spinesMap'
 
 /** Ordered PNG URLs from a map entry (png, png2, …). */
 export function getSortedPngUrlsFromEntry(spine: SpineEntry): string[] {
@@ -15,4 +15,22 @@ export function getSortedPngUrlsFromEntry(spine: SpineEntry): string[] {
 /** Safe unique key for FileSpineLoader / SpineBase inside one Application. */
 export function spineKeyFromMapPath(path: string): string {
   return `map-${path.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+}
+
+/**
+ * Resolve saved bounds data for an entry. The `bounds` map is keyed by the
+ * skeleton's name; we try the skeleton name first, then the entry name, then
+ * fall back to the sole entry when there is exactly one.
+ */
+export function resolveSpineBoundsData(
+  spine: SpineEntry,
+  skeletonName?: string | null,
+): SpineBoundsData | undefined {
+  const map = spine.bounds
+  if (!map) return undefined
+  if (skeletonName && map[skeletonName]) return map[skeletonName]
+  if (map[spine.name]) return map[spine.name]
+  const keys = Object.keys(map)
+  if (keys.length === 1) return map[keys[0]]
+  return undefined
 }

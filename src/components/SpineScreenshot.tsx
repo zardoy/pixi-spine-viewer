@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Application, useApplication, useExtend, useTick } from '@pixi/react'
 import { Container, Rectangle } from 'pixi.js'
 import type { Application as PIXIApplication } from 'pixi.js'
-import type { SkeletonData } from '@esotericsoftware/spine-core'
+import type { AnySkeletonData } from '../lib/spineRuntime'
 import JSZip from 'jszip'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
@@ -183,7 +183,7 @@ async function resolveSpineFiles(rawFiles: File[]) {
 
 export const SpineScreenshot = () => {
   const [loader, setLoader] = useState<FileSpineLoader | null>(null)
-  const [skeletonData, setSkeletonData] = useState<SkeletonData | null>(null)
+  const [skeletonData, setSkeletonData] = useState<AnySkeletonData | null>(null)
   const [activeBounds, setActiveBounds] = useState<SpineBounds | null>(null)
   const [boundsMode, setBoundsMode] = useState<BoundsMode>(() => {
     const saved = localStorage.getItem('spineScreenshot.boundsMode')

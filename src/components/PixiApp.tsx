@@ -25,6 +25,18 @@ setGlobalDebugMode('texture-sizes')
 const SPINE_KEY = 'viewer-spine'; // Single key for the viewer
 const SECOND_SPINE_KEY = 'viewer-spine-2'; // Key for second spine
 
+function updateAttachmentTestGraphics(
+  graphics: Graphics,
+  blue: boolean,
+  large: boolean
+): void {
+  const half = large ? 10 : 5;
+  const size = half * 2;
+  graphics.clear();
+  graphics.rect(-half, -half, size, size);
+  graphics.fill({ color: blue ? 0x0000ff : 0xff0000, alpha: 0.8 });
+}
+
 function isPixiAppScreenReady(pixiApp: PixiApplication | null | undefined): pixiApp is PixiApplication {
   if (!pixiApp?.renderer) return false;
   try {
@@ -1003,8 +1015,11 @@ const PixiAppContent = () => {
       const container = spine.parent;
       if (container && !attachmentTestGraphicsRef.current) {
         const graphics = new Graphics();
-        graphics.rect(-5, -5, 10, 10);
-        graphics.fill({ color: 0xff0000, alpha: 0.8 });
+        updateAttachmentTestGraphics(
+          graphics,
+          spineViewerStore.ui.attachmentTestBoxBlue,
+          spineViewerStore.ui.attachmentTestBoxLarge
+        );
         container.addChild(graphics);
         attachmentTestGraphicsRef.current = graphics;
       }
@@ -1026,6 +1041,17 @@ const PixiAppContent = () => {
       }
     };
   }, [state.ui.attachmentTestPanelVisible, state.refs.spine]);
+
+  // Update marker color and size when attachment test options change
+  useEffect(() => {
+    const g = attachmentTestGraphicsRef.current;
+    if (!g) return;
+    updateAttachmentTestGraphics(
+      g,
+      state.ui.attachmentTestBoxBlue,
+      state.ui.attachmentTestBoxLarge
+    );
+  }, [state.ui.attachmentTestBoxBlue, state.ui.attachmentTestBoxLarge]);
 
   // Hide marker when no slot/bone selected
   useEffect(() => {

@@ -11,7 +11,7 @@ import {
   isDrawableAttachment,
   isRegionLikeAttachment,
 } from './spineAttachments'
-import { getSkeletonDrawOrderSlots, slotGetAttachment, slotSetAlpha, slotSetAttachment } from './spineSlot'
+import { getSkeletonDrawOrderSlots, slotGetAttachment, slotSetAlpha, slotSetAttachment, slotSyncAlphaFromPose } from './spineSlot'
 import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
@@ -343,12 +343,27 @@ export interface SpineEvent<TName extends string = string> {
 
 function readBoneWorldTransform(bone: unknown): { x: number; y: number; scaleX: number; scaleY: number } {
   const b = bone as {
+    appliedPose?: {
+      worldX?: number
+      worldY?: number
+      getWorldScaleX?: () => number
+      getWorldScaleY?: () => number
+    }
     worldX?: number
     worldY?: number
     getWorldX?: () => number
     getWorldY?: () => number
     getWorldScaleX?: () => number
     getWorldScaleY?: () => number
+  }
+  const pose = b.appliedPose
+  if (pose) {
+    return {
+      x: pose.worldX ?? 0,
+      y: pose.worldY ?? 0,
+      scaleX: pose.getWorldScaleX?.() ?? 1,
+      scaleY: pose.getWorldScaleY?.() ?? 1,
+    }
   }
   return {
     x: b.worldX ?? b.getWorldX?.() ?? 0,
@@ -1007,7 +1022,11 @@ export const SpineBase = (props: SpineProps) => {
               const matchesExact = hasExact && exact.some(
                 (p) => (path === p) || (attName === p)
               )
-              if (matchesPrefix || matchesExact) slotSetAlpha(slot, 0)
+              if (matchesPrefix || matchesExact) {
+                slotSetAlpha(slot, 0)
+              } else if (hasPrefixes || hasExact) {
+                slotSyncAlphaFromPose(slot)
+              }
             }
           }
 

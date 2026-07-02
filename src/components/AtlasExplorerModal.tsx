@@ -59,9 +59,14 @@ function RegionPopover({
       <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
         atlas: {x}, {y}, {width}, {height}
       </div>
+      {region.degrees === 90 && (
+        <div className="text-[10px] text-muted-foreground font-mono">
+          packed: {region.bounds.x}, {region.bounds.y}, {region.bounds.width}, {region.bounds.height}
+        </div>
+      )}
       {region.degrees !== 0 && (
         <div className="text-[10px] text-muted-foreground">
-          stored {region.degrees}° in slot (atlas rect is axis-aligned)
+          stored {region.degrees}° (atlas footprint uses inverted w/h)
         </div>
       )}
       {region.index >= 0 && (

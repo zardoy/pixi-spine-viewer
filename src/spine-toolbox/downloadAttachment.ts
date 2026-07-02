@@ -15,8 +15,8 @@ export interface AtlasRegionInfo {
 
 /**
  * Axis-aligned rectangle this region occupies on the atlas page image.
- * The rotate flag only affects pixel orientation inside this slot — never
- * apply a visual rotation to the highlight; always use the atlas bounds as-is.
+ * For 90° packed regions, width/height in the atlas file are inverted on the page
+ * (matches spine-pixi TextureAtlas UV footprint).
  */
 export function getAtlasPageAabb(region: AtlasRegionInfo): {
   x: number;
@@ -24,7 +24,11 @@ export function getAtlasPageAabb(region: AtlasRegionInfo): {
   width: number;
   height: number;
 } {
-  return { ...region.bounds };
+  const { x, y, width, height } = region.bounds;
+  if (region.degrees === 90) {
+    return { x, y, width: height, height: width };
+  }
+  return { x, y, width, height };
 }
 
 function applyRegionProperties(region: Partial<AtlasRegionInfo>, line: string): void {

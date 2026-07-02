@@ -16,13 +16,13 @@ rotate: 90
 `;
 
 describe('parseAtlasRegions', () => {
-  it('parses rotated region with bounds on atlas page (axis-aligned, not swapped)', () => {
+  it('parses rotated region with inverted atlas footprint for 90°', () => {
     const regions = parseAtlasRegions(SAMPLE_ATLAS);
     const head = regions.find((r) => r.name === 'head');
     expect(head).toBeDefined();
     expect(head!.degrees).toBe(90);
     expect(head!.bounds).toEqual({ x: 2, y: 21, width: 103, height: 81 });
-    expect(getAtlasPageAabb(head!)).toEqual({ x: 2, y: 21, width: 103, height: 81 });
+    expect(getAtlasPageAabb(head!)).toEqual({ x: 2, y: 21, width: 81, height: 103 });
   });
 
   it('parses multiple properties on one line', () => {

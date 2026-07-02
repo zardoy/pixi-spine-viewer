@@ -19,6 +19,12 @@ import { setGlobalDebugMode, SpineBase } from "../lib/SpineBase";
 import { FileSpineLoader } from "../lib/FileSpineLoader";
 import type { AnySpine } from "../lib/spineRuntime";
 import { globalController } from '@/components/globalController';
+import {
+  attachAttachmentTestToBone,
+  attachAttachmentTestToSlot,
+  detachAttachmentTestMarker,
+  tickAttachmentTestBoneFollow,
+} from '../lib/spineFollow';
 
 setGlobalDebugMode('texture-sizes')
 
@@ -1003,44 +1009,101 @@ const PixiAppContent = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Create/remove attachment test graphics; add to spine container so SpineBase can set x/y via attachmentsFollow
+  // Create/destroy attachment test marker graphics
   useEffect(() => {
     const showPanel = state.ui.attachmentTestPanelVisible;
     const spine = state.refs.spine;
 
-    if (showPanel && spine) {
-      // Skip if spine is destroyed
-      if ((spine as any).destroyed) return;
-
-      const container = spine.parent;
-      if (container && !attachmentTestGraphicsRef.current) {
+    if (showPanel && spine && !(spine as { destroyed?: boolean }).destroyed) {
+      if (!attachmentTestGraphicsRef.current) {
         const graphics = new Graphics();
         updateAttachmentTestGraphics(
           graphics,
           spineViewerStore.ui.attachmentTestBoxBlue,
           spineViewerStore.ui.attachmentTestBoxLarge
         );
-        container.addChild(graphics);
         attachmentTestGraphicsRef.current = graphics;
       }
-    } else {
-      if (attachmentTestGraphicsRef.current) {
-        const g = attachmentTestGraphicsRef.current;
-        g.parent?.removeChild(g);
-        g.destroy();
-        attachmentTestGraphicsRef.current = null;
-      }
+    } else if (attachmentTestGraphicsRef.current && spine && !(spine as { destroyed?: boolean }).destroyed) {
+      detachAttachmentTestMarker(spine, attachmentTestGraphicsRef.current);
+    } else if (attachmentTestGraphicsRef.current) {
+      attachmentTestGraphicsRef.current.destroy();
+      attachmentTestGraphicsRef.current = null;
     }
 
     return () => {
-      if (attachmentTestGraphicsRef.current) {
-        const g = attachmentTestGraphicsRef.current;
-        g.parent?.removeChild(g);
+      const g = attachmentTestGraphicsRef.current;
+      const s = spineViewerStore.refs.spine;
+      if (g && s && !(s as { destroyed?: boolean }).destroyed) {
+        detachAttachmentTestMarker(s, g);
+      }
+      if (g) {
         g.destroy();
         attachmentTestGraphicsRef.current = null;
       }
     };
   }, [state.ui.attachmentTestPanelVisible, state.refs.spine]);
+
+  // Attach marker to selected slot (spine.addSlotObject) or bone (manual pose tick)
+  useEffect(() => {
+    const spine = state.refs.spine;
+    const marker = attachmentTestGraphicsRef.current;
+    if (!spine || !marker || (spine as { destroyed?: boolean }).destroyed) return;
+    if (!state.ui.attachmentTestPanelVisible) return;
+
+    detachAttachmentTestMarker(spine, marker);
+
+    const slotName =
+      state.ui.attachmentFollowMode === 'slot' ? state.ui.selectedAttachmentSlot : '';
+    const boneName =
+      state.ui.attachmentFollowMode === 'bone' ? state.ui.selectedAttachmentBone : '';
+
+    if (slotName) {
+      if (!attachAttachmentTestToSlot(spine, slotName, marker)) {
+        marker.visible = false;
+      }
+    } else if (boneName) {
+      if (!attachAttachmentTestToBone(spine, boneName, marker)) {
+        marker.visible = false;
+      }
+    } else {
+      marker.visible = false;
+    }
+
+    return () => {
+      if (!(spine as { destroyed?: boolean }).destroyed) {
+        detachAttachmentTestMarker(spine, marker);
+      }
+    };
+  }, [
+    state.ui.attachmentTestPanelVisible,
+    state.refs.spine,
+    state.ui.attachmentFollowMode,
+    state.ui.selectedAttachmentSlot,
+    state.ui.selectedAttachmentBone,
+  ]);
+
+  const tickAttachmentTestBone = useCallback(() => {
+    if (state.ui.attachmentFollowMode !== 'bone' || !state.ui.selectedAttachmentBone) return;
+    if (!state.ui.attachmentTestPanelVisible) return;
+    const spine = spineViewerStore.refs.spine;
+    const marker = attachmentTestGraphicsRef.current;
+    if (!spine || !marker || (spine as { destroyed?: boolean }).destroyed) return;
+    tickAttachmentTestBoneFollow(spine, state.ui.selectedAttachmentBone, marker);
+  }, [
+    state.ui.attachmentFollowMode,
+    state.ui.selectedAttachmentBone,
+    state.ui.attachmentTestPanelVisible,
+  ]);
+
+  useTick({
+    isEnabled:
+      state.ui.attachmentTestPanelVisible &&
+      state.ui.attachmentFollowMode === 'bone' &&
+      !!state.ui.selectedAttachmentBone &&
+      !!state.refs.spine,
+    callback: tickAttachmentTestBone,
+  });
 
   // Update marker color and size when attachment test options change
   useEffect(() => {
@@ -1052,16 +1115,6 @@ const PixiAppContent = () => {
       state.ui.attachmentTestBoxLarge
     );
   }, [state.ui.attachmentTestBoxBlue, state.ui.attachmentTestBoxLarge]);
-
-  // Hide marker when no slot/bone selected
-  useEffect(() => {
-    if (attachmentTestGraphicsRef.current) {
-      const hasTarget =
-        (state.ui.attachmentFollowMode === 'slot' && !!state.ui.selectedAttachmentSlot) ||
-        (state.ui.attachmentFollowMode === 'bone' && !!state.ui.selectedAttachmentBone);
-      attachmentTestGraphicsRef.current.visible = !!hasTarget;
-    }
-  }, [state.ui.attachmentFollowMode, state.ui.selectedAttachmentSlot, state.ui.selectedAttachmentBone]);
 
   // Update available attachment slots, bones, and texture paths in store when spine changes
   useEffect(() => {
@@ -1185,13 +1238,6 @@ const PixiAppContent = () => {
             spineRef={spineRef}
             onSpineLoaded={handleSpineLoaded}
             onCurrentAnimComplete={handleAnimationComplete}
-            attachmentsFollow={
-              (state.ui.attachmentFollowMode === 'slot' && state.ui.selectedAttachmentSlot)
-                ? [{ slotName: state.ui.selectedAttachmentSlot, ref: attachmentTestGraphicsRef }]
-                : (state.ui.attachmentFollowMode === 'bone' && state.ui.selectedAttachmentBone)
-                  ? [{ boneName: state.ui.selectedAttachmentBone, ref: attachmentTestGraphicsRef }]
-                  : []
-            }
             forceHideAttachmentExact={
               state.ui.hiddenAttachmentPaths.length > 0
                 ? [...state.ui.hiddenAttachmentPaths]

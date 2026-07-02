@@ -30,6 +30,16 @@ export function slotSetAlpha(slot: unknown, alpha: number): void {
   if (color) color.a = alpha
 }
 
+/** Restore applied alpha from animation pose (after force-hide is cleared). */
+export function slotSyncAlphaFromPose(slot: unknown): void {
+  const s = slot as { pose?: { color?: { a: number } } }
+  const applied = slotGetColor(slot)
+  const poseColor = s.pose?.color
+  if (applied && poseColor) {
+    applied.a = poseColor.a
+  }
+}
+
 export function slotSetAttachment(slot: unknown, attachment: unknown): void {
   const s = slot as {
     pose?: { setAttachment: (attachment: unknown) => void }

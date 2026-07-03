@@ -71,6 +71,8 @@ export interface SpineViewerState {
     attachmentTestBoxBlue: boolean;
     /** Attachment test marker: 2× size (20×20 vs 10×10) */
     attachmentTestBoxLarge: boolean;
+    /** Slot follow: use spine draw order (above target slot only) instead of top overlay. */
+    attachmentTestUseSpineDrawOrder: boolean;
     /** U key: hide texture attachments by path */
     attachmentHidePanelVisible: boolean;
     attachmentHidePanelPos: { x: number; y: number };
@@ -176,6 +178,7 @@ export const initialState: SpineViewerState = {
     attachmentTestPanelPos: { x: 0, y: 0 },
     attachmentTestBoxBlue: false,
     attachmentTestBoxLarge: false,
+    attachmentTestUseSpineDrawOrder: false,
     attachmentHidePanelVisible: false,
     attachmentHidePanelPos: { x: 0, y: 0 },
     hiddenAttachmentPaths: [],

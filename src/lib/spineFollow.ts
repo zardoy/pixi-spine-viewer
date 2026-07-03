@@ -10,6 +10,8 @@ interface BoneAppliedPose {
   worldY: number
 }
 
+const SPINE_SLOT_OVERLAY_Z = 10_000
+
 /** Match spine-pixi-v8 Spine.updateSlotObject bone matrix mapping. */
 export function applyBoneAppliedPoseToContainer(
   applied: BoneAppliedPose,
@@ -37,7 +39,41 @@ export function detachAttachmentTestMarker(spine: AnySpine, marker: Container): 
   marker.parent?.removeChild(marker)
 }
 
-export function attachAttachmentTestToSlot(
+function attachSlotOverlay(spine: AnySpine, marker: Container): void {
+  marker.mask = null
+  marker.includeInBuild = true
+  marker.zIndex = SPINE_SLOT_OVERLAY_Z
+  spine.sortableChildren = true
+  spine.addChild(marker)
+}
+
+/** Sync marker to slot bone — for overlay mode (manual tick). */
+export function syncAttachmentTestToSlot(
+  spine: AnySpine,
+  slotName: string,
+  marker: Container,
+): boolean {
+  const slot = spine.skeleton.findSlot(slotName)
+  if (!slot || !slot.bone.active) {
+    marker.visible = false
+    return false
+  }
+
+  const pose = slot.appliedPose
+  const slotAlpha = spine.skeleton.color.a * pose.color.a
+  const inDrawOrder = spine.skeleton.drawOrder.appliedPose.includes(slot)
+  const visible = inDrawOrder && spine.alpha > 0 && slotAlpha > 0
+
+  marker.visible = visible
+  if (!visible) return false
+
+  applyBoneAppliedPoseToContainer(slot.bone.appliedPose, marker)
+  marker.alpha = slotAlpha
+  return true
+}
+
+/** Inject at slot draw order via spine-pixi (above target slot, behind later slots). */
+export function attachAttachmentTestToSlotDrawOrder(
   spine: AnySpine,
   slotName: string,
   marker: Container,
@@ -50,11 +86,25 @@ export function attachAttachmentTestToSlot(
   detachAttachmentTestMarker(spine, marker)
   spine.addSlotObject(slotName, marker, { followAttachmentTimeline: false })
   marker.visible = true
-  console.debug('[AttachmentTest] following slot:', slotName, {
-    bone: slot.bone.data.name,
-    worldX: slot.bone.appliedPose.worldX,
-    worldY: slot.bone.appliedPose.worldY,
-  })
+  console.debug('[AttachmentTest] slot draw-order follow:', slotName)
+  return true
+}
+
+/** Overlay above all spine attachments (debug layer on top). */
+export function attachAttachmentTestToSlotOverlay(
+  spine: AnySpine,
+  slotName: string,
+  marker: Container,
+): boolean {
+  const slot = spine.skeleton.findSlot(slotName)
+  if (!slot) {
+    console.warn('[AttachmentTest] slot not found:', slotName)
+    return false
+  }
+  detachAttachmentTestMarker(spine, marker)
+  attachSlotOverlay(spine, marker)
+  syncAttachmentTestToSlot(spine, slotName, marker)
+  console.debug('[AttachmentTest] slot overlay follow:', slotName)
   return true
 }
 
@@ -69,13 +119,10 @@ export function attachAttachmentTestToBone(
     return false
   }
   detachAttachmentTestMarker(spine, marker)
-  spine.addChild(marker)
+  attachSlotOverlay(spine, marker)
   applyBoneAppliedPoseToContainer(bone.appliedPose, marker)
   marker.visible = true
-  console.debug('[AttachmentTest] following bone:', boneName, {
-    worldX: bone.appliedPose.worldX,
-    worldY: bone.appliedPose.worldY,
-  })
+  console.debug('[AttachmentTest] bone overlay follow:', boneName)
   return true
 }
 
@@ -87,4 +134,12 @@ export function tickAttachmentTestBoneFollow(
   const bone = spine.skeleton.findBone(boneName)
   if (!bone) return
   applyBoneAppliedPoseToContainer(bone.appliedPose, marker)
+}
+
+export function tickAttachmentTestSlotFollow(
+  spine: AnySpine,
+  slotName: string,
+  marker: Container,
+): void {
+  syncAttachmentTestToSlot(spine, slotName, marker)
 }

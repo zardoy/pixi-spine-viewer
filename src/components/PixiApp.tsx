@@ -21,9 +21,11 @@ import type { AnySpine } from "../lib/spineRuntime";
 import { globalController } from '@/components/globalController';
 import {
   attachAttachmentTestToBone,
-  attachAttachmentTestToSlot,
+  attachAttachmentTestToSlotDrawOrder,
+  attachAttachmentTestToSlotOverlay,
   detachAttachmentTestMarker,
   tickAttachmentTestBoneFollow,
+  tickAttachmentTestSlotFollow,
 } from '../lib/spineFollow';
 
 setGlobalDebugMode('texture-sizes')
@@ -1059,9 +1061,11 @@ const PixiAppContent = () => {
       state.ui.attachmentFollowMode === 'bone' ? state.ui.selectedAttachmentBone : '';
 
     if (slotName) {
-      if (!attachAttachmentTestToSlot(spine, slotName, marker)) {
-        marker.visible = false;
-      }
+      const useDrawOrder = state.ui.attachmentTestUseSpineDrawOrder;
+      const ok = useDrawOrder
+        ? attachAttachmentTestToSlotDrawOrder(spine, slotName, marker)
+        : attachAttachmentTestToSlotOverlay(spine, slotName, marker);
+      if (!ok) marker.visible = false;
     } else if (boneName) {
       if (!attachAttachmentTestToBone(spine, boneName, marker)) {
         marker.visible = false;
@@ -1081,6 +1085,21 @@ const PixiAppContent = () => {
     state.ui.attachmentFollowMode,
     state.ui.selectedAttachmentSlot,
     state.ui.selectedAttachmentBone,
+    state.ui.attachmentTestUseSpineDrawOrder,
+  ]);
+
+  const tickAttachmentTestSlot = useCallback(() => {
+    if (state.ui.attachmentFollowMode !== 'slot' || !state.ui.selectedAttachmentSlot) return;
+    if (!state.ui.attachmentTestPanelVisible || state.ui.attachmentTestUseSpineDrawOrder) return;
+    const spine = spineViewerStore.refs.spine;
+    const marker = attachmentTestGraphicsRef.current;
+    if (!spine || !marker || (spine as { destroyed?: boolean }).destroyed) return;
+    tickAttachmentTestSlotFollow(spine, state.ui.selectedAttachmentSlot, marker);
+  }, [
+    state.ui.attachmentFollowMode,
+    state.ui.selectedAttachmentSlot,
+    state.ui.attachmentTestPanelVisible,
+    state.ui.attachmentTestUseSpineDrawOrder,
   ]);
 
   const tickAttachmentTestBone = useCallback(() => {
@@ -1095,6 +1114,16 @@ const PixiAppContent = () => {
     state.ui.selectedAttachmentBone,
     state.ui.attachmentTestPanelVisible,
   ]);
+
+  useTick({
+    isEnabled:
+      state.ui.attachmentTestPanelVisible &&
+      state.ui.attachmentFollowMode === 'slot' &&
+      !!state.ui.selectedAttachmentSlot &&
+      !state.ui.attachmentTestUseSpineDrawOrder &&
+      !!state.refs.spine,
+    callback: tickAttachmentTestSlot,
+  });
 
   useTick({
     isEnabled:

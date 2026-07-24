@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { AppServiceWorkerStatus } from "./AppServiceWorkerStatus";
 
 interface LandingPageProps {
   onFilesSelect: (files: SpineFiles) => void;
@@ -345,6 +346,7 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-background via-background to-secondary relative">
+      <AppServiceWorkerStatus />
       {/* File picker input */}
       <input
         ref={fileInputRef}

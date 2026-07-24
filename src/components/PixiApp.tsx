@@ -1014,7 +1014,7 @@ const PixiAppContent = () => {
   // Create/destroy attachment test marker graphics
   useEffect(() => {
     const showPanel = state.ui.attachmentTestPanelVisible;
-    const spine = state.refs.spine;
+    const spine = spineViewerStore.refs.spine;
 
     if (showPanel && spine && !(spine as { destroyed?: boolean }).destroyed) {
       if (!attachmentTestGraphicsRef.current) {
@@ -1048,7 +1048,7 @@ const PixiAppContent = () => {
 
   // Attach marker to selected slot (spine.addSlotObject) or bone (manual pose tick)
   useEffect(() => {
-    const spine = state.refs.spine;
+    const spine = spineViewerStore.refs.spine;
     const marker = attachmentTestGraphicsRef.current;
     if (!spine || !marker || (spine as { destroyed?: boolean }).destroyed) return;
     if (!state.ui.attachmentTestPanelVisible) return;

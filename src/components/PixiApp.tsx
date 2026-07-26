@@ -12,6 +12,7 @@ import { getSkeletonDrawOrderSlots, slotGetAttachment } from "../lib/spineSlot";
 import { Application, useExtend, useApplication, useTick } from "@pixi/react";
 import { useSnapshot, ref } from "valtio";
 import { SpineDisplay } from "../lib/SpineDisplay";
+import { pickInitialSkinName } from "../lib/spineCompat";
 import { SpineDebugRenderer } from '../lib/SpineDebugRenderer';
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
@@ -27,6 +28,8 @@ import {
   tickAttachmentTestBoneFollow,
   tickAttachmentTestSlotFollow,
 } from '../lib/spineFollow';
+import { drawCheckerboardGrid, isCheckerBackground } from '../lib/checkerboardBackground';
+import type { AnimationViewport } from '../lib/SpineDisplay';
 
 setGlobalDebugMode('texture-sizes')
 
@@ -64,6 +67,38 @@ function isPixiAppReady(pixiApp: PixiApplication | null | undefined, isInitialis
   return isInitialised && isPixiAppScreenReady(pixiApp);
 }
 
+function resolveAutoViewport(
+  spine: AnySpine,
+  mode: 'first' | 'per-animation' | 'all',
+  animationName: string,
+  referenceAnimationName: string,
+  availableAnimations: string[],
+): AnimationViewport | null {
+  const data = spine.skeleton?.data;
+  if (!data) return null;
+
+  if (mode === 'all') {
+    return (
+      SpineDisplay.calculateMaxAnimationsViewport(spine, 0.1) ??
+      (() => {
+        const anim = data.findAnimation?.(animationName);
+        return anim ? SpineDisplay.calculateAnimationViewport(anim, spine, 0.1) : null;
+      })()
+    );
+  }
+
+  const targetName =
+    mode === 'first'
+      ? referenceAnimationName && availableAnimations.includes(referenceAnimationName)
+        ? referenceAnimationName
+        : (availableAnimations[0] ?? animationName)
+      : animationName;
+
+  const anim = data.findAnimation?.(targetName);
+  if (!anim) return null;
+  return SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+}
+
 const PixiAppContent = () => {
   // useExtend must be used within Application context
   useExtend({ Container, Graphics, Text });
@@ -82,10 +117,13 @@ const PixiAppContent = () => {
   const boundsTextRef = useRef<Text | null>(null);
   const spawnBoundsGraphicsRef = useRef<Graphics | null>(null);
   const guideGraphicsRef = useRef<Graphics | null>(null);
+  const checkerGraphicsRef = useRef<Graphics | null>(null);
   const attachmentTestGraphicsRef = useRef<Graphics | null>(null);
   const wasSpineLoaded = useRef(false);
   const pendingSpineLoadedRef = useRef<AnySpine | null>(null);
   const lastPositioningModeRef = useRef<'auto' | 'manual' | undefined>(undefined);
+  const manualViewportInteractingRef = useRef(false);
+  const wheelStoreSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fpsCounterRef = useRef<number>(0);
   const fpsLastSecondRef = useRef<number>(performance.now());
   const frameTimeSumRef = useRef<number>(0);
@@ -103,6 +141,7 @@ const PixiAppContent = () => {
       const id = loadingToastRef.current;
       loadingToastRef.current = undefined;
       if (id !== undefined) {
+        toast.dismiss(id);
         if (type === 'success') toast.success(message, { id });
         else if (type === 'warning') toast.warning(message, { id });
         else toast.error(message, { id });
@@ -122,6 +161,9 @@ const PixiAppContent = () => {
     },
     [clearLoadingToast],
   );
+
+  // Clear loading toast on unmount
+  useEffect(() => () => clearLoadingToast(), [clearLoadingToast]);
 
   // Sync container ref to store (wrapped in ref() to prevent proxying)
   useEffect(() => {
@@ -216,7 +258,8 @@ const PixiAppContent = () => {
     };
 
     void initLoader();
-  }, [state.files, state.ui.selectedSkeleton, startLoadingToast, finishLoadingToast]);
+    return () => clearLoadingToast();
+  }, [state.files, state.ui.selectedSkeleton, startLoadingToast, finishLoadingToast, clearLoadingToast]);
 
   // Initialize second file loader and load second files
   useEffect(() => {
@@ -384,12 +427,14 @@ const PixiAppContent = () => {
 
         if (anim) {
           if (state.ui.positioningMode === 'auto') {
-            // Calculate viewport for first animation (or max over all if locked)
-            const viewport =
-              spineViewerStore.ui.autoViewportLock
-                ? SpineDisplay.calculateMaxAnimationsViewport(spine, 0.1) ??
-                  SpineDisplay.calculateAnimationViewport(anim, spine, 0.1)
-                : SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+            const viewport = resolveAutoViewport(
+              spine,
+              spineViewerStore.ui.autoViewportMode,
+              initialAnimation,
+              spineViewerStore.ui.autoViewportAnimation,
+              availableAnimations,
+            );
+            if (viewport) {
             spineViewerStore.refs.currentViewport = viewport;
 
             // Calculate scale to fit viewport in screen
@@ -433,6 +478,7 @@ const PixiAppContent = () => {
                 x: screen.width / 2,
                 y: screen.height / 2,
               };
+            }
             }
           } else {
             // Manual mode - center guide; manualPosition is the absolute position
@@ -491,12 +537,9 @@ const PixiAppContent = () => {
           }
         }
 
-        // Set skin from URL if valid, otherwise default
+        // Set skin from URL if valid, otherwise first non-default skin
         if (availableSkins.length > 0) {
-          const initialSkin = urlSkin && availableSkins.includes(urlSkin)
-            ? urlSkin
-            : availableSkins.find((s: string) => s === 'default') || availableSkins[0];
-          spineViewerStore.ui.selectedSkin = initialSkin;
+          spineViewerStore.ui.selectedSkin = pickInitialSkinName(availableSkins, urlSkin);
         }
 
         finishLoadingToast(
@@ -567,8 +610,11 @@ const PixiAppContent = () => {
         const fitScale = Math.min(scaleX, scaleY);
 
         if (isFinite(fitScale) && fitScale > 0) {
-          spineViewerStore.ui.scale = fitScale;
+          if (!spineViewerStore.ui.userScaleOverride) {
+            spineViewerStore.ui.scale = fitScale;
+          }
 
+          const scaleForPosition = spineViewerStore.ui.scale;
           const prevCenterX = prev.x + prev.width / 2;
           const prevCenterY = prev.y + prev.height / 2;
           const currCenterX = curr.x + curr.width / 2;
@@ -578,8 +624,8 @@ const PixiAppContent = () => {
           const interpCenterY = prevCenterY + (currCenterY - prevCenterY) * transitionAlpha;
 
           spineViewerStore.ui.spinePosition = {
-            x: pixiApp.screen.width / 2 - interpCenterX * fitScale,
-            y: pixiApp.screen.height / 2 - interpCenterY * fitScale,
+            x: pixiApp.screen.width / 2 - interpCenterX * scaleForPosition,
+            y: pixiApp.screen.height / 2 - interpCenterY * scaleForPosition,
           };
         }
       } else {
@@ -601,7 +647,7 @@ const PixiAppContent = () => {
       const scaleX = pixiApp.screen.width / viewportWidth;
       const scaleY = pixiApp.screen.height / viewportHeight;
       const fitScale = Math.min(scaleX, scaleY);
-      if (isFinite(fitScale) && fitScale > 0) {
+      if (isFinite(fitScale) && fitScale > 0 && !spineViewerStore.ui.userScaleOverride) {
         spineViewerStore.ui.scale = fitScale;
       }
 
@@ -624,13 +670,17 @@ const PixiAppContent = () => {
     const ticker = pixiApp?.ticker;
     if (!ticker) return;
 
-    const currentFps = ticker.FPS ?? 0;
+    const deltaMS = ticker.deltaMS;
+    const tickerFps = ticker.FPS ?? 0;
+    const instantFps = deltaMS > 0 ? 1000 / deltaMS : tickerFps;
+    spineViewerStore.ui.fps = instantFps > 0 ? instantFps : tickerFps;
+
     const fpsElement = (window as { __fpsRef?: HTMLElement }).__fpsRef;
     if (fpsElement) {
-      fpsElement.textContent = currentFps.toFixed(1);
+      fpsElement.textContent = spineViewerStore.ui.fps.toFixed(1);
     }
 
-    const elapsedMS = (ticker as { elapsedMS?: number }).elapsedMS ?? ticker.deltaMS * (1000 / 60);
+    const elapsedMS = (ticker as { elapsedMS?: number }).elapsedMS ?? deltaMS;
     frameTimeSumRef.current += elapsedMS;
     fpsCounterRef.current++;
 
@@ -638,6 +688,9 @@ const PixiAppContent = () => {
     if (now - fpsLastSecondRef.current >= 1000) {
       const count = fpsCounterRef.current;
       spineViewerStore.ui.fpsRendered = count;
+      if (count > 0) {
+        spineViewerStore.ui.fps = count;
+      }
       spineViewerStore.ui.frameTimeMs = count > 0 ? frameTimeSumRef.current / count : null;
       fpsCounterRef.current = 0;
       frameTimeSumRef.current = 0;
@@ -651,6 +704,134 @@ const PixiAppContent = () => {
     isEnabled: isInitialised,
     callback: tickFps,
   });
+
+  const applySpinesContainerTransform = useCallback(() => {
+    const container = spinesContainerRef.current;
+    if (!container || manualViewportInteractingRef.current) return;
+
+    const scale = spineViewerStore.ui.scale;
+    const position =
+      spineViewerStore.ui.positioningMode === 'manual'
+        ? spineViewerStore.ui.manualPosition
+        : spineViewerStore.ui.spinePosition;
+
+    if (container.x !== position.x || container.y !== position.y) {
+      container.position.set(position.x, position.y);
+    }
+    if (container.scale.x !== scale) {
+      container.scale.set(scale);
+    }
+  }, []);
+
+  useTick({
+    isEnabled: isInitialised,
+    callback: applySpinesContainerTransform,
+  });
+
+  const syncManualViewportFromContainer = useCallback(() => {
+    const container = spinesContainerRef.current;
+    if (!container) return;
+    const x = container.x;
+    const y = container.y;
+    const scale = container.scale.x;
+    spineViewerStore.ui.manualPosition = { x, y };
+    spineViewerStore.ui.spinePosition = { x, y };
+    spineViewerStore.ui.scale = scale;
+  }, []);
+
+  const scheduleWheelStoreSync = useCallback(() => {
+    if (wheelStoreSyncTimeoutRef.current !== null) {
+      clearTimeout(wheelStoreSyncTimeoutRef.current);
+    }
+    wheelStoreSyncTimeoutRef.current = setTimeout(() => {
+      wheelStoreSyncTimeoutRef.current = null;
+      manualViewportInteractingRef.current = false;
+      syncManualViewportFromContainer();
+    }, 120);
+  }, [syncManualViewportFromContainer]);
+
+  // Manual pan (drag) and zoom (wheel) — update Pixi directly; sync store after interaction
+  useEffect(() => {
+    if (!isPixiAppReady(pixiApp, isInitialised) || state.ui.positioningMode !== 'manual') {
+      manualViewportInteractingRef.current = false;
+      return;
+    }
+
+    const el = pixiApp.canvas;
+    el.style.cursor = 'grab';
+
+    let panDrag: { pointerId: number; lastX: number; lastY: number } | null = null;
+
+    const endPan = (e: PointerEvent) => {
+      if (!panDrag || panDrag.pointerId !== e.pointerId) return;
+      panDrag = null;
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+      el.style.cursor = 'grab';
+      manualViewportInteractingRef.current = false;
+      syncManualViewportFromContainer();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      panDrag = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+      manualViewportInteractingRef.current = true;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!panDrag || panDrag.pointerId !== e.pointerId) return;
+      const container = spinesContainerRef.current;
+      if (!container) return;
+      container.x += e.clientX - panDrag.lastX;
+      container.y += e.clientY - panDrag.lastY;
+      panDrag.lastX = e.clientX;
+      panDrag.lastY = e.clientY;
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const container = spinesContainerRef.current;
+      if (!container) return;
+      manualViewportInteractingRef.current = true;
+      spineViewerStore.ui.userScaleOverride = true;
+      const factor = Math.exp(-e.deltaY * 0.002);
+      const newScale = Math.min(10, Math.max(0.01, container.scale.x * factor));
+      container.scale.set(newScale);
+      scheduleWheelStoreSync();
+    };
+
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', endPan);
+    el.addEventListener('pointercancel', endPan);
+    el.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      panDrag = null;
+      manualViewportInteractingRef.current = false;
+      if (wheelStoreSyncTimeoutRef.current !== null) {
+        clearTimeout(wheelStoreSyncTimeoutRef.current);
+        wheelStoreSyncTimeoutRef.current = null;
+      }
+      el.style.cursor = '';
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', endPan);
+      el.removeEventListener('pointercancel', endPan);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, [
+    state.ui.positioningMode,
+    pixiApp,
+    isInitialised,
+    syncManualViewportFromContainer,
+    scheduleWheelStoreSync,
+  ]);
 
   // Update animation when selected animation changes
   useEffect(() => {
@@ -684,15 +865,18 @@ const PixiAppContent = () => {
       spineViewerStore.ui.timeline = 0;
 
       // Only calculate viewport if auto mode is enabled
-      if (state.ui.positioningMode === 'auto') {
+      if (state.ui.positioningMode === 'auto' && state.ui.autoViewportMode === 'per-animation') {
         // Calculate viewport BEFORE setting animation (official Spine player approach)
         // This temporarily modifies the skeleton, but setAnimation will restore it
-        const newViewport =
-          spineViewerStore.ui.autoViewportLock
-            ? SpineDisplay.calculateMaxAnimationsViewport(spine, 0.1) ??
-              SpineDisplay.calculateAnimationViewport(anim, spine, 0.1)
-            : SpineDisplay.calculateAnimationViewport(anim, spine, 0.1);
+        const newViewport = resolveAutoViewport(
+          spine,
+          'per-animation',
+          state.ui.selectedAnimation,
+          spineViewerStore.ui.autoViewportAnimation,
+          spineViewerStore.ui.animations,
+        );
 
+        if (newViewport) {
         // Validate viewport before storing
         const isValidViewport =
           isFinite(newViewport.x) &&
@@ -740,8 +924,8 @@ const PixiAppContent = () => {
           console.warn('Invalid viewport calculated for animation:', state.ui.selectedAnimation, newViewport);
           // Keep current viewport, don't transition
         }
-      } else {
-        // Manual mode - don't update viewport
+        }
+      } else if (state.ui.positioningMode === 'manual') {
         spineViewerStore.refs.currentViewport = null;
         spineViewerStore.refs.previousViewport = null;
       }
@@ -751,7 +935,60 @@ const PixiAppContent = () => {
     }
     // Intentionally NOT depending on loop - loop changes handled by SpineBase (track.loop only, no reset)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ui.selectedAnimation, state.ui.positioningMode, state.ui.autoViewportLock]);
+  }, [state.ui.selectedAnimation, state.ui.positioningMode, state.ui.autoViewportMode]);
+
+  // Re-fit when autoscale mode or reference animation changes (first / all modes).
+  useEffect(() => {
+    const spine = spineViewerStore.refs.spine;
+    if (!spine || (spine as { destroyed?: boolean }).destroyed) return;
+    if (state.ui.positioningMode !== 'auto') return;
+    if (!isPixiAppReady(pixiApp, isInitialised)) return;
+
+    const mode = state.ui.autoViewportMode;
+    if (mode === 'per-animation') return;
+
+    const newViewport = resolveAutoViewport(
+      spine,
+      mode,
+      state.ui.selectedAnimation,
+      spineViewerStore.ui.autoViewportAnimation,
+      spineViewerStore.ui.animations,
+    );
+    if (!newViewport) return;
+
+    spineViewerStore.refs.previousViewport = null;
+    spineViewerStore.refs.currentViewport = newViewport;
+
+    const viewportWidth = newViewport.width + newViewport.padLeft + newViewport.padRight;
+    const viewportHeight = newViewport.height + newViewport.padTop + newViewport.padBottom;
+    const scaleX = pixiApp.screen.width / viewportWidth;
+    const scaleY = pixiApp.screen.height / viewportHeight;
+    const fitScale = Math.min(scaleX, scaleY);
+
+    if (isFinite(fitScale) && fitScale > 0 && !spineViewerStore.ui.userScaleOverride) {
+      spineViewerStore.ui.scale = fitScale;
+    }
+
+    const viewportCenterX = newViewport.x + newViewport.width / 2;
+    const viewportCenterY = newViewport.y + newViewport.height / 2;
+    const scale = spineViewerStore.ui.scale;
+    spineViewerStore.ui.spinePosition = {
+      x: pixiApp.screen.width / 2 - viewportCenterX * scale,
+      y: pixiApp.screen.height / 2 - viewportCenterY * scale,
+    };
+    spineViewerStore.ui.manualGuideSize = { width: viewportWidth, height: viewportHeight };
+    const pos = spineViewerStore.ui.spinePosition;
+    spineViewerStore.ui.manualGuidePosition = { x: pos.x, y: pos.y };
+    spineViewerStore.ui.manualPosition = { x: pos.x, y: pos.y };
+  }, [
+    state.ui.autoViewportMode,
+    state.ui.autoViewportAnimation,
+    state.ui.positioningMode,
+    state.ui.selectedAnimation,
+    state.ui.animations,
+    pixiApp,
+    isInitialised,
+  ]);
 
   // Update skin when selected skin changes - handled by SpineBase via skin prop
 
@@ -767,10 +1004,43 @@ const PixiAppContent = () => {
   useEffect(() => {
     const background = pixiApp?.renderer?.background;
     if (!background) return;
+    if (isCheckerBackground(state.ui.backgroundColor)) {
+      background.alpha = 0;
+      return;
+    }
+    background.alpha = 1;
     const hex = state.ui.backgroundColor.replace('#', '');
     const color = parseInt(hex, 16);
     background.color = color;
   }, [state.ui.backgroundColor, pixiApp]);
+
+  // World-space checker behind spine (scales with ui.scale via spinesContainer)
+  useEffect(() => {
+    const container = spinesContainerRef.current;
+    const showChecker = isCheckerBackground(state.ui.backgroundColor);
+
+    if (!container || !showChecker) {
+      const checker = checkerGraphicsRef.current;
+      if (checker) {
+        if (container?.children.includes(checker)) {
+          container.removeChild(checker);
+        }
+        checker.destroy();
+        checkerGraphicsRef.current = null;
+      }
+      return;
+    }
+
+    let checker = checkerGraphicsRef.current;
+    if (!checker || checker.destroyed) {
+      checker = new Graphics();
+      drawCheckerboardGrid(checker);
+      checkerGraphicsRef.current = checker;
+      container.addChildAt(checker, 0);
+    } else if (container.children[0] !== checker) {
+      container.setChildIndex(checker, 0);
+    }
+  }, [state.ui.backgroundColor, isLoaderReady, state.ui.mountCount]);
 
   // Debug bones / attachments
   useEffect(() => {
@@ -982,17 +1252,23 @@ const PixiAppContent = () => {
   // Handle animation complete (fires even when looping)
   // Note: onCurrentAnimComplete doesn't provide parameters, so we use current store values
   const handleAnimationComplete = useCallback(() => {
-    const currentAnimation = spineViewerStore.ui.selectedAnimation;
-    console.log('animation complete', currentAnimation);
+    const spine = spineViewerStore.refs.spine
+    const track = spine?.state?.tracks?.[0]
+    const duration = track?.animation?.duration ?? spineViewerStore.ui.timelineDuration
 
-    if (!spineViewerStore.ui.loop) {
-      spineViewerStore.ui.isPlaying = false;
-      // Keep timeline at end (last frame) so animationProgress stays at 1; don't reset to 0
-      spineViewerStore.ui.timeline = spineViewerStore.ui.timelineDuration;
-    } else {
-      spineViewerStore.ui.timeline = 0;
+    if (spineViewerStore.ui.loop) {
+      spineViewerStore.ui.timeline = 0
+      return
     }
-  }, [state.ui.loop, state.ui.selectedAnimation]);
+
+    const trackTime = track?.trackTime ?? spineViewerStore.ui.timeline
+    if (duration > 0 && trackTime < duration - 1 / 30) {
+      return
+    }
+
+    spineViewerStore.ui.isPlaying = false
+    spineViewerStore.ui.timeline = spineViewerStore.ui.timelineDuration
+  }, [state.ui.selectedAnimation]);
 
   // Keyboard handler for 'Y' key to toggle attachment test panel, 'U' for attachment hide panel
   useEffect(() => {
@@ -1179,19 +1455,6 @@ const PixiAppContent = () => {
     }
   }, [state.refs.spine, state.ui.selectedAnimation, state.ui.selectedSkin]);
 
-  // Sync manual position to spinePosition when in manual mode (manualPosition is absolute)
-  useEffect(() => {
-    if (state.ui.positioningMode === 'manual') {
-      spineViewerStore.ui.spinePosition = {
-        x: state.ui.manualPosition.x,
-        y: state.ui.manualPosition.y
-      };
-    }
-  }, [state.ui.positioningMode, state.ui.manualPosition.x, state.ui.manualPosition.y]);
-
-  // Use position from store (updated in ticker for smooth transitions when auto mode is enabled)
-  const position = state.ui.spinePosition;
-
   // When switching from auto to manual: use auto-computed values as default (no spine remount)
   useEffect(() => {
     const prevMode = lastPositioningModeRef.current;
@@ -1219,10 +1482,6 @@ const PixiAppContent = () => {
   // }, [])
 
   if (!fileSpineLoaderRef.current || !isLoaderReady) {
-    console.log('[PixiApp] Not rendering SpineBase yet:', {
-      hasLoader: !!fileSpineLoaderRef.current,
-      isLoaderReady
-    });
     return <pixiContainer ref={containerRef} />;
   }
 
@@ -1230,12 +1489,7 @@ const PixiAppContent = () => {
     <>
       <pixiContainer ref={containerRef}>
         {/* Shared container for both spines - scale is applied here */}
-        <pixiContainer
-          ref={spinesContainerRef}
-          x={position.x}
-          y={position.y}
-          scale={{ x: state.ui.scale, y: state.ui.scale }}
-        >
+        <pixiContainer ref={spinesContainerRef}>
           <SpineBase
             key={`spine-${state.ui.mountCount}`}
             spine={
@@ -1252,7 +1506,7 @@ const PixiAppContent = () => {
             startPlayingNoReset={true}
             reverse={state.ui.isReversed}
             skin={state.ui.selectedSkin}
-            mixTime={state.ui.mixTime}
+            mixTime={state.ui.mixTimeEnabled ? state.ui.mixTime : 0}
             resetCounter={state.ui.resetCounter}
             animationProgress={
               !state.ui.isPlaying && state.ui.timelineDuration > 0
@@ -1290,7 +1544,7 @@ const PixiAppContent = () => {
                 startPlayingNoReset={true}
                 reverse={state.ui.isReversed}
                 skin={state.ui.selectedSkin}
-                mixTime={state.ui.mixTime}
+                mixTime={state.ui.mixTimeEnabled ? state.ui.mixTime : 0}
                 resetCounter={state.ui.resetCounter}
                 scale={{ x: state.secondSpineOffset.scale, y: state.secondSpineOffset.scale }}
                 scaleAnimationDuration={0}
@@ -1336,14 +1590,19 @@ export const PixiApp = () => {
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const state = useSnapshot(spineViewerStore);
 
-  // Convert hex background color to number
+  const isChecker = isCheckerBackground(state.ui.backgroundColor);
   const bgColor = state.ui.backgroundColor.replace('#', '');
   const backgroundColor = parseInt(bgColor, 16);
 
   return (
-    <div ref={canvasWrapperRef} className="h-full w-full">
+    <div
+      ref={canvasWrapperRef}
+      className="h-full w-full"
+      style={isChecker ? { backgroundColor: '#1a1a1a' } : undefined}
+    >
       <Application
-        backgroundColor={backgroundColor}
+        backgroundColor={isChecker ? 0 : backgroundColor}
+        backgroundAlpha={isChecker ? 0 : 1}
         resizeTo={canvasWrapperRef}
         antialias
         resolution={window.devicePixelRatio || 1}

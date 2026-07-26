@@ -1,5 +1,5 @@
 import { registerSW } from 'virtual:pwa-register'
-import { APP_BUILD_DATE, APP_VERSION } from './appBuildInfo'
+import { APP_BUILD_DATE } from './appBuildInfo'
 
 export type AppServiceWorkerStatus =
   | 'unsupported'
@@ -13,7 +13,6 @@ export type AppServiceWorkerStatus =
 export interface AppServiceWorkerState {
   status: AppServiceWorkerStatus
   isOnline: boolean
-  version: string
   buildDate: string
   buildDateLabel: string
 }
@@ -23,7 +22,6 @@ const listeners = new Set<() => void>()
 let state: AppServiceWorkerState = {
   status: import.meta.env.PROD ? 'registering' : 'dev',
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
-  version: APP_VERSION,
   buildDate: APP_BUILD_DATE,
   buildDateLabel: formatBuildDate(APP_BUILD_DATE),
 }

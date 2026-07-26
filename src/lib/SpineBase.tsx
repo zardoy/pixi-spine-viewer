@@ -1183,6 +1183,14 @@ export const SpineBase = (props: SpineProps) => {
             // Its trackTime still advances during mix; when it reaches animationEnd, Spine queues complete.
             // We ignore that—the user intentionally reset, so we don't want completion for the abandoned anim.
             if (trackEntry.mixingTo) return
+            // Non-looping: ignore spurious complete (e.g. loop toggled off mid-playback).
+            const duration = trackEntry.animation?.duration ?? 0
+            if (!trackEntry.loop && duration > 0) {
+              const t = trackEntry.trackTime ?? 0
+              if (t < duration - 1 / 30) {
+                return
+              }
+            }
             if (onCompleteRef.current) {
               onCompleteRef.current()
             }
@@ -1364,25 +1372,21 @@ export const SpineBase = (props: SpineProps) => {
       // Set time scale since we clearn existing loop which might have ben stopped
       setTimeScale()
     } else {
-      // Animation unchanged, but loop might have changed - need to update it
+      // Animation unchanged — toggle loop on the active track without restarting
       const currentLoop = track?.loop ?? false
-      if (currentLoop !== loop) {
-        try {
-          trackedSetAnimation(spineRef.current, 0, animToUse, loop)
-          trackAnimationStart(animToUse)
-          // When mixTime is 0, apply instant reset behavior (no mix transition)
-          if (mixTime === 0) {
-            const t = spineRef.current.state.tracks[0]
-            if (t) t.mixDuration = 0
-            immediateUpdate(spineRef.current, true)
+      if (currentLoop !== loop && track) {
+        if (currentLoop && !loop) {
+          const duration = track.animation?.duration ?? 0
+          if (duration > 0) {
+            let t = track.trackTime % duration
+            // At a loop boundary, land on the last frame instead of rewinding to 0
+            if (t < 1e-4 && track.trackTime > 0) {
+              t = duration
+            }
+            track.trackTime = t
           }
-          // Update debug results if debug mode is enabled
-          if (spineRef.current) {
-            updateDebugResults(spineRef.current, spineKey, app.app)
-          }
-        } catch (error) {
-          throw wrapSpineError(error, `Failed to set animation '${animToUse}'`, spineKey, debugKey)
         }
+        track.loop = loop
       }
     }
   }, [animation, loop, mixTime, spineKey])
@@ -1403,12 +1407,8 @@ export const SpineBase = (props: SpineProps) => {
       } catch (error) {
         throw wrapSpineError(error, `Failed to set animation2 '${animation2}'`, spineKey, debugKey)
       }
-    } else if ((track?.loop ?? false) !== loop2) {
-      try {
-        spine.state.setAnimation(1, animation2, loop2)
-      } catch (error) {
-        throw wrapSpineError(error, `Failed to set animation2 '${animation2}'`, spineKey, debugKey)
-      }
+    } else if ((track?.loop ?? false) !== loop2 && track) {
+      track.loop = loop2
     }
   }, [animation2, loop2, spineKey])
 

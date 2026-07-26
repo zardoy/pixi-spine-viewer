@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design system with dark red accent theme for Spine Viewer */
+/* Design system with blue accent theme for Spine Viewer */
 
 @layer base {
   :root {
@@ -15,8 +15,7 @@
     --popover: 220 15% 12%;
     --popover-foreground: 210 20% 98%;
 
-    /* Dark red primary color */
-    --primary: 0 72% 51%;
+    --primary: 217 91% 60%;
     --primary-foreground: 210 20% 98%;
 
     --secondary: 220 15% 18%;
@@ -25,8 +24,7 @@
     --muted: 220 15% 20%;
     --muted-foreground: 215 15% 65%;
 
-    /* Dark red accent */
-    --accent: 0 65% 45%;
+    --accent: 217 80% 50%;
     --accent-foreground: 210 20% 98%;
 
     --destructive: 0 72% 51%;
@@ -34,7 +32,7 @@
 
     --border: 220 15% 20%;
     --input: 220 15% 18%;
-    --ring: 0 72% 51%;
+    --ring: 217 91% 60%;
 
     --radius: 0.75rem;
   }

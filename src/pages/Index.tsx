@@ -1,18 +1,19 @@
 import { useState, useEffect } from "react";
 import { useSnapshot } from "valtio";
 import { LandingPage } from "../components/LandingPage";
-import { SpineViewer } from "../components/SpineViewer";
+import { NewUiViewer } from "../components/new-ui/NewUiViewer";
 import { SpinesMapViewer } from "../components/SpinesMapViewer";
 import { SpineTester } from "../components/SpineTester";
 import { Playground } from "../components/Playground";
 import { OverridePlayground } from "../components/OverridePlayground";
 import { PlaygroundAtPosition } from "../components/PlaygroundAtPosition";
 import { SpineScreenshot } from "../components/SpineScreenshot";
-import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
+import { fetchSpineFilesFromUrl, decodeQueryParam } from "../lib/urlFetcher";
 import { checkSpineFilesAndRedirect, assertSpine43OrRedirect } from "../lib/spine42Redirect";
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
 import { SkeletonSelectModal } from "../components/SkeletonSelectModal";
+import type { LocalSpineEntry } from "../lib/localSpineFolderScan";
 
 export interface SpineFiles {
   jsonFile: File;
@@ -47,6 +48,8 @@ export interface PendingSkeletonSelection {
 const Index = () => {
   const [spineFiles, setSpineFiles] = useState<SpineFiles | null>(null);
   const [spinesMapUrl, setSpinesMapUrl] = useState<string | null>(null);
+  const [localSpinesMap, setLocalSpinesMap] = useState<LocalSpineEntry[] | null>(null);
+  const [localSpinesFolderName, setLocalSpinesFolderName] = useState<string | null>(null);
   const [loadingFromUrl, setLoadingFromUrl] = useState(false);
   const [pendingSkeletonSelection, setPendingSkeletonSelection] = useState<PendingSkeletonSelection | null>(null);
   /** Must run before any early return (same order every render). */
@@ -96,7 +99,7 @@ const Index = () => {
     // Sort by index and decode
     const decodedPngUrls = Array.from(pngUrlMap.entries())
       .sort((a, b) => a[0] - b[0])
-      .map(([_, url]) => decodeURIComponent(url));
+      .map(([_, url]) => decodeQueryParam(url));
 
     const generator = params.get("generator");
     if (generator === "1") {
@@ -106,15 +109,19 @@ const Index = () => {
       return;
     }
 
-    if (jsonUrl && atlasUrl && decodedPngUrls.length > 0) {
+    if (jsonUrl && atlasUrl) {
       setLoadingFromUrl(true);
       const loadSpineFromUrls = async () => {
         try {
           toast.loading("Loading spine from URL...");
-          const decodedJsonUrl = decodeURIComponent(jsonUrl);
-          const decodedAtlasUrl = decodeURIComponent(atlasUrl);
+          const decodedJsonUrl = decodeQueryParam(jsonUrl);
+          const decodedAtlasUrl = decodeQueryParam(atlasUrl);
 
-          const files = await fetchSpineFilesFromUrl(decodedJsonUrl, decodedAtlasUrl, decodedPngUrls);
+          const files = await fetchSpineFilesFromUrl(
+            decodedJsonUrl,
+            decodedAtlasUrl,
+            decodedPngUrls.length > 0 ? decodedPngUrls : undefined,
+          );
 
           const isSkel = files.jsonFile.name.toLowerCase().endsWith('.skel');
           const skeletonData = isSkel
@@ -167,6 +174,14 @@ const Index = () => {
   const handleFilesSelect = async (files: SpineFiles) => {
     if (await checkSpineFilesAndRedirect(files)) return;
     setSpineFiles(files);
+  };
+
+  const handleSpineFolderExplore = (entries: LocalSpineEntry[], folderName: string) => {
+    setLocalSpinesMap(entries);
+    setLocalSpinesFolderName(folderName);
+    setSpinesMapUrl(null);
+    setSpineFiles(null);
+    window.history.pushState({}, "", window.location.pathname);
   };
 
   const handleSkeletonSelect = async (files: SpineFiles) => {
@@ -235,6 +250,21 @@ const Index = () => {
     );
   }
 
+  // Local folder explorer (dropped directory with spine subfolders)
+  if (localSpinesMap && localSpinesMap.length > 0 && !spineFiles) {
+    return (
+      <SpinesMapViewer
+        localSpines={localSpinesMap}
+        folderLabel={localSpinesFolderName ?? undefined}
+        onSpineSelect={handleFilesSelect}
+        onBack={() => {
+          setLocalSpinesMap(null);
+          setLocalSpinesFolderName(null);
+        }}
+      />
+    );
+  }
+
   // If spinesMap URL is provided, show the map viewer
   if (spinesMapUrl && !spineFiles) {
     return (
@@ -260,9 +290,10 @@ const Index = () => {
         <LandingPage
           onFilesSelect={handleFilesSelect}
           onMultipleSkeletonsFound={setPendingSkeletonSelection}
+          onSpineFolderExplore={handleSpineFolderExplore}
         />
       ) : (
-        <SpineViewer files={spineFiles} onBack={handleBack} />
+        <NewUiViewer files={spineFiles} onBack={handleBack} />
       )}
       {modalPending && (
         <SkeletonSelectModal

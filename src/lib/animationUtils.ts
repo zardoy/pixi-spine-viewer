@@ -46,3 +46,14 @@ export function getAnimationEvents(anim: {
   }
   return events.sort((a, b) => a.time - b.time);
 }
+
+export function formatDurationShort(seconds: number): string {
+  const rounded = Math.round(seconds * 10) / 10;
+  return rounded % 1 === 0 ? `${rounded}s` : `${rounded.toFixed(1)}s`;
+}
+
+/** Event count + duration suffix for animation list rows. */
+export function formatAnimationMetaSuffix(eventCount: number, duration: number): string {
+  const dur = formatDurationShort(duration);
+  return eventCount > 0 ? `${eventCount} / ${dur}` : dur;
+}

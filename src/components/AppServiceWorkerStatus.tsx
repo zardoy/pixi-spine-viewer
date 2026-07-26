@@ -6,7 +6,7 @@ function StatusDot({ className }: { className: string }) {
 }
 
 export function AppServiceWorkerStatus() {
-  const { status, isOnline, version, buildDateLabel } = useAppServiceWorker()
+  const { status, isOnline, buildDateLabel } = useAppServiceWorker()
 
   const connectionLabel = isOnline ? 'Online' : 'Offline'
   const connectionDot = isOnline ? 'bg-emerald-500' : 'bg-amber-500'
@@ -50,7 +50,7 @@ export function AppServiceWorkerStatus() {
       className="fixed bottom-4 left-4 z-20 max-w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-border/80 bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
       role="status"
       aria-live="polite"
-      title={`Version ${version} · built ${buildDateLabel}`}
+      title={`Built ${buildDateLabel}`}
     >
       <div className="flex items-center gap-2">
         <StatusDot className={connectionDot} />
@@ -60,7 +60,7 @@ export function AppServiceWorkerStatus() {
         {swIcon}
       </div>
       <div className="mt-1 truncate text-[11px] text-muted-foreground/80">
-        v{version} · {buildDateLabel}
+        Built {buildDateLabel}
       </div>
     </div>
   )

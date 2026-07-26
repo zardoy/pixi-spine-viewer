@@ -4,6 +4,20 @@
 import { MixFrom, Physics } from '@esotericsoftware/spine-core'
 import type { AnySpine } from './spineRuntime'
 
+/** Spine's implicit base skin name — shown in UI as {@link formatSkinDisplayName}. */
+export const DEFAULT_SKIN_NAME = 'default'
+
+export function formatSkinDisplayName(skinName: string): string {
+  return skinName === DEFAULT_SKIN_NAME ? 'No skin' : skinName
+}
+
+/** Pick initial skin: URL override, else first non-default skin, else first listed. */
+export function pickInitialSkinName(skinNames: string[], urlSkin?: string | null): string {
+  if (urlSkin && skinNames.includes(urlSkin)) return urlSkin
+  const nonDefault = skinNames.find((s) => s !== DEFAULT_SKIN_NAME)
+  return nonDefault ?? skinNames[0] ?? ''
+}
+
 /** Resolve a skin name from skeleton data, falling back to default / first skin. */
 export function resolveSkinName(
   skeletonData: { skins?: { name: string }[]; defaultSkin?: { name: string } | null },
@@ -11,7 +25,7 @@ export function resolveSkinName(
 ): string | null {
   const names = skeletonData.skins?.map((s) => s.name) ?? []
   if (preferred && names.includes(preferred)) return preferred
-  if (names.includes('default')) return 'default'
+  if (names.includes(DEFAULT_SKIN_NAME)) return DEFAULT_SKIN_NAME
   return skeletonData.defaultSkin?.name ?? names[0] ?? null
 }
 

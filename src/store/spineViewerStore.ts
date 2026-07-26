@@ -31,6 +31,8 @@ export interface SpineViewerState {
     loop: boolean;
     speed: number;
     scale: number;
+    /** When true, auto viewport tick must not overwrite ui.scale. */
+    userScaleOverride: boolean;
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
@@ -53,6 +55,8 @@ export interface SpineViewerState {
     frameTimeMs: number | null;
     backgroundColor: string;
     mixTime: number;
+    /** When false, animation switches use mixTime 0 (instant). */
+    mixTimeEnabled: boolean;
     spinePosition: { x: number; y: number };
     /** Positioning mode: 'auto' or 'manual' */
     positioningMode: 'auto' | 'manual';
@@ -63,8 +67,10 @@ export interface SpineViewerState {
     manualGuidePosition: { x: number; y: number };
     /** When true, render the yellow guide border (auto + manual). */
     guideBoundsEnabled: boolean;
-    /** When true, auto mode uses max viewport over all animations (lock). */
-    autoViewportLock: boolean;
+    /** How auto viewport / scale is chosen when positioning mode is auto. */
+    autoViewportMode: 'first' | 'per-animation' | 'all';
+    /** Animation name for `first` mode; empty string = first animation in list. */
+    autoViewportAnimation: string;
     attachmentTestPanelVisible: boolean;
     attachmentTestPanelPos: { x: number; y: number };
     /** Attachment test marker: blue instead of red */
@@ -149,6 +155,8 @@ export const initialState: SpineViewerState = {
     loop: true,
     speed: 1.0,
     scale: 1.0,
+    /** When true, auto viewport tick must not overwrite ui.scale. */
+    userScaleOverride: false,
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
@@ -165,15 +173,17 @@ export const initialState: SpineViewerState = {
     fpsRendered: 0,
     memoryMB: null,
     frameTimeMs: null,
-    backgroundColor: '#404040',
+    backgroundColor: '#2a2a2a',
     mixTime: 0.25,
+    mixTimeEnabled: true,
     spinePosition: { x: 0, y: 0 },
     positioningMode: 'auto',
     manualPosition: { x: 0, y: 0 },
     manualGuideSize: { width: 800, height: 600 },
     manualGuidePosition: { x: 0, y: 0 },
     guideBoundsEnabled: false,
-    autoViewportLock: false,
+    autoViewportMode: 'first',
+    autoViewportAnimation: '',
     attachmentTestPanelVisible: false,
     attachmentTestPanelPos: { x: 0, y: 0 },
     attachmentTestBoxBlue: false,

@@ -4,17 +4,20 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
+import { Slider } from "./ui/slider";
 import { toast } from "sonner";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { SpineFiles } from "../pages/Index";
 import { Sparkles, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { spineViewerStore } from "../store/spineViewerStore";
-import { fetchAndLoadSpinePreview } from "../lib/spinePreviewLoader";
+import { CHECKERBOARD_CSS } from "../lib/checkerboardBackground";
+import { fetchAndLoadSpinePreview, loadLocalSpinePreview } from "../lib/spinePreviewLoader";
 import {
   getSortedPngUrlsFromEntry,
   spineKeyFromMapPath,
   resolveSpineBoundsData,
 } from "../lib/spinesMapHelpers";
+import type { LocalSpineEntry } from "../lib/localSpineFolderScan";
 import { pruneSpineMapTileModels, clearAllSpineMapTileModels } from "../lib/spineMapTileModel";
 import type { SpineEntry, SpineAction } from "../types/spinesMap";
 import { SpineMapTilePixi, SpineMapTileChrome, SpineMapTilePlaceholder } from "./SpineMapTile";
@@ -22,10 +25,11 @@ import type { FileSpineLoader } from "../lib/FileSpineLoader";
 
 export type { SpineEntry, SpineAction } from "../types/spinesMap";
 
-/** Each spine lives in a fixed square tile; the grid paginates to fit the screen. */
-const TILE = 400;
+/** Default square tile size; grid paginates to fit the screen. */
+const DEFAULT_TILE = 400;
 const GAP = 16;
-const CELL = TILE + GAP;
+const MIN_TILE = 160;
+const MAX_TILE = 640;
 
 /** Build a windowed list of page numbers (0-based) around the current page. */
 function buildPageWindow(current: number, total: number, span = 2): number[] {
@@ -42,23 +46,65 @@ type LoaderMap = Record<
 >;
 
 interface SpinesMapViewerProps {
-  spinesMapUrl: string;
+  spinesMapUrl?: string;
+  localSpines?: LocalSpineEntry[];
+  folderLabel?: string;
   onSpineSelect: (files: SpineFiles) => void;
+  onBack?: () => void;
 }
 
-export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewerProps) => {
+function localEntryToSpineEntry(entry: LocalSpineEntry): SpineEntry {
+  return {
+    name: entry.name,
+    path: entry.path,
+    json: `local:${entry.path}/skeleton`,
+    atlas: `local:${entry.path}/atlas`,
+    png: `local:${entry.path}/png`,
+  };
+}
+
+export const SpinesMapViewer = ({
+  spinesMapUrl,
+  localSpines,
+  folderLabel,
+  onSpineSelect,
+  onBack,
+}: SpinesMapViewerProps) => {
   const [spines, setSpines] = useState<SpineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingSpine, setLoadingSpine] = useState<string | null>(null);
   const [loaders, setLoaders] = useState<LoaderMap>({});
   const [boundsFollowAnim, setBoundsFollowAnim] = useState(false);
+  const [tileSize, setTileSize] = useState(DEFAULT_TILE);
   const [cols, setCols] = useState(1);
   const [rows, setRows] = useState(1);
   const [page, setPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const cell = tileSize + GAP;
+  const localFilesByPath = useMemo(() => {
+    const map = new Map<string, SpineFiles>();
+    for (const entry of localSpines ?? []) {
+      map.set(entry.path, entry.files);
+    }
+    return map;
+  }, [localSpines]);
 
   useEffect(() => {
+    if (localSpines) {
+      setLoading(true);
+      setError(null);
+      setSpines(localSpines.map(localEntryToSpineEntry));
+      setLoading(false);
+      return;
+    }
+
+    if (!spinesMapUrl) {
+      setSpines([]);
+      setLoading(false);
+      return;
+    }
+
     const loadSpinesMap = async () => {
       try {
         setLoading(true);
@@ -82,7 +128,7 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     };
 
     loadSpinesMap();
-  }, [spinesMapUrl]);
+  }, [spinesMapUrl, localSpines]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -91,15 +137,15 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     const compute = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      setCols(Math.max(1, Math.floor((w + GAP) / CELL)));
-      setRows(Math.max(1, Math.floor((h + GAP) / CELL)));
+      setCols(Math.max(1, Math.floor((w + GAP) / cell)));
+      setRows(Math.max(1, Math.floor((h + GAP) / cell)));
     };
 
     compute();
     const ro = new ResizeObserver(compute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [cell]);
 
   useEffect(() => {
     const valid = new Set(spines.map((s) => s.path));
@@ -125,7 +171,11 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     for (const spine of spines) {
       const pngUrls = getSortedPngUrlsFromEntry(spine);
       const key = spineKeyFromMapPath(spine.path);
-      void fetchAndLoadSpinePreview(spine.json, spine.atlas, pngUrls, key)
+      const localFiles = localFilesByPath.get(spine.path);
+      const loadPromise = localFiles
+        ? loadLocalSpinePreview(localFiles, key)
+        : fetchAndLoadSpinePreview(spine.json, spine.atlas, pngUrls, key);
+      void loadPromise
         .then((loader) => {
           if (cancelled) return;
           setLoaders((prev) => ({ ...prev, [spine.path]: loader }));
@@ -140,7 +190,7 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     return () => {
       cancelled = true;
     };
-  }, [spines]);
+  }, [spines, localFilesByPath]);
 
   const pageSize = Math.max(1, cols * rows);
   const totalPages = Math.max(1, Math.ceil(spines.length / pageSize));
@@ -155,8 +205,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
     [spines, page, pageSize],
   );
 
-  const gridW = cols * CELL - GAP;
-  const gridH = rows * CELL - GAP;
+  const gridW = cols * cell - GAP;
+  const gridH = rows * cell - GAP;
 
   const handleActionClick = async (
     spine: SpineEntry,
@@ -197,37 +247,54 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
   };
 
   const handleSpineClick = async (spine: SpineEntry) => {
+    const localFiles = localFilesByPath.get(spine.path);
+    let loadingToastId: string | number | undefined;
+
     try {
       setLoadingSpine(spine.name);
-      toast.loading(`Loading ${spine.name}...`);
 
-      const sortedPngUrls = getSortedPngUrlsFromEntry(spine);
+      if (!localFiles) {
+        loadingToastId = toast.loading(`Loading ${spine.name}...`);
+      }
 
-      const files = await fetchSpineFilesFromUrl(spine.json, spine.atlas, sortedPngUrls);
+      let spineFiles: SpineFiles;
 
-      const spineFiles: SpineFiles = {
-        jsonFile: files.jsonFile,
-        atlasFile: files.atlasFile,
-        imageFiles: files.imageFiles,
-      };
+      if (localFiles) {
+        spineFiles = localFiles;
+      } else {
+        const sortedPngUrls = getSortedPngUrlsFromEntry(spine);
+        const files = await fetchSpineFilesFromUrl(spine.json, spine.atlas, sortedPngUrls);
+        spineFiles = {
+          jsonFile: files.jsonFile,
+          atlasFile: files.atlasFile,
+          imageFiles: files.imageFiles,
+        };
 
-      toast.dismiss();
-      toast.success(`Loaded ${spine.name}`);
+        const params = new URLSearchParams();
+        params.set("jsonUrl", spine.json);
+        params.set("atlasUrl", spine.atlas);
+        sortedPngUrls.forEach((url, index) => {
+          params.set(index === 0 ? "pngUrl" : `pngUrl${index + 1}`, url);
+        });
+        window.history.pushState({}, "", `?${params.toString()}`);
+      }
 
-      const params = new URLSearchParams();
-      params.set("jsonUrl", encodeURIComponent(spine.json));
-      params.set("atlasUrl", encodeURIComponent(spine.atlas));
-      sortedPngUrls.forEach((url, index) => {
-        params.set(index === 0 ? "pngUrl" : `pngUrl${index + 1}`, encodeURIComponent(url));
-      });
-      window.history.pushState({}, "", `?${params.toString()}`);
+      if (loadingToastId !== undefined) {
+        toast.success(`Loaded ${spine.name}`, { id: loadingToastId });
+      }
 
       spineViewerStore.ui.particleGeneratorPanelVisible = false;
       onSpineSelect(spineFiles);
     } catch (err) {
-      toast.dismiss();
-      const errorMessage = err instanceof Error ? err.message : "Failed to load spine";
-      toast.error(errorMessage);
+      if (loadingToastId !== undefined) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to load spine',
+          { id: loadingToastId },
+        );
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load spine';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoadingSpine(null);
     }
@@ -274,10 +341,16 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
       <Card className="shrink-0 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
+            {onBack ? (
+              <Button type="button" variant="outline" size="sm" onClick={onBack}>
+                Back
+              </Button>
+            ) : null}
             <Sparkles className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold">Spines Map</h1>
+            <h1 className="text-xl font-bold">Spines Explorer</h1>
             <span className="text-sm text-muted-foreground">
               {spines.length} spine{spines.length !== 1 ? "s" : ""}
+              {folderLabel ? ` · ${folderLabel}` : ""}
             </span>
           </div>
 
@@ -341,15 +414,32 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
             </span>
           </div>
 
-          <div className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
-            <Checkbox
-              id="bounds-follow-anim"
-              checked={boundsFollowAnim}
-              onCheckedChange={(v) => setBoundsFollowAnim(v === true)}
-            />
-            <Label htmlFor="bounds-follow-anim" className="cursor-pointer text-sm leading-snug">
-              Fit bounds to current animation
-            </Label>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex min-w-[14rem] items-center gap-2 rounded-md border border-border px-3 py-1.5">
+              <Label className="shrink-0 text-sm">Tile {tileSize}px</Label>
+              <Slider
+                value={[tileSize]}
+                onValueChange={(value) => setTileSize(value[0])}
+                min={MIN_TILE}
+                max={MAX_TILE}
+                step={20}
+                className="w-24"
+              />
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {cols}×{rows} ({pageSize}/page)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
+              <Checkbox
+                id="bounds-follow-anim"
+                checked={boundsFollowAnim}
+                onCheckedChange={(v) => setBoundsFollowAnim(v === true)}
+              />
+              <Label htmlFor="bounds-follow-anim" className="cursor-pointer text-sm leading-snug">
+                Fit bounds to current animation
+              </Label>
+            </div>
           </div>
         </div>
       </Card>
@@ -362,13 +452,16 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
           <div className="relative" style={{ width: gridW, height: gridH }}>
             <div
               className="absolute left-0 top-0 z-0 overflow-hidden rounded-sm"
-              style={{ width: gridW, height: gridH }}
+              style={{
+                width: gridW,
+                height: gridH,
+                background: CHECKERBOARD_CSS,
+              }}
             >
               <Application
                 width={gridW}
                 height={gridH}
-                backgroundColor={0x2a2a2a}
-                backgroundAlpha={1}
+                backgroundAlpha={0}
                 antialias
                 resolution={1}
                 autoDensity={false}
@@ -389,10 +482,10 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
                       spine={spine}
                       loader={L}
                       spineKey={spineKey}
-                      tileW={TILE}
-                      tileH={TILE}
-                      pixiX={col * CELL}
-                      pixiY={row * CELL}
+                      tileW={tileSize}
+                      tileH={tileSize}
+                      pixiX={col * cell}
+                      pixiY={row * cell}
                       boundsFollowAnim={boundsFollowAnim}
                       boundsData={boundsData}
                     />
@@ -409,8 +502,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
                 const L = loaders[spine.path];
                 const col = i % cols;
                 const row = Math.floor(i / cols);
-                const left = col * CELL;
-                const top = row * CELL;
+                const left = col * cell;
+                const top = row * cell;
                 if (L === "loading" || L === undefined) {
                   return (
                     <SpineMapTilePlaceholder
@@ -418,8 +511,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
                       spine={spine}
                       left={left}
                       top={top}
-                      tileW={TILE}
-                      tileH={TILE}
+                      tileW={tileSize}
+                      tileH={tileSize}
                       status="loading"
                     />
                   );
@@ -431,8 +524,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
                       spine={spine}
                       left={left}
                       top={top}
-                      tileW={TILE}
-                      tileH={TILE}
+                      tileW={tileSize}
+                      tileH={tileSize}
                       status={{ error: L.error }}
                     />
                   );
@@ -444,8 +537,8 @@ export const SpinesMapViewer = ({ spinesMapUrl, onSpineSelect }: SpinesMapViewer
                     spine={spine}
                     loader={L}
                     spineKey={spineKeyFromMapPath(spine.path)}
-                    tileW={TILE}
-                    tileH={TILE}
+                    tileW={tileSize}
+                    tileH={tileSize}
                     left={left}
                     top={top}
                     onOpenViewer={(e) => {

@@ -17,6 +17,46 @@ export interface FetchedSpineFiles {
 }
 
 /**
+ * Extract directory URL (no filename) from a file URL.
+ */
+function getDirectoryFromUrl(url: string): string {
+  const clean = url.split('?')[0].split('#')[0];
+  const idx = clean.lastIndexOf('/');
+  return idx >= 0 ? clean.slice(0, idx) : '';
+}
+
+/** Image page names from atlas text (top-level lines ending in image extension). */
+export function parseAtlasPageNames(atlasText: string): string[] {
+  const names: string[] = [];
+  for (const line of atlasText.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    if (line.startsWith(' ') || line.startsWith('\t')) continue;
+    const trimmed = line.trim();
+    if (/\.(png|jpg|jpeg|webp)$/i.test(trimmed)) {
+      names.push(trimmed);
+    }
+  }
+  return names;
+}
+
+/**
+ * Decode query param values that may have been encoded more than once.
+ */
+export function decodeQueryParam(value: string): string {
+  let decoded = value;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+  return decoded;
+}
+
+/**
  * Extract base URL without extension
  */
 function getBaseUrl(url: string): string {
@@ -72,51 +112,60 @@ export async function fetchSpineFilesFromUrl(
 
   // 2. Try to fetch Atlas file
   let atlasFile: File | null = null;
+  let atlasUrlUsed: string | null = null;
   // If override provided, use its base; otherwise derive from skeleton base
   const atlasBaseUrl = atlasUrlOverride ? getBaseUrl(atlasUrlOverride) : skeletonBaseUrl;
   const atlasBaseFilename = atlasBaseUrl.split('/').pop() || skeletonBaseFilename;
   for (const ext of ATLAS_EXTENSIONS) {
     const atlasUrl = `${atlasBaseUrl}.${ext}`;
     atlasFile = await fetchFile(atlasUrl, `${atlasBaseFilename}.${ext}`);
-    if (atlasFile) break;
+    if (atlasFile) {
+      atlasUrlUsed = atlasUrl;
+      break;
+    }
   }
 
-  if (!atlasFile) {
+  if (!atlasFile || !atlasUrlUsed) {
     throw new Error('Failed to fetch .atlas file. Tried extensions: ' + ATLAS_EXTENSIONS.join(', '));
   }
 
-  // 3. Try to fetch image files
+  // 3. Fetch all atlas page images (multi-page atlases e.g. dragon_2.png …)
+  const atlasText = await atlasFile.text();
+  const pageNames = parseAtlasPageNames(atlasText);
+  const atlasDir = getDirectoryFromUrl(atlasUrlUsed);
   const imageFiles: File[] = [];
-  
-  // If explicit PNG URL(s) provided, use them
-  if (pngUrlOverride) {
+
+  if (pageNames.length > 0) {
+    for (const pageName of pageNames) {
+      const imageUrl = `${atlasDir}/${pageName}`;
+      const imageFile = await fetchFile(imageUrl, pageName);
+      if (!imageFile) {
+        throw new Error(`Failed to fetch atlas image "${pageName}" from ${imageUrl}`);
+      }
+      imageFiles.push(imageFile);
+    }
+  } else if (pngUrlOverride) {
     const pngUrls = Array.isArray(pngUrlOverride) ? pngUrlOverride : [pngUrlOverride];
     for (let i = 0; i < pngUrls.length; i++) {
       const pngUrl = pngUrls[i];
-      const filename = i === 0 
-        ? `${atlasBaseFilename}.png`
-        : `${atlasBaseFilename}${i + 1}.png`;
+      const filename =
+        i === 0 ? `${atlasBaseFilename}.png` : `${atlasBaseFilename}${i + 1}.png`;
       const pngFile = await fetchFile(pngUrl, filename);
-      if (pngFile) {
-        imageFiles.push(pngFile);
-      }
+      if (pngFile) imageFiles.push(pngFile);
     }
-  }
-  
-  // If no PNG files found yet, try to derive from atlas base URL
-  if (imageFiles.length === 0) {
+  } else {
     for (const ext of IMAGE_EXTENSIONS) {
       const imageUrl = `${atlasBaseUrl}.${ext}`;
       const imageFile = await fetchFile(imageUrl, `${atlasBaseFilename}.${ext}`);
       if (imageFile) {
         imageFiles.push(imageFile);
-        break; // Use first found image
+        break;
       }
     }
   }
 
   if (imageFiles.length === 0) {
-    throw new Error('Failed to fetch any image files. Tried extensions: ' + IMAGE_EXTENSIONS.join(', '));
+    throw new Error('Failed to fetch any atlas image files.');
   }
 
   return {

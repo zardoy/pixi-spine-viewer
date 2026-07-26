@@ -1,7 +1,9 @@
 /**
- * Example Spine animations (4.2 — open on legacy viewer).
+ * Example Spine animations from spine-runtimes (4.3 loads in this viewer).
  */
 import { buildSpine42ViewerUrlFromSpineUrls } from './spine42Redirect'
+import { fetchSpineFilesFromUrl } from './urlFetcher'
+import type { SpineFiles } from '../pages/Index'
 
 export interface SpineExample {
   name: string
@@ -9,56 +11,56 @@ export interface SpineExample {
   atlasUrl: string
   pngUrls: string[]
   description: string
-  /** Opens on pixi-spine-viewer-42 instead of this app. */
-  spineVersion: '4.2'
+  spineVersion: '4.2' | '4.3'
 }
 
-const BASE = 'https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.2/examples'
+const BASE_43 =
+  'https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/4.3/examples'
 
 export const SPINE_EXAMPLES: SpineExample[] = [
   {
     name: 'Cloud Pot (physics)',
-    jsonUrl: `${BASE}/cloud-pot/export/cloud-pot.json`,
-    atlasUrl: `${BASE}/cloud-pot/export/cloud-pot.atlas`,
-    pngUrls: [`${BASE}/cloud-pot/export/cloud-pot.png`],
+    jsonUrl: `${BASE_43}/cloud-pot/export/cloud-pot.json`,
+    atlasUrl: `${BASE_43}/cloud-pot/export/cloud-pot.atlas`,
+    pngUrls: [`${BASE_43}/cloud-pot/export/cloud-pot.png`],
     description: 'Animated cloud pot',
-    spineVersion: '4.2',
+    spineVersion: '4.3',
   },
   {
     name: 'Dragon',
-    jsonUrl: `${BASE}/dragon/export/dragon-ess.json`,
-    atlasUrl: `${BASE}/dragon/export/dragon.atlas`,
-    pngUrls: [`${BASE}/dragon/export/dragon.png`],
+    jsonUrl: `${BASE_43}/dragon/export/dragon-ess.json`,
+    atlasUrl: `${BASE_43}/dragon/export/dragon.atlas`,
+    pngUrls: [`${BASE_43}/dragon/export/dragon.png`],
     description: 'Flying dragon',
-    spineVersion: '4.2',
+    spineVersion: '4.3',
   },
   {
     name: 'Owl (texture transform)',
-    jsonUrl: `${BASE}/owl/export/owl-pro.json`,
-    atlasUrl: `${BASE}/owl/export/owl.atlas`,
-    pngUrls: [`${BASE}/owl/export/owl.png`],
+    jsonUrl: `${BASE_43}/owl/export/owl-pro.json`,
+    atlasUrl: `${BASE_43}/owl/export/owl.atlas`,
+    pngUrls: [`${BASE_43}/owl/export/owl.png`],
     description: 'Animated owl',
-    spineVersion: '4.2',
+    spineVersion: '4.3',
   },
   {
     name: 'Powerup',
-    jsonUrl: `${BASE}/powerup/export/powerup-ess.json`,
-    atlasUrl: `${BASE}/powerup/export/powerup.atlas`,
-    pngUrls: [`${BASE}/powerup/export/powerup.png`],
+    jsonUrl: `${BASE_43}/powerup/export/powerup-ess.json`,
+    atlasUrl: `${BASE_43}/powerup/export/powerup.atlas`,
+    pngUrls: [`${BASE_43}/powerup/export/powerup.png`],
     description: 'Power-up animation effect',
-    spineVersion: '4.2',
+    spineVersion: '4.3',
   },
   {
     name: 'Vine',
-    jsonUrl: `${BASE}/vine/export/vine-pro.json`,
-    atlasUrl: `${BASE}/vine/export/vine.atlas`,
-    pngUrls: [`${BASE}/vine/export/vine.png`],
+    jsonUrl: `${BASE_43}/vine/export/vine-pro.json`,
+    atlasUrl: `${BASE_43}/vine/export/vine.atlas`,
+    pngUrls: [`${BASE_43}/vine/export/vine.png`],
     description: 'Growing vine animation',
-    spineVersion: '4.2',
+    spineVersion: '4.3',
   },
 ]
 
-/** Open an example on the correct viewer (4.2 examples → legacy deployment). */
+/** Open a 4.2 example on the legacy viewer deployment. */
 export function openSpineExample(example: SpineExample): void {
   if (example.spineVersion === '4.2') {
     window.location.href = buildSpine42ViewerUrlFromSpineUrls(
@@ -68,5 +70,25 @@ export function openSpineExample(example: SpineExample): void {
     )
     return
   }
-  throw new Error('Only 4.2 examples are defined; add 4.3 examples to load in this viewer.')
+  throw new Error('Use loadSpineExampleFiles() for 4.3 examples.')
+}
+
+/** Fetch example assets and return SpineFiles for this viewer. */
+export async function loadSpineExampleFiles(example: SpineExample): Promise<SpineFiles> {
+  const files = await fetchSpineFilesFromUrl(example.jsonUrl, example.atlasUrl, example.pngUrls)
+  return {
+    jsonFile: files.jsonFile,
+    atlasFile: files.atlasFile,
+    imageFiles: files.imageFiles,
+  }
+}
+
+export function buildExampleViewerSearchParams(example: SpineExample): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('jsonUrl', example.jsonUrl)
+  params.set('atlasUrl', example.atlasUrl)
+  example.pngUrls.forEach((url, index) => {
+    params.set(index === 0 ? 'pngUrl' : `pngUrl${index + 1}`, url)
+  })
+  return params
 }

@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Loader2, MoreVertical } from 'lucide-react'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
 import { boundsToContainTransform, computeMaxAnimationBounds } from '../lib/spineUtils'
+import { formatSkinDisplayName } from '../lib/spineCompat'
 import type { SpineEntry, SpineAction, SpineBoundsData } from '../types/spinesMap'
 import {
   EMPTY_SPINE_MAP_TILE_SNAPSHOT,
@@ -304,7 +305,7 @@ export function SpineMapTileChrome({
               <ChevronLeft className="h-3 w-3" />
             </Button>
             <span className="min-w-0 flex-1 truncate text-center text-xs text-muted-foreground">
-              {selectedSkinName}
+              {formatSkinDisplayName(selectedSkinName)}
             </span>
             <Button
               type="button"

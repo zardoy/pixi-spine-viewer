@@ -1,4 +1,21 @@
 import { FileSpineLoader } from './FileSpineLoader'
+import type { SpineFiles } from '../pages/Index'
+
+/**
+ * Load spine files from disk into a {@link FileSpineLoader} for map tile previews.
+ */
+export async function loadLocalSpinePreview(
+  files: SpineFiles,
+  spineKey: string,
+): Promise<FileSpineLoader> {
+  const { jsonFile, atlasFile, imageFiles } = files
+  const isSkel = jsonFile.name.toLowerCase().endsWith('.skel')
+  const skeletonData = isSkel ? await jsonFile.arrayBuffer() : await jsonFile.text()
+  const atlasText = await atlasFile.text()
+  const spineLoader = new FileSpineLoader(skeletonData, atlasText, imageFiles)
+  await spineLoader.loadSpine(spineKey)
+  return spineLoader
+}
 
 /**
  * Fetch .json/.skel + .atlas + image URLs and load into a {@link FileSpineLoader}

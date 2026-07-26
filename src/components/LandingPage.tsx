@@ -3,11 +3,21 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { useRef, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SpineFiles, getBlankParticleFiles } from "../pages/Index";
+import { getBlankParticleFiles, SpineFiles } from "../pages/Index";
 import { fetchSpineFilesFromUrl, isValidSpineUrl } from "../lib/urlFetcher";
-import { SPINE_EXAMPLES, openSpineExample } from "../lib/spineExamples";
+import {
+  SPINE_EXAMPLES,
+  loadSpineExampleFiles,
+  buildExampleViewerSearchParams,
+  openSpineExample,
+} from "../lib/spineExamples";
 import { ref } from "valtio";
 import { spineViewerStore } from "../store/spineViewerStore";
+import type { LocalSpineEntry } from "../lib/localSpineFolderScan";
+import {
+  scanSpineFoldersFromDataTransfer,
+  isLikelyFolderDrop,
+} from "../lib/localSpineFolderScan";
 import JSZip from "jszip";
 import { SUPPORTED_SPINE_VERSIONS_TEXT } from "../lib/spineRuntime";
 import {
@@ -22,9 +32,10 @@ import { AppServiceWorkerStatus } from "./AppServiceWorkerStatus";
 interface LandingPageProps {
   onFilesSelect: (files: SpineFiles) => void;
   onMultipleSkeletonsFound?: (pending: { skeletonFiles: File[]; atlasFile: File; imageFiles: File[] }) => void;
+  onSpineFolderExplore?: (entries: LocalSpineEntry[], folderName: string) => void;
 }
 
-export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: LandingPageProps) => {
+export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFolderExplore }: LandingPageProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedExample, setSelectedExample] = useState<string>("");
 
@@ -228,27 +239,52 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
     }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = async (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files);
+    const dt = e.dataTransfer;
+    if (!dt) return;
 
+    if (onSpineFolderExplore && isLikelyFolderDrop(dt)) {
+      try {
+        toast.loading('Scanning folder for spines...');
+        const entries = await scanSpineFoldersFromDataTransfer(dt);
+        toast.dismiss();
+        if (entries.length > 0) {
+          const rel = (dt.files[0] as File & { webkitRelativePath?: string } | undefined)?.webkitRelativePath;
+          const folderName =
+            (rel?.includes('/') ? rel.split('/')[0] : undefined) ??
+            dt.items?.[0]?.webkitGetAsEntry?.()?.name ??
+            'Folder';
+          toast.success(`Found ${entries.length} spine${entries.length === 1 ? '' : 's'}`);
+          onSpineFolderExplore(entries, folderName);
+          return;
+        }
+        toast.info('No spine folders found in dropped directory');
+      } catch (error) {
+        toast.dismiss();
+        toast.error(error instanceof Error ? error.message : 'Failed to read folder');
+        return;
+      }
+    }
+
+    const files = Array.from(dt.files);
     if (files.length > 0) {
       await processFiles(files);
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  const handleDragEnter = (e: React.DragEvent) => {
+  const handleDragEnter = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
@@ -291,7 +327,30 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
       window.removeEventListener('dragenter', handleDragEnter as any);
       window.removeEventListener('dragleave', handleDragLeave as any);
     };
-  }, []);
+  }, [onSpineFolderExplore]);
+
+  const loadExampleInViewer = async (example: typeof SPINE_EXAMPLES[number]) => {
+    if (example.spineVersion === '4.2') {
+      toast.info(`Opening ${example.name} on Spine 4.2 viewer...`);
+      openSpineExample(example);
+      return;
+    }
+
+    try {
+      const toastId = toast.loading(`Loading ${example.name}...`);
+      const spineFiles = await loadSpineExampleFiles(example);
+      const params = buildExampleViewerSearchParams(example);
+      window.history.pushState({}, '', `?${params.toString()}`);
+      spineViewerStore.syncedDir = null;
+      spineViewerStore.refs.syncedDirHandles = null;
+      spineViewerStore.ui.particleGeneratorPanelVisible = false;
+      toast.success(`Loaded ${example.name}`, { id: toastId });
+      onFilesSelect(spineFiles);
+    } catch (error) {
+      toast.dismiss();
+      toast.error(error instanceof Error ? error.message : 'Failed to load example');
+    }
+  };
 
   // Handle P key to load first example
   useEffect(() => {
@@ -306,12 +365,10 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
       if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
         e.preventDefault();
 
-        // Load first example
         if (SPINE_EXAMPLES.length > 0) {
           const firstExample = SPINE_EXAMPLES[0];
           setSelectedExample(firstExample.name);
-          toast.info(`Opening ${firstExample.name} on Spine 4.2 viewer...`);
-          openSpineExample(firstExample);
+          void loadExampleInViewer(firstExample);
         }
       }
     };
@@ -329,8 +386,7 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
     const example = SPINE_EXAMPLES.find(ex => ex.name === selectedExample);
     if (!example) return;
 
-    toast.info(`Opening ${example.name} on Spine 4.2 viewer...`);
-    openSpineExample(example);
+    await loadExampleInViewer(example);
   };
 
   const handleOpenTester = () => {
@@ -394,7 +450,7 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
               An advanced Spine animation player tool. Open to view exported Spine animation files online
             </p>
             <p className="text-sm text-muted-foreground">
-              Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. You can also drop <span className="text-primary font-medium">.zip</span> files containing Spine assets. Preview and test your Spine animations in the browser.
+              Load <span className="text-primary font-medium">.skel</span>, <span className="text-primary font-medium">.json</span>, and <span className="text-primary font-medium">.atlas</span> files from your computer or URL. Drop a <span className="text-primary font-medium">folder</span> to browse subfolders in Spines Explorer, or drop <span className="text-primary font-medium">.zip</span> files.
             </p>
           </div>
 
@@ -422,11 +478,11 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound }: Landing
                 Synced directory
               </Button>
               <Button
-                onClick={handleOpenParticleGenerator}
+                disabled
                 size="lg"
                 variant="outline"
                 className="gap-2 font-semibold"
-                title="Open particle generator"
+                title="Particle generator (coming soon)"
               >
                 <SparklesIcon className="w-5 h-5" />
                 Spine Particles Generator (WIP)

@@ -1,6 +1,12 @@
 import { useMemo } from 'react'
 import { useSnapshot } from 'valtio'
-import { TimerOff, Timer } from 'lucide-react'
+import { ListOrdered, TimerOff, Timer } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@radix-ui/react-dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
@@ -12,6 +18,7 @@ import {
 import {
   formatAnimationMetaSuffix,
   getAnimationEvents,
+  seekSortedMarkerTime,
 } from '@/lib/animationUtils'
 
 function selectAnimation(name: string, current: string) {
@@ -19,6 +26,28 @@ function selectAnimation(name: string, current: string) {
   if (current) spineViewerStore.ui.previousAnimation = current
   spineViewerStore.ui.selectedAnimation = name
   applyActionAfterAnimSwitch()
+}
+
+export function seekSpineAnimationEvent(direction: -1 | 1): boolean {
+  const spine = spineViewerStore.refs.spine
+  const animName = spineViewerStore.ui.selectedAnimation
+  if (!spine || !animName) return false
+  const anim = spine.skeleton?.data?.findAnimation?.(animName)
+  if (!anim) return false
+  const events = getAnimationEvents(
+    anim as Parameters<typeof getAnimationEvents>[0],
+  )
+  const times = events.map((ev) => ev.time)
+  const next = seekSortedMarkerTime(times, spineViewerStore.ui.timeline, direction)
+  if (next === null) return false
+  spineViewerStore.ui.timeline = next
+  spineViewerStore.ui.isPlaying = false
+  return true
+}
+
+function seekToEventTime(time: number) {
+  spineViewerStore.ui.timeline = time
+  spineViewerStore.ui.isPlaying = false
 }
 
 export function NewUiAnimationList() {
@@ -46,6 +75,13 @@ export function NewUiAnimationList() {
     ui.animations.includes(ui.previousAnimation)
       ? ui.previousAnimation
       : null
+
+  const animationEvents = useMemo(() => {
+    if (!spine || !ui.selectedAnimation) return []
+    const anim = spine.skeleton?.data?.findAnimation?.(ui.selectedAnimation)
+    if (!anim) return []
+    return getAnimationEvents(anim as Parameters<typeof getAnimationEvents>[0])
+  }, [spine, ui.selectedAnimation])
 
   const hotkeyLabel = (name: string, index: number): string => {
     if (previousAnim && name === previousAnim) return 'Q'
@@ -96,7 +132,7 @@ export function NewUiAnimationList() {
       </div>
 
       <p className="text-[11px] leading-snug text-muted-foreground">
-        N / ↑↓ — next/prev anim · 1–9 select · Q previous · ←→ seek 0.1s (Shift 0.5s)
+        N / ↑↓ — next/prev anim · 1–9 select · Q previous · ←→ seek · E / Shift+E events
       </p>
 
       <div className="flex items-center gap-2">
@@ -136,6 +172,50 @@ export function NewUiAnimationList() {
             className="w-full"
           />
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 gap-1 px-2"
+              disabled={animationEvents.length === 0}
+              title="Spine events (E next, Shift+E prev)"
+            >
+              <ListOrdered className="h-3.5 w-3.5" />
+              <span className="text-xs">Events</span>
+              {animationEvents.length > 0 && (
+                <span className="text-[10px] tabular-nums text-muted-foreground">
+                  {animationEvents.length}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="z-[100] max-h-52 min-w-[14rem] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          >
+            {animationEvents.map((ev, index) => {
+              const isActive = Math.abs(ui.timeline - ev.time) < 0.02
+              return (
+                <DropdownMenuItem
+                  key={`${ev.name}-${ev.time}-${index}`}
+                  className={cn(
+                    'flex cursor-pointer items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-sm',
+                    'hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
+                    isActive && 'bg-primary/10 text-foreground',
+                  )}
+                  onSelect={() => seekToEventTime(ev.time)}
+                >
+                  <span className="min-w-0 truncate">{ev.name}</span>
+                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                    {ev.time.toFixed(2)}s
+                  </span>
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   )

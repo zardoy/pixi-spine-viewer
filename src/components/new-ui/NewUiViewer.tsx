@@ -8,6 +8,7 @@ import { AttachmentHidePanel } from '@/components/AttachmentHidePanel'
 import { AttachmentDownloadModal } from '@/components/AttachmentDownloadModal'
 import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } from '@/store/spineViewerStore'
 import { getAnimationKeyframeTimes } from '@/lib/animationUtils'
+import { seekSpineAnimationEvent } from './NewUiAnimationList'
 import { resetPageTitle, setSkeletonPageTitle } from '@/lib/pageTitle'
 import type { SpineFiles } from '@/pages/Index'
 import { NewUiSidebar } from './NewUiSidebar'
@@ -123,6 +124,10 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
             spineViewerStore.ui.selectedAnimation = next
             applyActionAfterAnimSwitch()
           }
+        }
+      } else if (e.code === 'KeyE') {
+        if (seekSpineAnimationEvent(e.shiftKey ? -1 : 1)) {
+          e.preventDefault()
         }
       } else if (e.code === 'KeyC') {
         if (spineViewerStore.ui.skins.length > 1) {

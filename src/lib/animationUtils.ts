@@ -47,6 +47,21 @@ export function getAnimationEvents(anim: {
   return events.sort((a, b) => a.time - b.time);
 }
 
+/** Seek to the previous or next marker time in a sorted list (keyframes or events). */
+export function seekSortedMarkerTime(
+  times: number[],
+  current: number,
+  direction: -1 | 1,
+): number | null {
+  if (!times.length) return null;
+  if (direction < 0) {
+    const idx = times.findIndex((t) => t >= current) - 1;
+    return idx >= 0 ? times[idx] : null;
+  }
+  const idx = times.findIndex((t) => t > current);
+  return idx >= 0 ? times[idx] : null;
+}
+
 export function formatDurationShort(seconds: number): string {
   const rounded = Math.round(seconds * 10) / 10;
   return rounded % 1 === 0 ? `${rounded}s` : `${rounded.toFixed(1)}s`;

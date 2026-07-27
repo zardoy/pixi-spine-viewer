@@ -113,7 +113,7 @@ const Index = () => {
       setLoadingFromUrl(true);
       const loadSpineFromUrls = async () => {
         try {
-          toast.loading("Loading spine from URL...");
+          const toastId = toast.loading("Downloading spine from URL...");
           const decodedJsonUrl = decodeQueryParam(jsonUrl);
           const decodedAtlasUrl = decodeQueryParam(atlasUrl);
 
@@ -135,8 +135,7 @@ const Index = () => {
             imageFiles: files.imageFiles,
           };
 
-          toast.dismiss();
-          toast.success("Spine loaded from URL");
+          toast.dismiss(toastId);
           spineViewerStore.ui.particleGeneratorPanelVisible = false;
           setSpineFiles(spineFiles);
           setSpinesMapUrl(null); // Clear map URL when showing spine

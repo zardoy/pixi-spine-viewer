@@ -204,9 +204,13 @@ const PixiAppContent = () => {
   useEffect(() => {
     if (!state.files) return;
 
+    let cancelled = false;
+
     wasSpineLoaded.current = false;
     pendingSpineLoadedRef.current = null;
     setIsLoaderReady(false);
+    spineViewerStore.ui.loadError = null;
+    spineViewerStore.refs.spine = null;
 
     const initLoader = async () => {
       const files = spineViewerStore.files!;
@@ -244,21 +248,29 @@ const PixiAppContent = () => {
             : SPINE_KEY;
         console.log('[PixiApp] Loading skeleton data...', spineKeyToLoad);
         await loader.loadSpine(spineKeyToLoad);
+        if (cancelled) return;
         console.log('[PixiApp] Skeleton data loaded, setting isLoaderReady to true');
 
         setIsLoaderReady(true);
         console.log('[PixiApp] Loader initialization complete');
       } catch (error) {
+        if (cancelled) return;
+        fileSpineLoaderRef.current = null;
+        const message = error instanceof Error ? error.message : 'Unknown error';
         console.error('[PixiApp] Error initializing spine loader:', error);
-        finishLoadingToast(
-          'Failed to load Spine files: ' + (error as Error).message,
-          'error',
-        );
+        spineViewerStore.ui.loadError = message;
+        spineViewerStore.ui.animations = [];
+        spineViewerStore.ui.skins = [];
+        spineViewerStore.ui.selectedAnimation = '';
+        finishLoadingToast(`Failed to load spine: ${message}`, 'error');
       }
     };
 
     void initLoader();
-    return () => clearLoadingToast();
+    return () => {
+      cancelled = true;
+      clearLoadingToast();
+    };
   }, [state.files, state.ui.selectedSkeleton, startLoadingToast, finishLoadingToast, clearLoadingToast]);
 
   // Initialize second file loader and load second files
@@ -542,10 +554,12 @@ const PixiAppContent = () => {
           spineViewerStore.ui.selectedSkin = pickInitialSkinName(availableSkins, urlSkin);
         }
 
+        spineViewerStore.ui.loadError = null;
         finishLoadingToast(
           `Loaded Spine animation with ${availableAnimations.length} animation(s)`,
         );
       } else {
+        spineViewerStore.ui.loadError = 'No animations found in skeleton data';
         finishLoadingToast('Spine loaded but no animations found', 'warning');
       }
     } catch (error) {

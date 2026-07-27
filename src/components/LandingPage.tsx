@@ -117,7 +117,6 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFo
     }
 
     const skeletonFile = skeletonFiles[0];
-    toast.success(`Loaded: ${skeletonFile.name}, ${atlasFile.name}, and ${imageFiles.length} image(s)`);
     spineViewerStore.syncedDir = null;
     spineViewerStore.refs.syncedDirHandles = null;
     spineViewerStore.ui.particleGeneratorPanelVisible = false;
@@ -300,7 +299,6 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFo
       try {
         const files = await fetchSpineFilesFromUrl(text);
         toast.dismiss();
-        toast.success(`Downloaded: ${files.jsonFile.name}, ${files.atlasFile.name}, and ${files.imageFiles.length} image(s)`);
         spineViewerStore.syncedDir = null;
         spineViewerStore.refs.syncedDirHandles = null;
         spineViewerStore.ui.particleGeneratorPanelVisible = false;
@@ -344,7 +342,7 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFo
       spineViewerStore.syncedDir = null;
       spineViewerStore.refs.syncedDirHandles = null;
       spineViewerStore.ui.particleGeneratorPanelVisible = false;
-      toast.success(`Loaded ${example.name}`, { id: toastId });
+      toast.dismiss(toastId);
       onFilesSelect(spineFiles);
     } catch (error) {
       toast.dismiss();

@@ -280,7 +280,7 @@ export const SpinesMapViewer = ({
       }
 
       if (loadingToastId !== undefined) {
-        toast.success(`Loaded ${spine.name}`, { id: loadingToastId });
+        toast.dismiss(loadingToastId);
       }
 
       spineViewerStore.ui.particleGeneratorPanelVisible = false;

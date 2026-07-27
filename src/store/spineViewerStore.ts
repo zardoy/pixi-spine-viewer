@@ -117,6 +117,8 @@ export interface SpineViewerState {
     spawnBounds: { x: [number, number]; y: [number, number] } | null;
     /** Custom events added via N key: { animationName: { eventName: time } } */
     customEvents: Record<string, Record<string, number>>;
+    /** Set when skeleton/atlas parsing fails after files were opened */
+    loadError: string | null;
   };
 
   files: SpineFiles | null;
@@ -215,6 +217,7 @@ export const initialState: SpineViewerState = {
     showSpawnBounds: false,
     spawnBounds: null,
     customEvents: {},
+    loadError: null,
   },
   files: null,
   secondFiles: null,

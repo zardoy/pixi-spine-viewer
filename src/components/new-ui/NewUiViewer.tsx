@@ -222,6 +222,20 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
       <main className="flex min-h-0 min-w-0 flex-[2] flex-col pb-14 md:pb-0">
         <div className="relative min-h-0 flex-1">
           <PixiApp />
+          {snapshot.ui.loadError && (
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center bg-background/85 p-6"
+              role="alert"
+            >
+              <div className="max-w-lg rounded-lg border border-destructive/40 bg-card p-5 shadow-lg">
+                <p className="font-semibold text-destructive">Failed to load spine</p>
+                <p className="mt-2 text-sm text-muted-foreground">{snapshot.ui.loadError}</p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Check that all atlas pages and images are included (e.g. missing region in atlas).
+                </p>
+              </div>
+            </div>
+          )}
           <NewUiPerfStats />
         </div>
         <NewUiTimeline />

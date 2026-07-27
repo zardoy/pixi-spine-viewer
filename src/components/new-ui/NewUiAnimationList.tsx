@@ -132,7 +132,7 @@ export function NewUiAnimationList() {
       </div>
 
       <p className="text-[11px] leading-snug text-muted-foreground">
-        N / ↑↓ — next/prev anim · 1–9 select · Q previous · ←→ seek · E / Shift+E events
+        ↑↓ — next/prev anim · ←→ seek · E / Shift+E events
       </p>
 
       <div className="flex items-center gap-2">

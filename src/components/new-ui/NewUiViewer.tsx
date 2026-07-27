@@ -111,20 +111,6 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
           spineViewerStore.ui.selectedAnimation = prevAnim
           applyActionAfterAnimSwitch()
         }
-      } else if (e.code === 'KeyN') {
-        if (spineViewerStore.ui.animations.length > 1) {
-          e.preventDefault()
-          const anims = spineViewerStore.ui.animations
-          const idx = anims.indexOf(spineViewerStore.ui.selectedAnimation)
-          const next = anims[(idx + 1) % anims.length]
-          if (next && next !== spineViewerStore.ui.selectedAnimation) {
-            if (spineViewerStore.ui.selectedAnimation) {
-              spineViewerStore.ui.previousAnimation = spineViewerStore.ui.selectedAnimation
-            }
-            spineViewerStore.ui.selectedAnimation = next
-            applyActionAfterAnimSwitch()
-          }
-        }
       } else if (e.code === 'KeyE') {
         if (seekSpineAnimationEvent(e.shiftKey ? -1 : 1)) {
           e.preventDefault()

@@ -80,7 +80,10 @@ export const SpinesMapViewer = ({
   const [cols, setCols] = useState(1);
   const [rows, setRows] = useState(1);
   const [page, setPage] = useState(0);
+  const [focusedSpinePath, setFocusedSpinePath] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const sidebarListRef = useRef<HTMLDivElement>(null);
+  const spineItemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const cell = tileSize + GAP;
   const localFilesByPath = useMemo(() => {
     const map = new Map<string, SpineFiles>();
@@ -204,6 +207,70 @@ export const SpinesMapViewer = ({
     () => spines.slice(page * pageSize, page * pageSize + pageSize),
     [spines, page, pageSize],
   );
+
+  const goToPage = useCallback(
+    (nextPage: number) => {
+      const clamped = Math.max(0, Math.min(totalPages - 1, nextPage));
+      setPage(clamped);
+      const firstOnPage = spines[clamped * pageSize];
+      if (firstOnPage) {
+        setFocusedSpinePath(firstOnPage.path);
+      }
+    },
+    [spines, pageSize, totalPages],
+  );
+
+  const goToSpineIndex = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= spines.length) return;
+      const targetPage = Math.floor(index / pageSize);
+      setPage(targetPage);
+      const spine = spines[index];
+      setFocusedSpinePath(spine.path);
+      requestAnimationFrame(() => {
+        spineItemRefs.current.get(spine.path)?.scrollIntoView({ block: 'nearest' });
+      });
+    },
+    [spines, pageSize],
+  );
+
+  useEffect(() => {
+    if (!focusedSpinePath) return;
+    spineItemRefs.current.get(focusedSpinePath)?.scrollIntoView({ block: 'nearest' });
+  }, [page, focusedSpinePath]);
+
+  useEffect(() => {
+    if (spines.length === 0) {
+      setFocusedSpinePath(null);
+      return;
+    }
+    if (!focusedSpinePath || !spines.some((s) => s.path === focusedSpinePath)) {
+      setFocusedSpinePath(spines[0].path);
+    }
+  }, [spines, focusedSpinePath]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goToPage(page - 1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goToPage(page + 1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [goToPage, page]);
 
   const gridW = cols * cell - GAP;
   const gridH = rows * cell - GAP;
@@ -337,7 +404,90 @@ export const SpinesMapViewer = ({
   }
 
   return (
-    <div className="flex h-screen flex-col gap-3 overflow-hidden bg-gradient-to-br from-background via-background to-secondary p-4">
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-background via-background to-secondary">
+      <aside
+        className="flex w-56 shrink-0 flex-col border-r border-border bg-card/50 md:w-64"
+        aria-label="Spine list"
+      >
+        <div className="shrink-0 border-b border-border p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Spines
+          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {spines.length} total
+          </p>
+          <div className="mt-3 flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label="Previous page"
+              disabled={page <= 0}
+              onClick={() => goToPage(page - 1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="min-w-0 flex-1 text-center text-xs text-muted-foreground">
+              Page {page + 1} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label="Next page"
+              disabled={page >= totalPages - 1}
+              onClick={() => goToPage(page + 1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div ref={sidebarListRef} className="min-h-0 flex-1 overflow-y-auto p-2">
+          <ul className="flex flex-col gap-0.5">
+            {spines.map((spine, index) => {
+              const spinePage = Math.floor(index / pageSize);
+              const isOnCurrentPage = spinePage === page;
+              const isFocused = spine.path === focusedSpinePath;
+              const loaderState = loaders[spine.path];
+              const hasError =
+                loaderState != null &&
+                loaderState !== 'loading' &&
+                typeof loaderState === 'object' &&
+                'error' in loaderState;
+
+              return (
+                <li key={spine.path}>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      if (el) spineItemRefs.current.set(spine.path, el);
+                      else spineItemRefs.current.delete(spine.path);
+                    }}
+                    className={[
+                      'w-full rounded-md px-2.5 py-2 text-left text-sm transition-colors',
+                      isFocused
+                        ? 'bg-primary text-primary-foreground'
+                        : isOnCurrentPage
+                          ? 'bg-muted text-foreground'
+                          : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                      hasError && !isFocused ? 'text-destructive/80' : '',
+                    ].join(' ')}
+                    onClick={() => goToSpineIndex(index)}
+                    title={spine.path}
+                  >
+                    <span className="line-clamp-2 break-words leading-snug">{spine.name}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </aside>
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden p-4">
       <Card className="shrink-0 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -362,7 +512,7 @@ export const SpinesMapViewer = ({
               className="h-8 w-8"
               aria-label="First page"
               disabled={page <= 0}
-              onClick={() => setPage(0)}
+              onClick={() => goToPage(0)}
             >
               <ChevronsLeft className="h-4 w-4" />
             </Button>
@@ -372,7 +522,7 @@ export const SpinesMapViewer = ({
               className="h-8 w-8"
               aria-label="Previous page"
               disabled={page <= 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => goToPage(page - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -384,7 +534,7 @@ export const SpinesMapViewer = ({
                 className="h-8 w-8 text-xs"
                 aria-label={`Page ${p + 1}`}
                 aria-current={p === page ? "page" : undefined}
-                onClick={() => setPage(p)}
+                onClick={() => goToPage(p)}
               >
                 {p + 1}
               </Button>
@@ -395,7 +545,7 @@ export const SpinesMapViewer = ({
               className="h-8 w-8"
               aria-label="Next page"
               disabled={page >= totalPages - 1}
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => goToPage(page + 1)}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -405,7 +555,7 @@ export const SpinesMapViewer = ({
               className="h-8 w-8"
               aria-label="Last page"
               disabled={page >= totalPages - 1}
-              onClick={() => setPage(totalPages - 1)}
+              onClick={() => goToPage(totalPages - 1)}
             >
               <ChevronsRight className="h-4 w-4" />
             </Button>
@@ -556,6 +706,7 @@ export const SpinesMapViewer = ({
           </div>
         </div>
       </Card>
+      </div>
     </div>
   );
 };

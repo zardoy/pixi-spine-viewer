@@ -1,6 +1,6 @@
 import '@pixi/layout';
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Container, Graphics, Text, type Application as PixiApplication } from "pixi.js";
+import { Container, Graphics, Text, UPDATE_PRIORITY, RendererType, type Application as PixiApplication, type WebGLRenderer } from "pixi.js";
 import { Physics } from "@esotericsoftware/spine-core";
 import {
   collectSkinDrawableAttachmentPaths,
@@ -29,6 +29,12 @@ import {
   tickAttachmentTestSlotFollow,
 } from '../lib/spineFollow';
 import { drawCheckerboardGrid, isCheckerBackground } from '../lib/checkerboardBackground';
+import {
+  consumePixiWebGLDrawCalls,
+  installPixiWebGLRendererStats,
+  isPixiWebGLGpuTimerSupported,
+  pollPixiWebGLGpuTimeMs,
+} from '../lib/pixiWebGLRendererStats';
 import type { AnimationViewport } from '../lib/SpineDisplay';
 
 setGlobalDebugMode('texture-sizes')
@@ -178,6 +184,33 @@ const PixiAppContent = () => {
       spineViewerStore.refs.app = ref(pixiApp);
     }
   }, [pixiApp]);
+
+  // WebGL2 draw-call + GPU timer hooks (same approach as Pixi devtools)
+  useEffect(() => {
+    if (!isPixiAppReady(pixiApp, isInitialised)) return;
+    const renderer = pixiApp.renderer;
+    if (renderer.type !== RendererType.WEBGL) return;
+    const uninstall = installPixiWebGLRendererStats(renderer as WebGLRenderer);
+    spineViewerStore.ui.gpuTimerSupported = isPixiWebGLGpuTimerSupported();
+    if (!spineViewerStore.ui.gpuTimerSupported) {
+      spineViewerStore.ui.gpuTimeMs = null;
+    }
+    return uninstall;
+  }, [pixiApp, isInitialised]);
+
+  const tickRendererStats = useCallback(() => {
+    spineViewerStore.ui.drawCalls = consumePixiWebGLDrawCalls();
+    const gpuMs = pollPixiWebGLGpuTimeMs();
+    if (gpuMs !== null) {
+      spineViewerStore.ui.gpuTimeMs = gpuMs;
+    }
+  }, []);
+
+  useTick({
+    isEnabled: isInitialised,
+    priority: UPDATE_PRIORITY.UTILITY,
+    callback: tickRendererStats,
+  });
 
   // Reset loader when files become null (user goes back)
   useEffect(() => {

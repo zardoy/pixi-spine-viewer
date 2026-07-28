@@ -53,6 +53,12 @@ export interface SpineViewerState {
     memoryMB: number | null;
     /** Average frame time in ms (computed every second from ticker) */
     frameTimeMs: number | null;
+    /** WebGL draw calls in the last rendered frame */
+    drawCalls: number;
+    /** GPU time for last measured frame (ms), WebGL timer query when supported */
+    gpuTimeMs: number | null;
+    /** Whether EXT_disjoint_timer_query is available in this browser */
+    gpuTimerSupported: boolean;
     backgroundColor: string;
     mixTime: number;
     /** When false, animation switches use mixTime 0 (instant). */
@@ -175,6 +181,9 @@ export const initialState: SpineViewerState = {
     fpsRendered: 0,
     memoryMB: null,
     frameTimeMs: null,
+    drawCalls: 0,
+    gpuTimeMs: null,
+    gpuTimerSupported: false,
     backgroundColor: '#2a2a2a',
     mixTime: 0.25,
     mixTimeEnabled: true,

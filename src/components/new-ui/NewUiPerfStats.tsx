@@ -60,6 +60,16 @@ export function NewUiPerfStats() {
             </div>
           )}
           <div className="flex justify-between gap-3">
+            <span>Draw calls</span>
+            <span className="font-bold text-red-600">{state.ui.drawCalls}</span>
+          </div>
+          {state.ui.gpuTimerSupported && state.ui.gpuTimeMs != null && (
+            <div className="flex justify-between gap-3">
+              <span>GPU</span>
+              <span className="text-foreground">{state.ui.gpuTimeMs.toFixed(2)} ms</span>
+            </div>
+          )}
+          <div className="flex justify-between gap-3">
             <span>Bones / Slots</span>
             <span className="text-foreground">
               {bones} / {slots}

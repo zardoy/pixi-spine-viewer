@@ -29,6 +29,8 @@ import {
   tickAttachmentTestSlotFollow,
 } from '../lib/spineFollow';
 import { drawCheckerboardGrid, isCheckerBackground } from '../lib/checkerboardBackground';
+import { formatBoundsCanvasLabel } from '../lib/pixiCanvasScreenBounds';
+import { computeMaxAnimationBounds } from '../lib/spineUtils';
 import {
   consumePixiWebGLDrawCalls,
   installPixiWebGLRendererStats,
@@ -120,7 +122,8 @@ const PixiAppContent = () => {
   const [isSecondLoaderReady, setIsSecondLoaderReady] = useState(false);
   const viewportTransitionTime = 0.25;
   const boundsGraphicsRef = useRef<Graphics | null>(null);
-  const boundsTextRef = useRef<Text | null>(null);
+  const boundsLiveTextRef = useRef<Text | null>(null);
+  const boundsMaxTextRef = useRef<Text | null>(null);
   const spawnBoundsGraphicsRef = useRef<Graphics | null>(null);
   const guideGraphicsRef = useRef<Graphics | null>(null);
   const checkerGraphicsRef = useRef<Graphics | null>(null);
@@ -1121,116 +1124,205 @@ const PixiAppContent = () => {
     };
   }, [state.ui.debugBones]);
 
-  // Debug bounds - create/remove graphics and text
+  // Frame bounds overlays (live = green, max = yellow)
   useEffect(() => {
-    if (!containerRef.current || !state.ui.debugBounds) {
-      // Remove graphics if debug bounds is disabled
+    const showBounds =
+      state.ui.debugBoundsLive || state.ui.debugBoundsMax;
+
+    const removeGraphics = () => {
       if (boundsGraphicsRef.current && containerRef.current) {
         containerRef.current.removeChild(boundsGraphicsRef.current);
         boundsGraphicsRef.current.destroy();
         boundsGraphicsRef.current = null;
       }
-      if (boundsTextRef.current && containerRef.current) {
-        containerRef.current.removeChild(boundsTextRef.current);
-        boundsTextRef.current.destroy();
-        boundsTextRef.current = null;
+    };
+
+    const removeLiveText = () => {
+      if (boundsLiveTextRef.current && containerRef.current) {
+        containerRef.current.removeChild(boundsLiveTextRef.current);
+        boundsLiveTextRef.current.destroy();
+        boundsLiveTextRef.current = null;
       }
+    };
+
+    const removeMaxText = () => {
+      if (boundsMaxTextRef.current && containerRef.current) {
+        containerRef.current.removeChild(boundsMaxTextRef.current);
+        boundsMaxTextRef.current.destroy();
+        boundsMaxTextRef.current = null;
+      }
+    };
+
+    if (!containerRef.current || !showBounds) {
+      removeGraphics();
+      removeLiveText();
+      removeMaxText();
       return;
     }
 
-    // Create graphics for bounds border
     if (!boundsGraphicsRef.current && containerRef.current) {
       const graphics = new Graphics();
       containerRef.current.addChild(graphics);
       boundsGraphicsRef.current = graphics;
     }
 
-    // Create text for bounds dimensions
-    if (!boundsTextRef.current && containerRef.current) {
-      const text = new Text({
+    const makeBoundsText = (fill: number) =>
+      new Text({
         text: '',
         style: {
-          fontSize: 12,
-          fill: 0xff0000,
+          fontSize: 11,
+          fill,
           fontWeight: 'bold',
+          lineHeight: 14,
         },
       });
-      containerRef.current.addChild(text);
-      boundsTextRef.current = text;
+
+    if (state.ui.debugBoundsLive) {
+      if (!boundsLiveTextRef.current && containerRef.current) {
+        const text = makeBoundsText(0x00ff88);
+        containerRef.current.addChild(text);
+        boundsLiveTextRef.current = text;
+      }
+    } else {
+      removeLiveText();
+    }
+
+    if (state.ui.debugBoundsMax) {
+      if (!boundsMaxTextRef.current && containerRef.current) {
+        const text = makeBoundsText(0xffbb00);
+        containerRef.current.addChild(text);
+        boundsMaxTextRef.current = text;
+      }
+    } else {
+      removeMaxText();
     }
 
     return () => {
-      if (boundsGraphicsRef.current && containerRef.current) {
-        containerRef.current.removeChild(boundsGraphicsRef.current);
-        boundsGraphicsRef.current.destroy();
-        boundsGraphicsRef.current = null;
-      }
-      if (boundsTextRef.current && containerRef.current) {
-        containerRef.current.removeChild(boundsTextRef.current);
-        boundsTextRef.current.destroy();
-        boundsTextRef.current = null;
-      }
+      removeGraphics();
+      removeLiveText();
+      removeMaxText();
     };
-  }, [state.ui.debugBounds]);
+  }, [state.ui.debugBoundsLive, state.ui.debugBoundsMax]);
 
   const tickDebugBounds = useCallback(() => {
     const spine = spineViewerStore.refs.spine;
     const graphics = boundsGraphicsRef.current;
-    const text = boundsTextRef.current;
+    const textLive = boundsLiveTextRef.current;
+    const textMax = boundsMaxTextRef.current;
+    const showLive = spineViewerStore.ui.debugBoundsLive;
+    const showMax = spineViewerStore.ui.debugBoundsMax;
 
-    if (!spine || !graphics || !text || !containerRef.current) return;
+    if (!spine || !graphics || !containerRef.current) return;
+    if (!showLive && !showMax) return;
 
     if ((spine as { destroyed?: boolean }).destroyed) {
       graphics.clear();
-      text.text = '';
+      if (textLive) textLive.text = '';
+      if (textMax) textMax.text = '';
       return;
     }
 
     try {
-      const spineBounds = spine.bounds;
-
-      if (!spineBounds || spineBounds.minX === Infinity || spineBounds.maxX === -Infinity) {
-        graphics.clear();
-        text.text = '';
-        return;
-      }
-
-      const localX = spineBounds.minX;
-      const localY = spineBounds.minY;
-      const localWidth = spineBounds.maxX - spineBounds.minX;
-      const localHeight = spineBounds.maxY - spineBounds.minY;
-
-      if (!isFinite(localX) || !isFinite(localY) || !isFinite(localWidth) || !isFinite(localHeight)) {
-        graphics.clear();
-        text.text = '';
-        return;
-      }
-
       const containerX = spineViewerStore.ui.spinePosition.x;
       const containerY = spineViewerStore.ui.spinePosition.y;
       const containerScale = spineViewerStore.ui.scale;
 
-      const boundsX = containerX + localX * containerScale;
-      const boundsY = containerY + localY * containerScale;
-      const boundsWidth = localWidth * containerScale;
-      const boundsHeight = localHeight * containerScale;
-
       graphics.clear();
-      graphics.rect(boundsX, boundsY, boundsWidth, boundsHeight);
-      graphics.stroke({ color: 0xff0000, width: 2 });
+      if (textLive) textLive.text = '';
+      if (textMax) textMax.text = '';
 
-      text.text = `${localWidth.toFixed(1)} × ${localHeight.toFixed(1)}`;
-      text.x = boundsX;
-      text.y = boundsY - 16;
+      const drawBoundsRect = (
+        localX: number,
+        localY: number,
+        localW: number,
+        localH: number,
+        strokeColor: number,
+        labelText: Text | null,
+      ) => {
+        if (
+          !labelText ||
+          !isFinite(localX) ||
+          !isFinite(localY) ||
+          !isFinite(localW) ||
+          !isFinite(localH) ||
+          localW <= 0 ||
+          localH <= 0
+        ) {
+          return;
+        }
+
+        const boundsX = containerX + localX * containerScale;
+        const boundsY = containerY + localY * containerScale;
+        const boundsWidth = localW * containerScale;
+        const boundsHeight = localH * containerScale;
+
+        graphics.rect(boundsX, boundsY, boundsWidth, boundsHeight);
+        graphics.stroke({ color: strokeColor, width: 2 });
+
+        labelText.text = formatBoundsCanvasLabel(
+          boundsX,
+          boundsY,
+          boundsWidth,
+          boundsHeight,
+          localW,
+          localH,
+        );
+        labelText.x = boundsX;
+        labelText.y = boundsY - 28;
+      };
+
+      if (showLive && textLive) {
+        const spineBounds = spine.bounds;
+        if (
+          spineBounds &&
+          spineBounds.minX !== Infinity &&
+          spineBounds.maxX !== -Infinity
+        ) {
+          drawBoundsRect(
+            spineBounds.minX,
+            spineBounds.minY,
+            spineBounds.maxX - spineBounds.minX,
+            spineBounds.maxY - spineBounds.minY,
+            0x00ff88,
+            textLive,
+          );
+        }
+      }
+
+      if (showMax && textMax) {
+        const animName = spineViewerStore.ui.selectedAnimation;
+        const skeletonData = spine.skeleton?.data;
+        if (skeletonData && animName) {
+          const fullBounds = computeMaxAnimationBounds(
+            skeletonData,
+            animName,
+            0.05,
+            spineViewerStore.ui.selectedSkin,
+          );
+          if (fullBounds) {
+            drawBoundsRect(
+              fullBounds.x,
+              fullBounds.y,
+              fullBounds.width,
+              fullBounds.height,
+              0xffbb00,
+              textMax,
+            );
+          }
+        }
+      }
     } catch (err) {
       console.error('Error updating debug bounds:', err);
       graphics.clear();
-      text.text = '';
+      if (textLive) textLive.text = '';
+      if (textMax) textMax.text = '';
     }
   }, []);
 
   useTick({
-    isEnabled: isInitialised && state.ui.debugBounds,
+    isEnabled:
+      isInitialised &&
+      (state.ui.debugBoundsLive || state.ui.debugBoundsMax),
     callback: tickDebugBounds,
   });
 

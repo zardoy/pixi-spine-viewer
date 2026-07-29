@@ -36,7 +36,10 @@ export interface SpineViewerState {
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
-    debugBounds: boolean;
+    /** Green overlay: current pose bounds (spine.bounds). */
+    debugBoundsLive: boolean;
+    /** Yellow overlay: full-animation union bounds. */
+    debugBoundsMax: boolean;
     selectedAnimation: string;
     previousAnimation: string;
     animations: string[];
@@ -168,7 +171,8 @@ export const initialState: SpineViewerState = {
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
-    debugBounds: false,
+    debugBoundsLive: false,
+    debugBoundsMax: false,
     selectedAnimation: '',
     previousAnimation: '',
     animations: [],

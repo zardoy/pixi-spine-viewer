@@ -294,14 +294,26 @@ export function NewUiSidebar({
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
-                id="newui-debug-bounds"
-                checked={ui.debugBounds}
+                id="newui-debug-bounds-live"
+                checked={ui.debugBoundsLive}
                 onCheckedChange={(val) => {
-                  spineViewerStore.ui.debugBounds = Boolean(val)
+                  spineViewerStore.ui.debugBoundsLive = Boolean(val)
                 }}
               />
-              <Label htmlFor="newui-debug-bounds" className="cursor-pointer text-sm">
-                Frame bounds
+              <Label htmlFor="newui-debug-bounds-live" className="cursor-pointer text-sm">
+                Live frame bounds (B)
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="newui-debug-bounds-max"
+                checked={ui.debugBoundsMax}
+                onCheckedChange={(val) => {
+                  spineViewerStore.ui.debugBoundsMax = Boolean(val)
+                }}
+              />
+              <Label htmlFor="newui-debug-bounds-max" className="cursor-pointer text-sm">
+                Max frame bounds
               </Label>
             </div>
             <div className="flex items-center gap-2">

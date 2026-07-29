@@ -80,6 +80,9 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
       if (e.code === 'KeyT') {
         e.preventDefault()
         spineViewerStore.ui.debugBones = !spineViewerStore.ui.debugBones
+      } else if (e.code === 'KeyB') {
+        e.preventDefault()
+        spineViewerStore.ui.debugBoundsLive = !spineViewerStore.ui.debugBoundsLive
       } else if (e.code === 'KeyS') {
         if (spineViewerStore.ui.selectedAnimation) {
           e.preventDefault()

@@ -17,6 +17,18 @@ interface InstalledStats {
 
 let installed: InstalledStats | null = null
 
+/** Max GPU frame time observed during the current 1s window (ms). */
+let gpuMaxThisSecond = 0
+/** Published max from the last completed 1s window. */
+let gpuPublishedMaxMs: number | null = null
+let gpuWindowStart = 0
+
+function resetGpuAggregation(): void {
+  gpuMaxThisSecond = 0
+  gpuPublishedMaxMs = null
+  gpuWindowStart = 0
+}
+
 function isGpuDisjoint(gl: WebGL2RenderingContext, ext: TimerQueryExt): boolean {
   return gl.getParameter(ext.GPU_DISJOINT_EXT) as boolean
 }
@@ -84,6 +96,8 @@ export function uninstallPixiWebGLRendererStats(): void {
   const state = installed
   installed = null
 
+  resetGpuAggregation()
+
   const gl = state.renderer.gl
   state.renderer.geometry.draw = state.originalDraw
   state.renderer.render = state.originalRender
@@ -131,6 +145,37 @@ export function pollPixiWebGLGpuTimeMs(): number | null {
   }
 
   return null
+}
+
+/**
+ * Poll GPU queries, track max frame GPU time per second, publish once per second.
+ * Call every frame; read result with {@link getPixiWebGLGpuTimeMaxMs}.
+ */
+export function tickPixiWebGLGpuTimeAggregation(now = performance.now()): void {
+  if (!installed?.timerExt) return
+
+  const sample = pollPixiWebGLGpuTimeMs()
+  if (sample !== null) {
+    gpuMaxThisSecond = Math.max(gpuMaxThisSecond, sample)
+  }
+
+  if (gpuWindowStart === 0) {
+    gpuWindowStart = now
+    return
+  }
+
+  if (now - gpuWindowStart >= 1000) {
+    if (gpuMaxThisSecond > 0) {
+      gpuPublishedMaxMs = gpuMaxThisSecond
+    }
+    gpuMaxThisSecond = 0
+    gpuWindowStart = now
+  }
+}
+
+/** Last completed 1-second max GPU frame time (ms), or null if none yet. */
+export function getPixiWebGLGpuTimeMaxMs(): number | null {
+  return gpuPublishedMaxMs
 }
 
 export function isPixiWebGLGpuTimerSupported(): boolean {

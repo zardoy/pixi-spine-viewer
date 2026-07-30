@@ -33,9 +33,10 @@ import { formatBoundsCanvasLabel } from '../lib/pixiCanvasScreenBounds';
 import { computeMaxAnimationBounds } from '../lib/spineUtils';
 import {
   consumePixiWebGLDrawCalls,
+  getPixiWebGLGpuTimeMaxMs,
   installPixiWebGLRendererStats,
   isPixiWebGLGpuTimerSupported,
-  pollPixiWebGLGpuTimeMs,
+  tickPixiWebGLGpuTimeAggregation,
 } from '../lib/pixiWebGLRendererStats';
 import type { AnimationViewport } from '../lib/SpineDisplay';
 
@@ -202,10 +203,13 @@ const PixiAppContent = () => {
   }, [pixiApp, isInitialised]);
 
   const tickRendererStats = useCallback(() => {
-    spineViewerStore.ui.drawCalls = consumePixiWebGLDrawCalls();
-    const gpuMs = pollPixiWebGLGpuTimeMs();
-    if (gpuMs !== null) {
-      spineViewerStore.ui.gpuTimeMs = gpuMs;
+    spineViewerStore.ui.drawCalls = consumePixiWebGLDrawCalls()
+    if (spineViewerStore.ui.gpuTimerSupported) {
+      tickPixiWebGLGpuTimeAggregation()
+      const gpuMax = getPixiWebGLGpuTimeMaxMs()
+      if (gpuMax !== null) {
+        spineViewerStore.ui.gpuTimeMs = gpuMax
+      }
     }
   }, []);
 

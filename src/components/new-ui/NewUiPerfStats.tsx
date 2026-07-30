@@ -65,7 +65,7 @@ export function NewUiPerfStats() {
           </div>
           {state.ui.gpuTimerSupported && state.ui.gpuTimeMs != null && (
             <div className="flex justify-between gap-3">
-              <span>GPU</span>
+              <span>GPU max</span>
               <span className="text-foreground">{state.ui.gpuTimeMs.toFixed(2)} ms</span>
             </div>
           )}

@@ -33,6 +33,8 @@ export interface SpineViewerState {
     scale: number;
     /** When true, auto viewport tick must not overwrite ui.scale. */
     userScaleOverride: boolean;
+    /** When true, auto viewport tick must not overwrite manualPosition. */
+    userPositionOverride: boolean;
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
@@ -67,16 +69,14 @@ export interface SpineViewerState {
     /** When false, animation switches use mixTime 0 (instant). */
     mixTimeEnabled: boolean;
     spinePosition: { x: number; y: number };
-    /** Positioning mode: 'auto' or 'manual' */
-    positioningMode: 'auto' | 'manual';
-    /** Manual mode settings */
+    /** Interactive viewport position (drag-pan); auto-fit writes here until user pans. */
     manualPosition: { x: number; y: number };
     manualGuideSize: { width: number; height: number };
     /** Guide rect position (fixed); spine offset by manualPosition from this */
     manualGuidePosition: { x: number; y: number };
     /** When true, render the yellow guide border (auto + manual). */
     guideBoundsEnabled: boolean;
-    /** How auto viewport / scale is chosen when positioning mode is auto. */
+    /** How auto viewport / scale is chosen on load and when autoscale settings change. */
     autoViewportMode: 'first' | 'per-animation' | 'all';
     /** Animation name for `first` mode; empty string = first animation in list. */
     autoViewportAnimation: string;
@@ -168,6 +168,7 @@ export const initialState: SpineViewerState = {
     scale: 1.0,
     /** When true, auto viewport tick must not overwrite ui.scale. */
     userScaleOverride: false,
+    userPositionOverride: false,
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
@@ -192,7 +193,6 @@ export const initialState: SpineViewerState = {
     mixTime: 0.25,
     mixTimeEnabled: true,
     spinePosition: { x: 0, y: 0 },
-    positioningMode: 'auto',
     manualPosition: { x: 0, y: 0 },
     manualGuideSize: { width: 800, height: 600 },
     manualGuidePosition: { x: 0, y: 0 },

@@ -199,9 +199,10 @@ export function NewUiSidebar({
                   variant="outline"
                   size="icon"
                   className="h-8 w-8 shrink-0"
-                  title="Reset scale (re-enable auto-fit)"
+                  title="Reset view (re-enable auto-fit)"
                   onClick={() => {
                     spineViewerStore.ui.userScaleOverride = false
+                    spineViewerStore.ui.userPositionOverride = false
                     spineViewerStore.ui.scale = 1
                   }}
                 >
@@ -215,8 +216,8 @@ export function NewUiSidebar({
                 value={ui.autoViewportMode}
                 onValueChange={(val: 'first' | 'per-animation' | 'all') => {
                   spineViewerStore.ui.autoViewportMode = val
-                  spineViewerStore.ui.positioningMode = 'auto'
                   spineViewerStore.ui.userScaleOverride = false
+                  spineViewerStore.ui.userPositionOverride = false
                 }}
               >
                 <SelectTrigger className="h-9 w-full">
@@ -237,6 +238,7 @@ export function NewUiSidebar({
                   onValueChange={(val) => {
                     spineViewerStore.ui.autoViewportAnimation = val
                     spineViewerStore.ui.userScaleOverride = false
+                    spineViewerStore.ui.userPositionOverride = false
                   }}
                 >
                   <SelectTrigger className="h-9 w-full">
@@ -253,28 +255,7 @@ export function NewUiSidebar({
               </NewUiFieldRow>
             )}
 
-            <NewUiFieldRow label="Positioning">
-              <Select
-                value={ui.positioningMode}
-                onValueChange={(val: 'auto' | 'manual') => {
-                  spineViewerStore.ui.positioningMode = val
-                  if (val === 'auto') {
-                    spineViewerStore.ui.userScaleOverride = false
-                  }
-                }}
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto</SelectItem>
-                  <SelectItem value="manual">Manual</SelectItem>
-                </SelectContent>
-              </Select>
-            </NewUiFieldRow>
-            {ui.positioningMode === 'manual' && (
-              <NewUiHint>Drag to pan · scroll wheel to zoom</NewUiHint>
-            )}
+            <NewUiHint>Drag to pan · scroll wheel to zoom</NewUiHint>
           </NewUiGroup>
         )}
 

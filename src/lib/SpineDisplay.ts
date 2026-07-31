@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js'
 import { Physics, Vector2 } from '@esotericsoftware/spine-core'
-import { applyAnimationAtTime, skeletonSetupPose } from './spineCompat'
+import { applyAnimationAtTime, skeletonSetupPose, skeletonSetupPoseSlots } from './spineCompat'
 import {
   createSpineFromData,
   loadSpineDataFromFiles as loadSpineDataFromFilesDual,
@@ -157,6 +157,7 @@ export class SpineDisplay extends Container {
     const skeleton = spine.skeleton
 
     skeletonSetupPose(skeleton as never)
+    skeletonSetupPoseSlots(skeleton as never)
 
     const steps = 100
     const stepTime = animation.duration ? animation.duration / steps : 0
@@ -171,6 +172,7 @@ export class SpineDisplay extends Container {
 
     for (let i = 0; i < steps; i++, time += stepTime) {
       skeletonSetupPose(skeleton as never)
+      skeletonSetupPoseSlots(skeleton as never)
       applyAnimationAtTime(skeleton as never, animation as never, time)
       skeleton.updateWorldTransform(Physics.update)
       skeleton.getBounds(offset, size, [])

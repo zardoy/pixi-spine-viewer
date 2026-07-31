@@ -1038,7 +1038,6 @@ const PixiAppContent = () => {
     state.ui.autoViewportMode,
     state.ui.autoViewportAnimation,
     state.ui.positioningMode,
-    state.ui.selectedAnimation,
     state.ui.animations,
     pixiApp,
     isInitialised,

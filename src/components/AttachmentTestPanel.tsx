@@ -12,6 +12,7 @@ import { Checkbox } from "./ui/checkbox";
 import { X } from "lucide-react";
 import { useSnapshot } from "valtio";
 import { spineViewerStore } from "../store/spineViewerStore";
+import { NumericField } from "./NumericField";
 
 export const AttachmentTestPanel = () => {
   const state = useSnapshot(spineViewerStore);
@@ -22,7 +23,12 @@ export const AttachmentTestPanel = () => {
   const handleMouseDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Don't start drag if clicking on interactive elements
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('[role="combobox"]') || target.closest('[role="checkbox"]')) {
+    if (
+      target.closest('button') ||
+      target.closest('[role="combobox"]') ||
+      target.closest('[role="checkbox"]') ||
+      target.closest('input')
+    ) {
       return;
     }
 
@@ -160,6 +166,44 @@ export const AttachmentTestPanel = () => {
               <Label htmlFor="attachmentTestDrawOrder" className="cursor-pointer text-xs leading-snug">
                 Spine draw order (above target slot only)
               </Label>
+            </div>
+          )}
+          {state.ui.attachmentFollowMode === 'bone' && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="attachmentTestBoneOffset"
+                  checked={state.ui.attachmentTestBoneOffsetEnabled}
+                  onCheckedChange={(v) => {
+                    spineViewerStore.ui.attachmentTestBoneOffsetEnabled = v === true;
+                  }}
+                />
+                <Label htmlFor="attachmentTestBoneOffset" className="cursor-pointer text-xs">
+                  Bone offset (x/y)
+                </Label>
+              </div>
+              {state.ui.attachmentTestBoneOffsetEnabled && (
+                <div className="flex gap-2 pl-6">
+                  <NumericField
+                    id="attachmentTestBoneOffsetX"
+                    label="X"
+                    value={state.ui.attachmentTestBoneOffsetX}
+                    onChange={(v) => {
+                      spineViewerStore.ui.attachmentTestBoneOffsetX = v;
+                    }}
+                    step={1}
+                  />
+                  <NumericField
+                    id="attachmentTestBoneOffsetY"
+                    label="Y"
+                    value={state.ui.attachmentTestBoneOffsetY}
+                    onChange={(v) => {
+                      spineViewerStore.ui.attachmentTestBoneOffsetY = v;
+                    }}
+                    step={1}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -101,6 +101,10 @@ export interface SpineViewerState {
     attachmentFollowMode: 'slot' | 'bone';
     selectedAttachmentBone: string;
     availableBones: string[];
+    /** Bone follow: apply an extra x/y offset (in bone-local units) to the marker. */
+    attachmentTestBoneOffsetEnabled: boolean;
+    attachmentTestBoneOffsetX: number;
+    attachmentTestBoneOffsetY: number;
     attachmentDownloadModalOpen: boolean;
     atlasExplorerModalOpen: boolean;
     skeletonSelectModalOpen: boolean;
@@ -212,6 +216,9 @@ export const initialState: SpineViewerState = {
     availableAttachmentSlots: [],
     attachmentFollowMode: 'slot',
     selectedAttachmentBone: '',
+    attachmentTestBoneOffsetEnabled: false,
+    attachmentTestBoneOffsetX: 0,
+    attachmentTestBoneOffsetY: 0,
     availableBones: [],
     attachmentDownloadModalOpen: false,
     atlasExplorerModalOpen: false,

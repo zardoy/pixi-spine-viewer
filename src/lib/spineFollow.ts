@@ -27,6 +27,20 @@ export function applyBoneAppliedPoseToContainer(
   container.setFromMatrix(matrix)
 }
 
+/** Offset a bone's applied world pose by (offsetX, offsetY) expressed in the bone's local axes. */
+function offsetBoneAppliedPose(
+  applied: BoneAppliedPose,
+  offsetX: number,
+  offsetY: number,
+): BoneAppliedPose {
+  if (!offsetX && !offsetY) return applied
+  return {
+    ...applied,
+    worldX: applied.worldX + applied.a * offsetX + applied.b * offsetY,
+    worldY: applied.worldY + applied.c * offsetX + applied.d * offsetY,
+  }
+}
+
 export function detachAttachmentTestMarker(spine: AnySpine, marker: Container): void {
   if (typeof spine.removeSlotObject === 'function') {
     try {
@@ -112,6 +126,8 @@ export function attachAttachmentTestToBone(
   spine: AnySpine,
   boneName: string,
   marker: Container,
+  offsetX = 0,
+  offsetY = 0,
 ): boolean {
   const bone = spine.skeleton.findBone(boneName)
   if (!bone) {
@@ -120,7 +136,7 @@ export function attachAttachmentTestToBone(
   }
   detachAttachmentTestMarker(spine, marker)
   attachSlotOverlay(spine, marker)
-  applyBoneAppliedPoseToContainer(bone.appliedPose, marker)
+  applyBoneAppliedPoseToContainer(offsetBoneAppliedPose(bone.appliedPose, offsetX, offsetY), marker)
   marker.visible = true
   console.debug('[AttachmentTest] bone overlay follow:', boneName)
   return true
@@ -130,10 +146,12 @@ export function tickAttachmentTestBoneFollow(
   spine: AnySpine,
   boneName: string,
   marker: Container,
+  offsetX = 0,
+  offsetY = 0,
 ): void {
   const bone = spine.skeleton.findBone(boneName)
   if (!bone) return
-  applyBoneAppliedPoseToContainer(bone.appliedPose, marker)
+  applyBoneAppliedPoseToContainer(offsetBoneAppliedPose(bone.appliedPose, offsetX, offsetY), marker)
 }
 
 export function tickAttachmentTestSlotFollow(

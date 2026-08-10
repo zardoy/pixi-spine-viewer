@@ -1448,7 +1448,10 @@ const PixiAppContent = () => {
         : attachAttachmentTestToSlotOverlay(spine, slotName, marker);
       if (!ok) marker.visible = false;
     } else if (boneName) {
-      if (!attachAttachmentTestToBone(spine, boneName, marker)) {
+      const offsetEnabled = state.ui.attachmentTestBoneOffsetEnabled;
+      const offsetX = offsetEnabled ? state.ui.attachmentTestBoneOffsetX : 0;
+      const offsetY = offsetEnabled ? state.ui.attachmentTestBoneOffsetY : 0;
+      if (!attachAttachmentTestToBone(spine, boneName, marker, offsetX, offsetY)) {
         marker.visible = false;
       }
     } else {
@@ -1467,6 +1470,9 @@ const PixiAppContent = () => {
     state.ui.selectedAttachmentSlot,
     state.ui.selectedAttachmentBone,
     state.ui.attachmentTestUseSpineDrawOrder,
+    state.ui.attachmentTestBoneOffsetEnabled,
+    state.ui.attachmentTestBoneOffsetX,
+    state.ui.attachmentTestBoneOffsetY,
   ]);
 
   const tickAttachmentTestSlot = useCallback(() => {
@@ -1489,11 +1495,17 @@ const PixiAppContent = () => {
     const spine = spineViewerStore.refs.spine;
     const marker = attachmentTestGraphicsRef.current;
     if (!spine || !marker || (spine as { destroyed?: boolean }).destroyed) return;
-    tickAttachmentTestBoneFollow(spine, state.ui.selectedAttachmentBone, marker);
+    const offsetEnabled = state.ui.attachmentTestBoneOffsetEnabled;
+    const offsetX = offsetEnabled ? state.ui.attachmentTestBoneOffsetX : 0;
+    const offsetY = offsetEnabled ? state.ui.attachmentTestBoneOffsetY : 0;
+    tickAttachmentTestBoneFollow(spine, state.ui.selectedAttachmentBone, marker, offsetX, offsetY);
   }, [
     state.ui.attachmentFollowMode,
     state.ui.selectedAttachmentBone,
     state.ui.attachmentTestPanelVisible,
+    state.ui.attachmentTestBoneOffsetEnabled,
+    state.ui.attachmentTestBoneOffsetX,
+    state.ui.attachmentTestBoneOffsetY,
   ]);
 
   useTick({

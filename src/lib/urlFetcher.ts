@@ -25,6 +25,30 @@ function getDirectoryFromUrl(url: string): string {
   return idx >= 0 ? clean.slice(0, idx) : '';
 }
 
+/** Basename from a URL path (strips query/hash). */
+export function filenameFromUrl(url: string): string {
+  const clean = url.split('?')[0].split('#')[0];
+  return clean.split('/').pop() || '';
+}
+
+/**
+ * Filename for an atlas page image when building File objects from fetched blobs.
+ * Prefers atlas page names, then the URL basename, then generic spineN.png fallbacks.
+ */
+export function resolveAtlasImageFilename(
+  imageUrl: string,
+  index: number,
+  atlasPageNames: string[],
+): string {
+  const pageName = atlasPageNames[index];
+  if (pageName) return pageName;
+
+  const fromUrl = filenameFromUrl(imageUrl);
+  if (/\.(png|jpg|jpeg|webp)$/i.test(fromUrl)) return fromUrl;
+
+  return index === 0 ? 'spine.png' : `spine${index + 1}.png`;
+}
+
 /** Image page names from atlas text (top-level lines ending in image extension). */
 export function parseAtlasPageNames(atlasText: string): string[] {
   const names: string[] = [];

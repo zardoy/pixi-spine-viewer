@@ -14,6 +14,7 @@ import type { SpineFiles } from '@/pages/Index'
 import { NewUiSidebar } from './NewUiSidebar'
 import { NewUiTimeline } from './NewUiTimeline'
 import { NewUiPerfStats } from './NewUiPerfStats'
+import { NewUiSpeedControl } from './NewUiSpeedControl'
 import { NewUiMobileTabs } from './NewUiMobileTabs'
 import { CHECKER_BG_COLOR } from '@/lib/checkerboardBackground'
 
@@ -230,6 +231,7 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
               </div>
             </div>
           )}
+          <NewUiSpeedControl />
           <NewUiPerfStats />
         </div>
         <NewUiTimeline />

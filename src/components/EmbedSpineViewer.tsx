@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ref } from 'valtio'
-import { PixiApp } from '@/components/PixiApp'
+import { NewUiViewer } from '@/components/new-ui/NewUiViewer'
 import type { SpineFiles } from '@/pages/Index'
-import { resetSpineViewerState, spineViewerStore } from '@/store/spineViewerStore'
 import {
   embedPayloadToSpineFiles,
   postEmbedError,
@@ -11,6 +9,10 @@ import {
   type EmbedLoadPayload,
 } from '@/lib/embedApi'
 
+/**
+ * Embed mode (`?embed=1`): same full viewer UI as normal, driven by postMessage payloads
+ * from a parent frame (e.g. game-assets-manager upload preview).
+ */
 export function EmbedSpineViewer() {
   const [files, setFiles] = useState<SpineFiles | null>(null)
   const [waitingLabel, setWaitingLabel] = useState('Waiting for preview…')
@@ -40,21 +42,6 @@ export function EmbedSpineViewer() {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  useEffect(() => {
-    if (!files) return
-
-    spineViewerStore.files = ref(files)
-    spineViewerStore.ui.selectedSkeleton = files.jsonFile.name.replace(/\.(json|skel)$/i, '')
-    spineViewerStore.ui.availableSkeletonNames =
-      files.skeletonFiles?.map((file) => file.name.replace(/\.(json|skel)$/i, '')) ?? []
-    spineViewerStore.ui.isPlaying = true
-    spineViewerStore.secondFiles = null
-
-    return () => {
-      resetSpineViewerState()
-    }
-  }, [files])
-
   if (!files) {
     return (
       <div className="flex h-full min-h-[12rem] items-center justify-center bg-background px-4 text-center text-xs text-muted-foreground">
@@ -64,8 +51,8 @@ export function EmbedSpineViewer() {
   }
 
   return (
-    <div className="h-full min-h-[12rem] w-full bg-background">
-      <PixiApp />
+    <div className="h-full min-h-[12rem] w-full overflow-hidden bg-background">
+      <NewUiViewer files={files} onBack={() => undefined} />
     </div>
   )
 }

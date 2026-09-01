@@ -8,6 +8,7 @@ import { Playground } from "../components/Playground";
 import { OverridePlayground } from "../components/OverridePlayground";
 import { PlaygroundAtPosition } from "../components/PlaygroundAtPosition";
 import { SpineScreenshot } from "../components/SpineScreenshot";
+import { EmbedSpineViewer } from "../components/EmbedSpineViewer";
 import { fetchSpineFilesFromUrl, decodeQueryParam } from "../lib/urlFetcher";
 import { checkSpineFilesAndRedirect, assertSpine43OrRedirect } from "../lib/spine42Redirect";
 import { toast } from "sonner";
@@ -217,6 +218,11 @@ const Index = () => {
   const overridePlayground = params.get("overridePlayground");
   const atPosition = params.get("atPosition");
   const screenshot = params.get("screenshot");
+  const embed = params.get("embed");
+
+  if (embed !== null) {
+    return <EmbedSpineViewer />;
+  }
 
   if (tester !== null) {
     return <SpineTester />;

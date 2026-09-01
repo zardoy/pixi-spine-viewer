@@ -90,6 +90,38 @@ function getBaseUrl(url: string): string {
   return cleanUrl.replace(/\.(json|skel|atlas|atlas\.txt|png|webp|jpg|jpeg)$/i, '');
 }
 
+/** True when the file identity is in query params, not the URL path (e.g. /api/repo-raw?path=…). */
+function urlUsesQueryIdentity(url: string): boolean {
+  return url.includes('?')
+}
+
+function pathExtension(url: string): string | null {
+  const path = url.split('?')[0].split('#')[0]
+  const match = path.match(/\.([^.]+)$/i)
+  return match ? match[1].toLowerCase() : null
+}
+
+function pathHasAtlasExtension(url: string): boolean {
+  const path = url.split('?')[0].split('#')[0]
+  return /\.atlas(\.txt)?$/i.test(path)
+}
+
+/** Prefer repo path from ?path= query (proxy URLs), else URL basename, else fallback. */
+function resolveFetchedFilename(url: string, fallback: string): string {
+  try {
+    const pathParam = new URL(url).searchParams.get('path')
+    if (pathParam) {
+      const name = pathParam.split('/').pop()
+      if (name) return decodeURIComponent(name)
+    }
+  } catch {
+    // ignore malformed URLs
+  }
+  const fromPath = filenameFromUrl(url)
+  if (/\.(json|skel|atlas|png|webp|jpe?g|gif)$/i.test(fromPath)) return fromPath
+  return fallback
+}
+
 /**
  * Fetch a file from URL and convert to File object
  */
@@ -119,71 +151,89 @@ export async function fetchSpineFilesFromUrl(
   atlasUrlOverride?: string,
   pngUrlOverride?: string | string[]
 ): Promise<FetchedSpineFiles> {
-  const skeletonBaseUrl = getBaseUrl(inputUrl);
-  const skeletonBaseFilename = skeletonBaseUrl.split('/').pop() || 'spine';
+  const skeletonBaseUrl = getBaseUrl(inputUrl)
+  const skeletonBaseFilename = skeletonBaseUrl.split('/').pop() || 'spine'
 
-  // 1. Try to fetch skeleton file (.json or .skel)
-  let jsonFile: File | null = null;
-  for (const ext of SKELETON_EXTENSIONS) {
-    const skeletonUrl = `${skeletonBaseUrl}.${ext}`;
-    jsonFile = await fetchFile(skeletonUrl, `${skeletonBaseFilename}.${ext}`);
-    if (jsonFile) break;
+  // 1. Fetch skeleton (.json or .skel)
+  let jsonFile: File | null = null
+  const skeletonExt = pathExtension(inputUrl)
+  if (urlUsesQueryIdentity(inputUrl) || (skeletonExt && SKELETON_EXTENSIONS.includes(skeletonExt))) {
+    const filename = resolveFetchedFilename(inputUrl, `spine.${skeletonExt ?? 'skel'}`)
+    jsonFile = await fetchFile(inputUrl, filename)
+  } else {
+    for (const ext of SKELETON_EXTENSIONS) {
+      const skeletonUrl = `${skeletonBaseUrl}.${ext}`
+      jsonFile = await fetchFile(skeletonUrl, `${skeletonBaseFilename}.${ext}`)
+      if (jsonFile) break
+    }
   }
 
   if (!jsonFile) {
-    throw new Error('Failed to fetch .json or .skel file. Make sure the URL is correct.');
+    throw new Error('Failed to fetch .json or .skel file. Make sure the URL is correct.')
   }
 
-  // 2. Try to fetch Atlas file
-  let atlasFile: File | null = null;
-  let atlasUrlUsed: string | null = null;
-  // If override provided, use its base; otherwise derive from skeleton base
-  const atlasBaseUrl = atlasUrlOverride ? getBaseUrl(atlasUrlOverride) : skeletonBaseUrl;
-  const atlasBaseFilename = atlasBaseUrl.split('/').pop() || skeletonBaseFilename;
-  for (const ext of ATLAS_EXTENSIONS) {
-    const atlasUrl = `${atlasBaseUrl}.${ext}`;
-    atlasFile = await fetchFile(atlasUrl, `${atlasBaseFilename}.${ext}`);
-    if (atlasFile) {
-      atlasUrlUsed = atlasUrl;
-      break;
+  // 2. Fetch atlas
+  let atlasFile: File | null = null
+  let atlasUrlUsed: string | null = null
+  const atlasBaseUrl = atlasUrlOverride ? getBaseUrl(atlasUrlOverride) : skeletonBaseUrl
+  const atlasBaseFilename = atlasBaseUrl.split('/').pop() || skeletonBaseFilename
+  const useDirectAtlas =
+    atlasUrlOverride &&
+    (urlUsesQueryIdentity(atlasUrlOverride) || pathHasAtlasExtension(atlasUrlOverride))
+
+  if (useDirectAtlas && atlasUrlOverride) {
+    const filename = resolveFetchedFilename(atlasUrlOverride, 'spine.atlas')
+    atlasFile = await fetchFile(atlasUrlOverride, filename)
+    if (atlasFile) atlasUrlUsed = atlasUrlOverride
+  } else {
+    for (const ext of ATLAS_EXTENSIONS) {
+      const atlasUrl = `${atlasBaseUrl}.${ext}`
+      atlasFile = await fetchFile(atlasUrl, `${atlasBaseFilename}.${ext}`)
+      if (atlasFile) {
+        atlasUrlUsed = atlasUrl
+        break
+      }
     }
   }
 
   if (!atlasFile || !atlasUrlUsed) {
-    throw new Error('Failed to fetch .atlas file. Tried extensions: ' + ATLAS_EXTENSIONS.join(', '));
+    throw new Error('Failed to fetch .atlas file. Tried extensions: ' + ATLAS_EXTENSIONS.join(', '))
   }
 
-  // 3. Fetch all atlas page images (multi-page atlases e.g. dragon_2.png …)
-  const atlasText = await atlasFile.text();
-  const pageNames = parseAtlasPageNames(atlasText);
-  const atlasDir = getDirectoryFromUrl(atlasUrlUsed);
-  const imageFiles: File[] = [];
+  // 3. Fetch atlas page images
+  const atlasText = await atlasFile.text()
+  const pageNames = parseAtlasPageNames(atlasText)
+  const atlasDir = getDirectoryFromUrl(atlasUrlUsed)
+  const imageFiles: File[] = []
+  const pngUrls = pngUrlOverride
+    ? Array.isArray(pngUrlOverride)
+      ? pngUrlOverride
+      : [pngUrlOverride]
+    : []
 
-  if (pageNames.length > 0) {
-    for (const pageName of pageNames) {
-      const imageUrl = `${atlasDir}/${pageName}`;
-      const imageFile = await fetchFile(imageUrl, pageName);
-      if (!imageFile) {
-        throw new Error(`Failed to fetch atlas image "${pageName}" from ${imageUrl}`);
-      }
-      imageFiles.push(imageFile);
-    }
-  } else if (pngUrlOverride) {
-    const pngUrls = Array.isArray(pngUrlOverride) ? pngUrlOverride : [pngUrlOverride];
+  if (pngUrls.length > 0) {
     for (let i = 0; i < pngUrls.length; i++) {
-      const pngUrl = pngUrls[i];
-      const filename =
-        i === 0 ? `${atlasBaseFilename}.png` : `${atlasBaseFilename}${i + 1}.png`;
-      const pngFile = await fetchFile(pngUrl, filename);
-      if (pngFile) imageFiles.push(pngFile);
+      const pngUrl = pngUrls[i]
+      const filename = resolveAtlasImageFilename(pngUrl, i, pageNames)
+      const pngFile = await fetchFile(pngUrl, filename)
+      if (pngFile) imageFiles.push(pngFile)
+    }
+  } else if (pageNames.length > 0) {
+    for (const pageName of pageNames) {
+      const imageUrl = `${atlasDir}/${pageName}`
+      const imageFile = await fetchFile(imageUrl, pageName)
+      if (!imageFile) {
+        throw new Error(`Failed to fetch atlas image "${pageName}" from ${imageUrl}`)
+      }
+      imageFiles.push(imageFile)
     }
   } else {
     for (const ext of IMAGE_EXTENSIONS) {
-      const imageUrl = `${atlasBaseUrl}.${ext}`;
-      const imageFile = await fetchFile(imageUrl, `${atlasBaseFilename}.${ext}`);
+      const imageUrl = `${atlasBaseUrl}.${ext}`
+      const imageFile = await fetchFile(imageUrl, `${atlasBaseFilename}.${ext}`)
       if (imageFile) {
-        imageFiles.push(imageFile);
-        break;
+        imageFiles.push(imageFile)
+        break
       }
     }
   }

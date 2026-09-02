@@ -1,4 +1,5 @@
 import { FileSpineLoader } from './FileSpineLoader'
+import { parseAtlasPageNames, resolveAtlasImageFilename } from './urlFetcher'
 
 /**
  * Fetch .json/.skel + .atlas + image URLs and load into a {@link FileSpineLoader}
@@ -28,15 +29,16 @@ export async function fetchAndLoadSpinePreview(
 
   const jsonFile = new File([blobs[0]], 'spine.json', { type: 'application/json' })
   const atlasFile = new File([blobs[1]], 'spine.atlas', { type: 'text/plain' })
+  const atlasText = await atlasFile.text()
+  const atlasPageNames = parseAtlasPageNames(atlasText)
   const imageFiles = blobs.slice(2).map((blob, i) =>
-    new File([blob], `spine${i > 0 ? i + 1 : ''}.png`, {
+    new File([blob], resolveAtlasImageFilename(pngUrls[i], i, atlasPageNames), {
       type: blob.type || 'image/png',
     }),
   )
 
   const isSkel = jsonUrl.toLowerCase().endsWith('.skel')
   const skeletonData = isSkel ? await jsonFile.arrayBuffer() : await jsonFile.text()
-  const atlasText = await atlasFile.text()
 
   const spineLoader = new FileSpineLoader(skeletonData, atlasText, imageFiles)
   await spineLoader.loadSpine(spineKey)

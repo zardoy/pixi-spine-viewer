@@ -8,6 +8,7 @@ import { Playground } from "../components/Playground";
 import { OverridePlayground } from "../components/OverridePlayground";
 import { PlaygroundAtPosition } from "../components/PlaygroundAtPosition";
 import { SpineScreenshot } from "../components/SpineScreenshot";
+import { EmbedSpineViewer } from "../components/EmbedSpineViewer";
 import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
@@ -60,7 +61,15 @@ const Index = () => {
     const overridePlayground = params.get("overridePlayground");
     const atPosition = params.get("atPosition");
     const screenshot = params.get("screenshot");
-    if (tester !== null || playground !== null || overridePlayground !== null || atPosition !== null || screenshot !== null) {
+    const embed = params.get("embed");
+    if (
+      tester !== null ||
+      playground !== null ||
+      overridePlayground !== null ||
+      atPosition !== null ||
+      screenshot !== null ||
+      embed !== null
+    ) {
       // These are handled by the component render logic below
       return;
     }
@@ -194,6 +203,11 @@ const Index = () => {
   const overridePlayground = params.get("overridePlayground");
   const atPosition = params.get("atPosition");
   const screenshot = params.get("screenshot");
+  const embed = params.get("embed");
+
+  if (embed !== null) {
+    return <EmbedSpineViewer />;
+  }
 
   if (tester !== null) {
     return <SpineTester />;

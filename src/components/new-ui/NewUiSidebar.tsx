@@ -76,6 +76,23 @@ function showSection(section: NewUiSidebarSection, target: Exclude<NewUiSidebarS
   return section === 'all' || section === target
 }
 
+async function runExportWithToast(
+  loadingMessage: string,
+  action: () => Promise<void>,
+  successMessage: string,
+  errorLabel: string,
+): Promise<void> {
+  const toastId = toast.loading(loadingMessage)
+  try {
+    await action()
+    toast.success(successMessage, { id: toastId })
+  } catch (err) {
+    console.error(`[Spine export] ${errorLabel}`, err)
+    const detail = err instanceof Error ? err.message : String(err)
+    toast.error(`${errorLabel}: ${detail}`, { id: toastId })
+  }
+}
+
 export function NewUiSidebar({
   files,
   onBack,
@@ -368,16 +385,14 @@ export function NewUiSidebar({
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                      onSelect={async () => {
-                        try {
-                          toast.loading('Creating ZIP archive…')
-                          await downloadSpineFilesZip(files, spineViewerStore.ui.customEvents)
-                          toast.dismiss()
-                          toast.success('ZIP downloaded')
-                        } catch (err) {
-                          toast.dismiss()
-                          toast.error(err instanceof Error ? err.message : 'Failed to create ZIP')
-                        }
+                      onSelect={(e) => {
+                        e.preventDefault()
+                        void runExportWithToast(
+                          'Creating ZIP archive…',
+                          () => downloadSpineFilesZip(files, spineViewerStore.ui.customEvents),
+                          'ZIP downloaded',
+                          'Failed to create ZIP',
+                        )
                       }}
                     >
                       Download ZIP
@@ -385,25 +400,25 @@ export function NewUiSidebar({
                     {isSkelFile && (
                       <DropdownMenuItem
                         className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                        onSelect={async () => {
+                        onSelect={(e) => {
+                          e.preventDefault()
                           const loadedSpine = spineViewerStore.refs.spine
-                          if (!loadedSpine || loadedSpine.destroyed || !loadedSpine.skeleton?.data) {
+                          const skeletonData = loadedSpine?.skeleton?.data
+                          if (!loadedSpine || loadedSpine.destroyed || !skeletonData) {
                             toast.error('Spine not loaded. Cannot convert.')
                             return
                           }
-                          try {
-                            toast.loading('Converting skel→JSON and creating ZIP…')
-                            await downloadSpineZipWithSkelToJson(
-                              files,
-                              loadedSpine.skeleton.data,
-                              spineViewerStore.ui.customEvents,
-                            )
-                            toast.dismiss()
-                            toast.success('ZIP with JSON skeleton downloaded')
-                          } catch (err) {
-                            toast.dismiss()
-                            toast.error(err instanceof Error ? err.message : 'Conversion failed')
-                          }
+                          void runExportWithToast(
+                            'Converting skel→JSON and creating ZIP…',
+                            () =>
+                              downloadSpineZipWithSkelToJson(
+                                files,
+                                skeletonData,
+                                spineViewerStore.ui.customEvents,
+                              ),
+                            'ZIP with JSON skeleton downloaded',
+                            'Conversion failed',
+                          )
                         }}
                       >
                         ZIP with skel→JSON

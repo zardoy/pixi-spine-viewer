@@ -54,6 +54,10 @@ function colorToHex(c: { r: number; g: number; b: number; a: number }): string {
   return hex(c.r) + hex(c.g) + hex(c.b) + hex(c.a);
 }
 
+function isWhiteColor(c: { r: number; g: number; b: number; a: number } | null | undefined): boolean {
+  return !c || (c.r === 1 && c.g === 1 && c.b === 1 && c.a === 1);
+}
+
 function writeAttachment(att: Attachment, scale: number): Record<string, unknown> {
   const base: Record<string, unknown> = { name: att.name };
 
@@ -485,37 +489,35 @@ export function skeletonDataToJson(data: SkeletonData, scale = 1): Record<string
     ...(data.audioPath && { audio: data.audioPath }),
   };
 
-  // Bones
+  // Bones — transform lives on setupPose in Spine 4.3+
   root.bones = data.bones.map((b: BoneData) => {
+    const pose = b.setupPose;
     const o: Record<string, unknown> = { name: b.name };
     if (b.parent) o.parent = b.parent.name;
     if (b.length !== 0) o.length = b.length / scale;
-    if (b.x !== 0) o.x = b.x / scale;
-    if (b.y !== 0) o.y = b.y / scale;
-    if (b.rotation !== 0) o.rotation = b.rotation;
-    if (b.scaleX !== 1) o.scaleX = b.scaleX;
-    if (b.scaleY !== 1) o.scaleY = b.scaleY;
-    if (b.shearX !== 0) o.shearX = b.shearX;
-    if (b.shearY !== 0) o.shearY = b.shearY;
-    if (b.inherit !== Inherit.Normal) o.inherit = Inherit[b.inherit];
+    if (pose.x !== 0) o.x = pose.x / scale;
+    if (pose.y !== 0) o.y = pose.y / scale;
+    if (pose.rotation !== 0) o.rotation = pose.rotation;
+    if (pose.scaleX !== 1) o.scaleX = pose.scaleX;
+    if (pose.scaleY !== 1) o.scaleY = pose.scaleY;
+    if (pose.shearX !== 0) o.shearX = pose.shearX;
+    if (pose.shearY !== 0) o.shearY = pose.shearY;
+    if (pose.inherit !== Inherit.Normal) o.inherit = Inherit[pose.inherit];
     if (b.skinRequired) o.skin = true;
-    if (b.color.r !== 1 || b.color.g !== 1 || b.color.b !== 1 || b.color.a !== 1) {
-      o.color = colorToHex(b.color);
-    }
+    if (!isWhiteColor(b.color)) o.color = colorToHex(b.color);
     return o;
   });
 
-  // Slots
+  // Slots — color/dark live on setupPose in Spine 4.3+
   root.slots = data.slots.map((s: SlotData) => {
+    const pose = s.setupPose;
     const o: Record<string, unknown> = {
       name: s.name,
       bone: s.boneData.name,
     };
     if (s.attachmentName) o.attachment = s.attachmentName;
-    if (s.color.r !== 1 || s.color.g !== 1 || s.color.b !== 1 || s.color.a !== 1) {
-      o.color = colorToHex(s.color);
-    }
-    if (s.darkColor) o.dark = colorToHex(s.darkColor);
+    if (!isWhiteColor(pose.color)) o.color = colorToHex(pose.color);
+    if (pose.darkColor) o.dark = colorToHex(pose.darkColor);
     if (s.blendMode !== BlendMode.Normal) o.blend = BlendMode[s.blendMode].toLowerCase();
     if (!s.visible) o.visible = false;
     return o;

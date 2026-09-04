@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useSnapshot } from 'valtio'
+import { toast } from 'sonner'
 import {
   Download,
   ExternalLink,
@@ -7,6 +8,12 @@ import {
   RotateCcw,
   Wrench,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@radix-ui/react-dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -27,6 +34,11 @@ import { NewUiPlaybackControl } from './NewUiPlaybackControl'
 import { NewUiAnimationList } from './NewUiAnimationList'
 import { NewUiSkinList } from './NewUiSkinList'
 import type { SpineFiles } from '@/pages/Index'
+import {
+  downloadSpineFilesZip,
+  downloadSpineZipWithSkelToJson,
+  isSkelSkeletonFile,
+} from '@/lib/spineZipExport'
 
 const BG_PRESETS = [
   { id: 'solid', label: 'Solid' },
@@ -97,6 +109,7 @@ export function NewUiSidebar({
       SUPPORTED_SPINE_VERSIONS_TEXT
 
   const imagesSizeLabel = formatImagesSizeCompact(imagesSize)
+  const isSkelFile = isSkelSkeletonFile(files)
 
   const fileTitle = [
     files.jsonFile.name,
@@ -334,18 +347,70 @@ export function NewUiSidebar({
                   <Wrench className="h-3.5 w-3.5" />
                   Inspect atlas
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => {
-                    spineViewerStore.ui.attachmentDownloadModalOpen = true
-                  }}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export…
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="gap-1.5">
+                      <Download className="h-3.5 w-3.5" />
+                      Export…
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="z-[100] min-w-[14rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+                  >
+                    <DropdownMenuItem
+                      className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                      onSelect={() => {
+                        spineViewerStore.ui.attachmentDownloadModalOpen = true
+                      }}
+                    >
+                      Attachments as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                      onSelect={async () => {
+                        try {
+                          toast.loading('Creating ZIP archive…')
+                          await downloadSpineFilesZip(files, spineViewerStore.ui.customEvents)
+                          toast.dismiss()
+                          toast.success('ZIP downloaded')
+                        } catch (err) {
+                          toast.dismiss()
+                          toast.error(err instanceof Error ? err.message : 'Failed to create ZIP')
+                        }
+                      }}
+                    >
+                      Download ZIP
+                    </DropdownMenuItem>
+                    {isSkelFile && (
+                      <DropdownMenuItem
+                        className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                        onSelect={async () => {
+                          const loadedSpine = spineViewerStore.refs.spine
+                          if (!loadedSpine || loadedSpine.destroyed || !loadedSpine.skeleton?.data) {
+                            toast.error('Spine not loaded. Cannot convert.')
+                            return
+                          }
+                          try {
+                            toast.loading('Converting skel→JSON and creating ZIP…')
+                            await downloadSpineZipWithSkelToJson(
+                              files,
+                              loadedSpine.skeleton.data,
+                              spineViewerStore.ui.customEvents,
+                            )
+                            toast.dismiss()
+                            toast.success('ZIP with JSON skeleton downloaded')
+                          } catch (err) {
+                            toast.dismiss()
+                            toast.error(err instanceof Error ? err.message : 'Conversion failed')
+                          }
+                        }}
+                      >
+                        ZIP with skel→JSON
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </NewUiGroup>
 

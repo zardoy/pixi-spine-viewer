@@ -29,6 +29,7 @@ import {
   tickAttachmentTestSlotFollow,
 } from '../lib/spineFollow';
 import { drawCheckerboardGrid, isCheckerBackground } from '../lib/checkerboardBackground';
+import { drawOriginAxes } from '../lib/originAxes';
 import { formatBoundsCanvasLabel } from '../lib/pixiCanvasScreenBounds';
 import { computeMaxAnimationBounds } from '../lib/spineUtils';
 import {
@@ -128,6 +129,8 @@ const PixiAppContent = () => {
   const spawnBoundsGraphicsRef = useRef<Graphics | null>(null);
   const guideGraphicsRef = useRef<Graphics | null>(null);
   const checkerGraphicsRef = useRef<Graphics | null>(null);
+  const originAxesGraphicsRef = useRef<Graphics | null>(null);
+  const originAxesLastScaleRef = useRef(0);
   const attachmentTestGraphicsRef = useRef<Graphics | null>(null);
   const wasSpineLoaded = useRef(false);
   const pendingSpineLoadedRef = useRef<AnySpine | null>(null);
@@ -742,6 +745,17 @@ const PixiAppContent = () => {
     callback: tickFps,
   });
 
+  const applyOriginAxesOverlay = useCallback((scale: number) => {
+    const graphics = originAxesGraphicsRef.current;
+    if (!graphics || graphics.destroyed) return;
+
+    const safeScale = Math.max(scale, 0.01);
+    if (Math.abs(originAxesLastScaleRef.current - safeScale) < 1e-4) return;
+    originAxesLastScaleRef.current = safeScale;
+
+    drawOriginAxes(graphics, { lineWidth: 1 / safeScale });
+  }, []);
+
   const applySpinesContainerTransform = useCallback(() => {
     const container = spinesContainerRef.current;
     if (!container || manualViewportInteractingRef.current) return;
@@ -755,7 +769,8 @@ const PixiAppContent = () => {
     if (container.scale.x !== scale) {
       container.scale.set(scale);
     }
-  }, []);
+    applyOriginAxesOverlay(container.scale.x);
+  }, [applyOriginAxesOverlay]);
 
   useTick({
     isEnabled: isInitialised,
@@ -837,6 +852,7 @@ const PixiAppContent = () => {
       const factor = Math.exp(-e.deltaY * 0.002);
       const newScale = Math.min(10, Math.max(0.01, container.scale.x * factor));
       container.scale.set(newScale);
+      applyOriginAxesOverlay(newScale);
       scheduleWheelStoreSync();
     };
 
@@ -865,6 +881,7 @@ const PixiAppContent = () => {
     isInitialised,
     syncManualViewportFromContainer,
     scheduleWheelStoreSync,
+    applyOriginAxesOverlay,
   ]);
 
   // Update animation when selected animation changes
@@ -1030,6 +1047,23 @@ const PixiAppContent = () => {
     background.color = color;
   }, [state.ui.backgroundColor, pixiApp]);
 
+  const restackWorldBackgroundLayers = useCallback(() => {
+    const container = spinesContainerRef.current;
+    if (!container) return;
+
+    const checker = checkerGraphicsRef.current;
+    const axes = originAxesGraphicsRef.current;
+    let nextIndex = 0;
+
+    if (checker && !checker.destroyed && container.children.includes(checker)) {
+      container.setChildIndex(checker, nextIndex);
+      nextIndex += 1;
+    }
+    if (axes && !axes.destroyed && container.children.includes(axes)) {
+      container.setChildIndex(axes, nextIndex);
+    }
+  }, []);
+
   // World-space checker behind spine (scales with ui.scale via spinesContainer)
   useEffect(() => {
     const container = spinesContainerRef.current;
@@ -1044,19 +1078,55 @@ const PixiAppContent = () => {
         checker.destroy();
         checkerGraphicsRef.current = null;
       }
+      restackWorldBackgroundLayers();
       return;
     }
 
     let checker = checkerGraphicsRef.current;
     if (!checker || checker.destroyed) {
       checker = new Graphics();
+      checker.eventMode = 'none';
       drawCheckerboardGrid(checker);
       checkerGraphicsRef.current = checker;
       container.addChildAt(checker, 0);
-    } else if (container.children[0] !== checker) {
-      container.setChildIndex(checker, 0);
     }
-  }, [state.ui.backgroundColor, isLoaderReady, state.ui.mountCount]);
+    restackWorldBackgroundLayers();
+  }, [state.ui.backgroundColor, isLoaderReady, state.ui.mountCount, restackWorldBackgroundLayers]);
+
+  // Skeleton-space origin axes — just above background, behind spine
+  useEffect(() => {
+    const container = spinesContainerRef.current;
+    const show = state.ui.debugOriginAxes && isLoaderReady;
+
+    const destroyOriginAxes = () => {
+      const graphics = originAxesGraphicsRef.current;
+      if (graphics && !graphics.destroyed) {
+        if (container?.children.includes(graphics)) container.removeChild(graphics);
+        graphics.destroy();
+      }
+      originAxesGraphicsRef.current = null;
+      originAxesLastScaleRef.current = 0;
+    };
+
+    if (!container || !show) {
+      destroyOriginAxes();
+      return;
+    }
+
+    if (!originAxesGraphicsRef.current || originAxesGraphicsRef.current.destroyed) {
+      const graphics = new Graphics();
+      graphics.eventMode = 'none';
+      originAxesGraphicsRef.current = graphics;
+      container.addChild(graphics);
+    }
+
+    restackWorldBackgroundLayers();
+    applyOriginAxesOverlay(spinesContainerRef.current?.scale.x ?? spineViewerStore.ui.scale);
+
+    return () => {
+      destroyOriginAxes();
+    };
+  }, [state.ui.debugOriginAxes, isLoaderReady, state.ui.mountCount, applyOriginAxesOverlay, restackWorldBackgroundLayers]);
 
   // Debug bones / attachments
   useEffect(() => {

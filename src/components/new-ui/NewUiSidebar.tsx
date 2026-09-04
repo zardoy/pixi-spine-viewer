@@ -293,6 +293,18 @@ export function NewUiSidebar({
           <NewUiGroup label="Visual debug">
             <div className="flex items-center gap-2">
               <Checkbox
+                id="newui-debug-origin"
+                checked={ui.debugOriginAxes}
+                onCheckedChange={(val) => {
+                  spineViewerStore.ui.debugOriginAxes = Boolean(val)
+                }}
+              />
+              <Label htmlFor="newui-debug-origin" className="cursor-pointer text-sm">
+                Origin axes (0, 0)
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
                 id="newui-debug-bones"
                 checked={ui.debugBones}
                 onCheckedChange={(val) => {

@@ -38,6 +38,8 @@ export interface SpineViewerState {
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
+    /** Red/green origin axes at skeleton (0, 0), matching the Spine editor. */
+    debugOriginAxes: boolean;
     /** Green overlay: current pose bounds (spine.bounds). */
     debugBoundsLive: boolean;
     /** Yellow overlay: full-animation union bounds. */
@@ -176,6 +178,7 @@ export const initialState: SpineViewerState = {
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
+    debugOriginAxes: true,
     debugBoundsLive: false,
     debugBoundsMax: false,
     selectedAnimation: '',

@@ -850,8 +850,17 @@ const PixiAppContent = () => {
       manualViewportInteractingRef.current = true;
       spineViewerStore.ui.userScaleOverride = true;
       const factor = Math.exp(-e.deltaY * 0.002);
-      const newScale = Math.min(10, Math.max(0.01, container.scale.x * factor));
+      const oldScale = container.scale.x;
+      const newScale = Math.min(10, Math.max(0.01, oldScale * factor));
+      const rect = el.getBoundingClientRect();
+      const pointerX = e.clientX - rect.left;
+      const pointerY = e.clientY - rect.top;
+      // Keep the point under the cursor fixed in place while zooming.
+      const worldX = (pointerX - container.x) / oldScale;
+      const worldY = (pointerY - container.y) / oldScale;
       container.scale.set(newScale);
+      container.x = pointerX - worldX * newScale;
+      container.y = pointerY - worldY * newScale;
       applyOriginAxesOverlay(newScale);
       scheduleWheelStoreSync();
     };

@@ -12,6 +12,7 @@ import { setGlobalDebugMode, SpineBase } from "../lib/SpineBase";
 import { FileSpineLoader } from "../lib/FileSpineLoader";
 import { Spine as SpineInstance } from "@esotericsoftware/spine-pixi-v8";
 import { globalController } from '@/components/globalController';
+import { safeFindAnimation } from '../lib/animationUtils';
 
 setGlobalDebugMode('texture-sizes')
 
@@ -284,7 +285,7 @@ const PixiAppContent = () => {
       spineViewerStore.reloadPreserveAnimation = null;
 
       if (availableAnimations.length > 0 && initialAnimation) {
-        const anim = data.findAnimation?.(initialAnimation);
+        const anim = safeFindAnimation(data, initialAnimation);
 
         if (anim) {
           if (state.ui.positioningMode === 'auto') {
@@ -405,6 +406,18 @@ const PixiAppContent = () => {
 
         toast.success(`Loaded Spine animation with ${availableAnimations.length} animation(s)`);
       } else {
+        spineViewerStore.ui.selectedAnimation = '';
+        spineViewerStore.ui.timelineDuration = 0;
+        spineViewerStore.ui.timeline = 0;
+        if (app.app) {
+          spineViewerStore.ui.scale = 0.08;
+          spineViewerStore.ui.spinePosition = {
+            x: app.app.screen.width / 2,
+            y: app.app.screen.height / 2,
+          };
+          spineViewerStore.ui.manualPosition = { ...spineViewerStore.ui.spinePosition };
+          spineViewerStore.ui.manualGuidePosition = { ...spineViewerStore.ui.spinePosition };
+        }
         toast.warning('Spine loaded but no animations found');
       }
     } catch (error) {
@@ -414,7 +427,7 @@ const PixiAppContent = () => {
 
   // Track timeline, FPS, and handle viewport transitions
   useEffect(() => {
-    if (!app.app || !state.refs.spine) return;
+    if (!app.app?.ticker || !state.refs.spine) return;
 
     const update = () => {
       const spine = spineViewerStore.refs.spine;
@@ -524,7 +537,7 @@ const PixiAppContent = () => {
 
   // FPS and frame time: measure each frame via ticker, average every second
   useEffect(() => {
-    if (!app.app) return;
+    if (!app.app?.ticker) return;
 
     const updateFps = () => {
       const ticker = app.app?.ticker;
@@ -582,7 +595,7 @@ const PixiAppContent = () => {
     }
 
     const data: any = spine.skeleton.data;
-    const anim = data.findAnimation?.(state.ui.selectedAnimation);
+    const anim = safeFindAnimation(data, state.ui.selectedAnimation);
 
     if (anim) {
       // Callers (Controls, SpineViewer keyboard) already set previousAnimation before
@@ -772,7 +785,7 @@ const PixiAppContent = () => {
 
   // Update debug bounds rendering
   useEffect(() => {
-    if (!app.app || !state.ui.debugBounds) return;
+    if (!app.app?.ticker || !state.ui.debugBounds) return;
 
     const updateBounds = () => {
       const spine = spineViewerStore.refs.spine;
@@ -880,7 +893,7 @@ const PixiAppContent = () => {
 
   // Update spawn bounds rendering
   useEffect(() => {
-    if (!app.app || !state.ui.showSpawnBounds || !state.ui.spawnBounds) return;
+    if (!app.app?.ticker || !state.ui.showSpawnBounds || !state.ui.spawnBounds) return;
 
     const updateSpawnBounds = () => {
       const graphics = spawnBoundsGraphicsRef.current;

@@ -8,7 +8,7 @@ import { SpineDisplay } from "../lib/SpineDisplay";
 import { PixiApp } from "./PixiApp";
 import { useSnapshot, ref } from "valtio";
 import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
-import { getAnimationKeyframeTimes } from "../lib/animationUtils";
+import { getAnimationKeyframeTimes, safeFindAnimation } from "../lib/animationUtils";
 import { AttachmentTestPanel } from "./AttachmentTestPanel";
 import { AttachmentHidePanel } from "./AttachmentHidePanel";
 import { ParticleGeneratorPanel } from "./ParticleGeneratorPanel";
@@ -163,7 +163,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       } else if (e.code === "Comma") {
         // Previous keyframe
         const spine = spineViewerStore.refs.spine;
-        const anim = spine?.skeleton?.data?.findAnimation?.(spineViewerStore.ui.selectedAnimation);
+        const anim = safeFindAnimation(spine?.skeleton?.data, spineViewerStore.ui.selectedAnimation);
         if (anim) {
           const keyframes = getAnimationKeyframeTimes(anim as Parameters<typeof getAnimationKeyframeTimes>[0]);
           const current = spineViewerStore.ui.timeline;
@@ -177,7 +177,7 @@ export const SpineViewer = ({ files, onBack }: SpineViewerProps) => {
       } else if (e.code === "Period") {
         // Next keyframe
         const spine = spineViewerStore.refs.spine;
-        const anim = spine?.skeleton?.data?.findAnimation?.(spineViewerStore.ui.selectedAnimation);
+        const anim = safeFindAnimation(spine?.skeleton?.data, spineViewerStore.ui.selectedAnimation);
         if (anim) {
           const keyframes = getAnimationKeyframeTimes(anim as Parameters<typeof getAnimationKeyframeTimes>[0]);
           const current = spineViewerStore.ui.timeline;
@@ -736,10 +736,9 @@ const InfoPanel = () => {
 
   let timelineCount = 0;
   if (!isDestroyed && spine && state.ui.selectedAnimation) {
-    const data: any = spine.skeleton.data as any;
-    const anim = data.findAnimation?.(state.ui.selectedAnimation);
+    const anim = safeFindAnimation(spine.skeleton?.data, state.ui.selectedAnimation);
     if (anim) {
-      timelineCount = anim.timelines?.length ?? 0;
+      timelineCount = (anim as { timelines?: unknown[] }).timelines?.length ?? 0;
     }
   }
 

@@ -16,7 +16,7 @@ import {
 } from "./ui/select";
 import { useSnapshot } from "valtio";
 import { spineViewerStore, applyActionAfterAnimSwitch } from "../store/spineViewerStore";
-import { getAnimationKeyframeTimes, getAnimationEvents } from "../lib/animationUtils";
+import { getAnimationKeyframeTimes, getAnimationEvents, safeFindAnimation } from "../lib/animationUtils";
 
 interface ControlsProps {
   onCopyUrl: () => void;
@@ -32,7 +32,7 @@ export const Controls = ({
   const state = useSnapshot(spineViewerStore);
   const { ui } = state;
   const spine = spineViewerStore.refs.spine;
-  const anim = spine?.skeleton?.data?.findAnimation?.(ui.selectedAnimation);
+  const anim = safeFindAnimation(spine?.skeleton?.data, ui.selectedAnimation);
   const animEvents = anim ? getAnimationEvents(anim as Parameters<typeof getAnimationEvents>[0]) : [];
   return (
     <Card className="p-6 rounded-none border-x-0 border-t-0 border-b border-border relative">
@@ -130,7 +130,10 @@ export const Controls = ({
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Animation (Q: prev)</Label>
             <div className="flex items-center gap-1">
-              <Select value={ui.selectedAnimation} onValueChange={(val) => {
+              <Select
+                value={ui.selectedAnimation || undefined}
+                disabled={ui.animations.length === 0}
+                onValueChange={(val) => {
                 if (ui.selectedAnimation && ui.selectedAnimation !== val) {
                   spineViewerStore.ui.previousAnimation = ui.selectedAnimation;
                 }
@@ -138,7 +141,7 @@ export const Controls = ({
                 applyActionAfterAnimSwitch();
               }}>
                 <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Select animation" />
+                  <SelectValue placeholder={ui.animations.length === 0 ? "No animations" : "Select animation"} />
                 </SelectTrigger>
                 <SelectContent>
                   {ui.animations.map((animName, index) => (
@@ -240,9 +243,11 @@ export const Controls = ({
                   <SelectValue placeholder="Select animation" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ui.selectedAnimation}>
-                    Follow First ({ui.selectedAnimation})
-                  </SelectItem>
+                  {ui.selectedAnimation ? (
+                    <SelectItem value={ui.selectedAnimation}>
+                      Follow First ({ui.selectedAnimation})
+                    </SelectItem>
+                  ) : null}
                   {ui.secondAnimations.map((anim, index) => (
                     <SelectItem key={anim} value={anim}>
                       {index < 9 ? `${index + 1}. ` : ""}{anim}

@@ -1,3 +1,14 @@
+/** Spine's findAnimation throws on empty/null names — guard before calling. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function safeFindAnimation(
+  data: { findAnimation?: (name: string) => any } | null | undefined,
+  animationName: string | null | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any | null {
+  if (!data?.findAnimation || !animationName) return null
+  return data.findAnimation(animationName)
+}
+
 /** Extract all keyframe times from a Spine animation (from all timelines). */
 export function getAnimationKeyframeTimes(anim: { timelines?: { frames?: number[]; getFrameCount?: () => number; getFrameEntries?: () => number }[] }): number[] {
   const times = new Set<number>([0]);

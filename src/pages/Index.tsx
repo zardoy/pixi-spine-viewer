@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
 import { SkeletonSelectModal } from "../components/SkeletonSelectModal";
 import type { LocalSpineEntry } from "../lib/localSpineFolderScan";
+import { postEmbedClose } from "../lib/embedApi";
 
 export interface SpineFiles {
   jsonFile: File;
@@ -194,6 +195,12 @@ const Index = () => {
   };
 
   const handleBack = async () => {
+    if (window.self !== window.top) {
+      // Loaded as an iframe (e.g. game-assets-manager's preview) — tell the host to close us
+      // instead of reloading back to our own landing page inside the frame.
+      postEmbedClose();
+      return;
+    }
     window.location.search = '';
     await new Promise(resolve => {
       setTimeout(resolve, 100)

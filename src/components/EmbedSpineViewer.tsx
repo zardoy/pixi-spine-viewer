@@ -3,6 +3,7 @@ import { NewUiViewer } from '@/components/new-ui/NewUiViewer'
 import type { SpineFiles } from '@/pages/Index'
 import {
   embedPayloadToSpineFiles,
+  postEmbedClose,
   postEmbedError,
   postEmbedLoaded,
   postEmbedReady,
@@ -52,7 +53,7 @@ export function EmbedSpineViewer() {
 
   return (
     <div className="h-full min-h-[12rem] w-full overflow-hidden bg-background">
-      <NewUiViewer files={files} onBack={() => undefined} />
+      <NewUiViewer files={files} onBack={postEmbedClose} />
     </div>
   )
 }

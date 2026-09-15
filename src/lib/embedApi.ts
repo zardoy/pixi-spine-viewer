@@ -4,6 +4,7 @@ export const EMBED_LOAD_MESSAGE = 'pixi-spine-viewer:load' as const
 export const EMBED_READY_MESSAGE = 'pixi-spine-viewer:ready' as const
 export const EMBED_LOADED_MESSAGE = 'pixi-spine-viewer:loaded' as const
 export const EMBED_ERROR_MESSAGE = 'pixi-spine-viewer:error' as const
+export const EMBED_CLOSE_MESSAGE = 'pixi-spine-viewer:close' as const
 
 export type EmbedFileBase64 = { name: string; base64: string }
 export type EmbedAtlasText = { name: string; text: string }
@@ -54,4 +55,9 @@ export function postEmbedLoaded() {
 
 export function postEmbedError(message: string) {
   window.parent.postMessage({ type: EMBED_ERROR_MESSAGE, message }, '*')
+}
+
+/** Tell the host frame the viewer's own close/back button was pressed, so it can close its iframe. */
+export function postEmbedClose() {
+  window.parent.postMessage({ type: EMBED_CLOSE_MESSAGE }, '*')
 }

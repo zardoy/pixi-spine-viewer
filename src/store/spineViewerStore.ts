@@ -1,7 +1,7 @@
 import { proxy } from 'valtio';
 import { Container, Application as PIXIApplication } from 'pixi.js';
-import type { AnySpine } from '../lib/spineRuntime';
-import { AnimationViewport } from '../lib/SpineDisplay';
+import type { AnySpine } from 'spine-svelte';
+import { AnimationViewport } from 'spine-svelte';
 import { SpineFiles } from '../pages/Index';
 
 export interface SyncedDirHandles {

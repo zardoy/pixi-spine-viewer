@@ -1,0 +1,19 @@
+{
+	"name": "pixi-svelte",
+	"version": "2.1.0",
+	"type": "module",
+	"license": "MIT",
+	"private": true,
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/StakeEngine/web-sdk/tree/main/packages/pixi-svelte"
+	},
+	"comment": "Vendored source, imported directly via the host's `pixi-svelte` alias — never installed. Listed versions document what the source is written against; the host app resolves the real ones.",
+	"peerDependencies": {
+		"@barvynkoa/particle-emitter": "0.0.1",
+		"@esotericsoftware/spine-core": "4.3.9",
+		"@esotericsoftware/spine-pixi-v8": "4.3.9",
+		"pixi.js": "^8.8.1",
+		"svelte": "^5.20.5"
+	}
+}

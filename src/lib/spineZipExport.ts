@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { skeletonDataToJson, parseAtlasPageNames } from '@/spine-toolbox'
 import type { SpineFiles } from '@/pages/Index'
-import type { AnySkeletonData } from '@/lib/spineRuntime'
+import type { AnySkeletonData } from 'spine-svelte'
 
 function triggerBlobDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)

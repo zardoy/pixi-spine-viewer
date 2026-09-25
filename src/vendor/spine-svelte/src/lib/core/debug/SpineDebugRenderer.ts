@@ -28,8 +28,8 @@
  *****************************************************************************/
 
 import { Container, Graphics, Text } from 'pixi.js';
-import type { AnySpine } from './spineRuntime';
-import { slotGetAttachment } from './spineSlot';
+import type { AnySpine } from '../runtime/spineRuntime';
+import { slotGetAttachment } from '../runtime/spineSlot';
 import {
 	computeMeshWorldVertices,
 	computeRegionWorldVertices,
@@ -37,7 +37,7 @@ import {
 	isMeshAttachment,
 	isPathAttachment,
 	isRegionAttachment,
-} from './spineAttachments';
+} from '../runtime/spineAttachments';
 import { SkeletonBounds } from '@esotericsoftware/spine-core';
 
 import type { AnimationStateListener } from '@esotericsoftware/spine-core';

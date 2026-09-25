@@ -7,18 +7,18 @@ import {
   collectSlotDrawableAttachmentPaths,
   isDrawableAttachment,
   isRegionLikeAttachment,
-} from "../lib/spineAttachments";
-import { getSkeletonDrawOrderSlots, slotGetAttachment } from "../lib/spineSlot";
+} from "spine-svelte";
+import { getSkeletonDrawOrderSlots, slotGetAttachment } from "spine-svelte";
 import { Application, useExtend, useApplication, useTick } from "@pixi/react";
 import { useSnapshot, ref } from "valtio";
-import { SpineDisplay } from "../lib/SpineDisplay";
-import { pickInitialSkinName } from "../lib/spineCompat";
-import { SpineDebugRenderer } from '../lib/SpineDebugRenderer';
+import { SpineDisplay } from "spine-svelte";
+import { pickInitialSkinName } from "spine-svelte";
+import { SpineDebugRenderer } from 'spine-svelte';
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
 import { setGlobalDebugMode, SpineBase } from "../lib/SpineBase";
 import { FileSpineLoader } from "../lib/FileSpineLoader";
-import type { AnySpine } from "../lib/spineRuntime";
+import type { AnySpine } from "spine-svelte";
 import { globalController } from '@/components/globalController';
 import {
   attachAttachmentTestToBone,
@@ -27,19 +27,19 @@ import {
   detachAttachmentTestMarker,
   tickAttachmentTestBoneFollow,
   tickAttachmentTestSlotFollow,
-} from '../lib/spineFollow';
-import { drawCheckerboardGrid, isCheckerBackground } from '../lib/checkerboardBackground';
-import { drawOriginAxes } from '../lib/originAxes';
-import { formatBoundsCanvasLabel } from '../lib/pixiCanvasScreenBounds';
-import { computeMaxAnimationBounds } from '../lib/spineUtils';
+} from 'spine-svelte';
+import { drawCheckerboardGrid, isCheckerBackground } from 'spine-svelte';
+import { drawOriginAxes } from 'spine-svelte';
+import { formatBoundsCanvasLabel } from 'spine-svelte';
+import { computeMaxAnimationBounds } from 'spine-svelte';
 import {
   consumePixiWebGLDrawCalls,
   getPixiWebGLGpuTimeMaxMs,
   installPixiWebGLRendererStats,
   isPixiWebGLGpuTimerSupported,
   tickPixiWebGLGpuTimeAggregation,
-} from '../lib/pixiWebGLRendererStats';
-import type { AnimationViewport } from '../lib/SpineDisplay';
+} from 'spine-svelte';
+import type { AnimationViewport } from 'spine-svelte';
 
 setGlobalDebugMode('texture-sizes')
 

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { spineViewerStore } from '@/store/spineViewerStore'
-import { getAnimationKeyframeTimes } from '@/lib/animationUtils'
+import { getAnimationKeyframeTimes } from 'spine-svelte'
 
 export function NewUiPlaybackControl() {
   const { ui } = useSnapshot(spineViewerStore)

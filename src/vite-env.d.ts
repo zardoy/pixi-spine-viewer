@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/client" />
+/// <reference types="svelte" />
 
 /** Injected by Vite `define` from installed spine-core package version (see vite.spineVersions.ts). */
 declare const __SPINE_RUNTIME_PACKAGE_VERSION__: string;

@@ -2,7 +2,7 @@
  * Spine 4.3 helpers for pixi-spine-viewer.
  */
 import { MixFrom, Physics } from '@esotericsoftware/spine-core'
-import type { AnySpine } from './spineRuntime'
+import type { AnySpine } from 'spine-svelte'
 
 /** Spine's implicit base skin name — shown in UI as {@link formatSkinDisplayName}. */
 export const DEFAULT_SKIN_NAME = 'default'

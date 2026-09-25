@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Application, useApplication, useExtend, useTick } from '@pixi/react'
 import { Container, Rectangle } from 'pixi.js'
 import type { Application as PIXIApplication } from 'pixi.js'
-import type { AnySkeletonData } from '../lib/spineRuntime'
+import type { AnySkeletonData } from 'spine-svelte'
 import JSZip from 'jszip'
 import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
@@ -19,8 +19,8 @@ import {
   frameIndexToTime,
   getAnimationDuration,
   getMaxScreenshotFrameIndex,
-} from '../lib/spineUtils'
-import type { SpineBounds } from '../lib/spineUtils'
+} from 'spine-svelte'
+import type { SpineBounds } from 'spine-svelte'
 import { Button } from './ui/button'
 import { ArrowLeft, Camera, Upload } from 'lucide-react'
 import { toast } from 'sonner'

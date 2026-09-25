@@ -1,7 +1,7 @@
 import { useSnapshot } from 'valtio'
 import { cn } from '@/lib/utils'
 import { spineViewerStore } from '@/store/spineViewerStore'
-import { formatSkinDisplayName } from '@/lib/spineCompat'
+import { formatSkinDisplayName } from 'spine-svelte'
 
 export function NewUiSkinList() {
   const { ui } = useSnapshot(spineViewerStore)

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Application } from "@pixi/react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
@@ -10,7 +9,7 @@ import { fetchSpineFilesFromUrl } from "../lib/urlFetcher";
 import { SpineFiles } from "../pages/Index";
 import { Sparkles, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { spineViewerStore } from "../store/spineViewerStore";
-import { CHECKERBOARD_CSS } from "../lib/checkerboardBackground";
+import { CHECKERBOARD_CSS } from "spine-svelte";
 import { fetchAndLoadSpinePreview, loadLocalSpinePreview } from "../lib/spinePreviewLoader";
 import {
   getSortedPngUrlsFromEntry,
@@ -22,6 +21,9 @@ import { pruneSpineMapTileModels, clearAllSpineMapTileModels } from "../lib/spin
 import type { SpineEntry, SpineAction } from "../types/spinesMap";
 import { SpineMapTilePixi, SpineMapTileChrome, SpineMapTilePlaceholder } from "./SpineMapTile";
 import type { FileSpineLoader } from "../lib/FileSpineLoader";
+import { SvelteHost } from "../runtime/bridge/SvelteHost";
+import SpinesMapStage from "../runtime/SpinesMapStage.svelte";
+import { createSpinesMapStageState } from "../runtime/state/spinesMapStageState.svelte";
 
 export type { SpineEntry, SpineAction } from "../types/spinesMap";
 
@@ -75,6 +77,8 @@ export const SpinesMapViewer = ({
   const [error, setError] = useState<string | null>(null);
   const [loadingSpine, setLoadingSpine] = useState<string | null>(null);
   const [loaders, setLoaders] = useState<LoaderMap>({});
+  const [stageState] = useState(createSpinesMapStageState);
+  const [stageApi] = useState(() => ({}));
   const [boundsFollowAnim, setBoundsFollowAnim] = useState(false);
   const [tileSize, setTileSize] = useState(DEFAULT_TILE);
   const [cols, setCols] = useState(1);
@@ -274,6 +278,11 @@ export const SpinesMapViewer = ({
 
   const gridW = cols * cell - GAP;
   const gridH = rows * cell - GAP;
+
+  useEffect(() => {
+    stageState.width = gridW;
+    stageState.height = gridH;
+  }, [stageState, gridW, gridH]);
 
   const handleActionClick = async (
     spine: SpineEntry,
@@ -608,40 +617,39 @@ export const SpinesMapViewer = ({
                 background: CHECKERBOARD_CSS,
               }}
             >
-              <Application
-                width={gridW}
-                height={gridH}
-                backgroundAlpha={0}
-                antialias
-                resolution={1}
-                autoDensity={false}
-              >
-                {pageSpines.map((spine, i) => {
-                  const L = loaders[spine.path];
-                  if (!isReadyLoader(L)) return null;
-                  const col = i % cols;
-                  const row = Math.floor(i / cols);
-                  const spineKey = spineKeyFromMapPath(spine.path);
-                  const boundsData = resolveSpineBoundsData(
-                    spine,
-                    L.getSkeletonData(spineKey)?.name,
-                  );
-                  return (
-                    <SpineMapTilePixi
-                      key={spine.path}
-                      spine={spine}
-                      loader={L}
-                      spineKey={spineKey}
-                      tileW={tileSize}
-                      tileH={tileSize}
-                      pixiX={col * cell}
-                      pixiY={row * cell}
-                      boundsFollowAnim={boundsFollowAnim}
-                      boundsData={boundsData}
-                    />
-                  );
-                })}
-              </Application>
+              {/* Headless tiles publish descriptors; the Svelte stage draws them all. */}
+              {pageSpines.map((spine, i) => {
+                const L = loaders[spine.path];
+                if (!isReadyLoader(L)) return null;
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                const spineKey = spineKeyFromMapPath(spine.path);
+                const boundsData = resolveSpineBoundsData(
+                  spine,
+                  L.getSkeletonData(spineKey)?.name,
+                );
+                return (
+                  <SpineMapTilePixi
+                    key={spine.path}
+                    spine={spine}
+                    loader={L}
+                    spineKey={spineKey}
+                    tileW={tileSize}
+                    tileH={tileSize}
+                    pixiX={col * cell}
+                    pixiY={row * cell}
+                    boundsFollowAnim={boundsFollowAnim}
+                    boundsData={boundsData}
+                    stageState={stageState}
+                  />
+                );
+              })}
+              <SvelteHost
+                component={SpinesMapStage as never}
+                state={stageState}
+                api={stageApi}
+                className="h-full w-full"
+              />
             </div>
 
             <div

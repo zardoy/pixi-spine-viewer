@@ -1,4 +1,4 @@
-import { readSpineExportVersionString } from './spineRuntime'
+import { readSpineExportVersionString } from 'spine-svelte'
 
 /** Legacy Spine 4.2 viewer deployment (this app is 4.3-only). */
 export const SPINE_42_VIEWER_URL = 'https://pixi-spine-viewer-42.vercel.app'

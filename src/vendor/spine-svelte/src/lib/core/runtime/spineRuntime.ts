@@ -1,17 +1,14 @@
 /**
- * Spine 4.3 loader for pixi-spine-viewer.
- * Spine 4.2 assets redirect to the legacy viewer (see spine42Redirect.ts).
+ * Spine skeleton + atlas loader.
+ *
+ * Which export versions are accepted, and what happens when one is not, are supplied by the host
+ * via `configureSpineSvelte` — the viewer redirects to a legacy build, games simply refuse.
  */
 import type { TextureSource } from 'pixi.js'
 import { ImageSource } from 'pixi.js'
 import * as Core from '@esotericsoftware/spine-core'
 import * as Pixi from '@esotericsoftware/spine-pixi-v8'
-import { assertSpine43OrRedirect } from './spine42Redirect'
-
-/** Installed @esotericsoftware/spine-core version (injected at bundle time via Vite define). */
-export const SPINE_RUNTIME_PACKAGE_VERSION = __SPINE_RUNTIME_PACKAGE_VERSION__
-
-export const SUPPORTED_SPINE_VERSIONS_TEXT = `Spine ${SPINE_RUNTIME_PACKAGE_VERSION}`
+import { spineSvelteConfig } from '../../configure'
 
 export type AnySpine = InstanceType<typeof Pixi.Spine>
 export type AnySkeletonData = InstanceType<typeof Core.SkeletonData>
@@ -236,22 +233,43 @@ function parseSkeletonData(
   return skeletonJson.readSkeletonData(jsonData)
 }
 
-/** Parse skeleton + atlas images (Spine 4.3 only; 4.2 redirects). */
+/**
+ * Refuse an export the host's build cannot parse.
+ *
+ * `onUnsupportedExport` may not return (the viewer navigates away), so the throw below is the
+ * fallback for hosts that just want the load to fail.
+ */
+export function assertSupportedExport(
+  input: string | Record<string, unknown> | ArrayBuffer | Uint8Array,
+): void {
+  const config = spineSvelteConfig()
+  const exportVersion = readSpineExportVersionString(input)
+  if (exportVersion == null) return
+  if (config.supportedExportPrefixes.some((prefix) => exportVersion.startsWith(prefix))) return
+
+  config.onUnsupportedExport?.({ exportVersion, input })
+  throw new Error(
+    `Unsupported Spine export ${exportVersion}; this build reads ${config.supportedExportPrefixes.join(', ')}`,
+  )
+}
+
+/** Parse skeleton + atlas images. Unsupported export versions are rejected first. */
 export async function loadSpineDataFromFiles(
   json: string | Record<string, unknown> | ArrayBuffer | Uint8Array,
   atlasText: string,
   imageFiles: File[],
   debugLog?: (msg: string) => void,
 ): Promise<LoadedSpineData> {
-  assertSpine43OrRedirect(json)
+  assertSupportedExport(json)
 
+  const runtimeVersion = spineSvelteConfig().runtimeVersion
   const exportVersion = readSpineExportVersionString(json)
   const log = debugLog ?? (() => {})
 
   console.info(
-    `[Spine] Detected export ${exportVersion ?? 'unknown'} → spine-core@${SPINE_RUNTIME_PACKAGE_VERSION}`,
+    `[Spine] Detected export ${exportVersion ?? 'unknown'} → spine-core@${runtimeVersion}`,
   )
-  log(`Using Spine ${SPINE_RUNTIME_PACKAGE_VERSION}`)
+  log(`Using Spine ${runtimeVersion}`)
 
   const atlas = await buildTextureAtlas(atlasText, imageFiles, log)
   log('Creating atlas loader and parsing skeleton')
@@ -260,7 +278,7 @@ export async function loadSpineDataFromFiles(
   log(`Skeleton parsed: ${skeletonData.animations.length} animations`)
   const name = skeletonData.name ? ` "${skeletonData.name}"` : ''
   console.info(
-    `[Spine] Loaded${name}: export ${exportVersion ?? 'unknown'} → spine-core@${SPINE_RUNTIME_PACKAGE_VERSION}, ${skeletonData.animations.length} animation(s)`,
+    `[Spine] Loaded${name}: export ${exportVersion ?? 'unknown'} → spine-core@${runtimeVersion}, ${skeletonData.animations.length} animation(s)`,
   )
 
   return { skeletonData, textureSources: atlas.textureSources }

@@ -19,7 +19,7 @@ import {
   formatAnimationMetaSuffix,
   getAnimationEvents,
   seekSortedMarkerTime,
-} from '@/lib/animationUtils'
+} from 'spine-svelte'
 
 function selectAnimation(name: string, current: string) {
   if (name === current) return

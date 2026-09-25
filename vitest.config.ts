@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Must precede the bare "pixi-svelte" entry — see vite.config.ts for why.
+      'pixi-svelte/src': path.resolve(__dirname, './src/vendor/pixi-svelte/src'),
       'pixi-svelte': path.resolve(__dirname, './src/vendor/pixi-svelte/index.ts'),
       'spine-svelte': path.resolve(__dirname, './src/vendor/spine-svelte/index.ts'),
     },

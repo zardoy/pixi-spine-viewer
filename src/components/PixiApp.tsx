@@ -14,6 +14,9 @@ import { useSnapshot, ref } from "valtio";
 import { SpineDisplay } from "spine-svelte";
 import { pickInitialSkinName } from "spine-svelte";
 import { SpineDebugRenderer } from 'spine-svelte';
+// Direct file path, not the `pixi-svelte` barrel: that barrel re-exports Svelte component
+// `Props` types through `components/index.ts`, which plain `tsc` (this file's build) can't parse.
+import { setSpineAtlasMipmapsEnabled } from 'pixi-svelte/src/lib/mipmaps/spineAtlasMipmaps';
 import { toast } from "sonner";
 import { spineViewerStore } from "../store/spineViewerStore";
 import { setGlobalDebugMode, SpineBase } from "../lib/SpineBase";
@@ -230,6 +233,7 @@ const PixiAppContent = () => {
       console.log('[PixiApp] Files cleared, resetting loader');
       setIsLoaderReady(false);
       fileSpineLoaderRef.current = null;
+      spineViewerStore.refs.fileSpineLoader = null;
     }
   }, [state.files, isLoaderReady, clearLoadingToast]);
 
@@ -239,6 +243,7 @@ const PixiAppContent = () => {
       console.log('[PixiApp] Second files cleared, resetting second loader');
       setIsSecondLoaderReady(false);
       secondFileSpineLoaderRef.current = null;
+      spineViewerStore.refs.secondFileSpineLoader = null;
     }
   }, [state.secondFiles, isSecondLoaderReady]);
 
@@ -282,6 +287,7 @@ const PixiAppContent = () => {
         }
 
         fileSpineLoaderRef.current = loader;
+        spineViewerStore.refs.fileSpineLoader = ref(loader);
 
         // Load skeleton data (use "key/skeleton" format when multi)
         const spineKeyToLoad =
@@ -346,6 +352,7 @@ const PixiAppContent = () => {
         console.log('[PixiApp] Creating second FileSpineLoader...');
         const loader = new FileSpineLoader(skeletonData, atlasText, files.imageFiles);
         secondFileSpineLoaderRef.current = loader;
+        spineViewerStore.refs.secondFileSpineLoader = ref(loader);
 
         // Load skeleton data
         console.log('[PixiApp] Loading second skeleton data...');
@@ -1168,6 +1175,19 @@ const PixiAppContent = () => {
       cancelled = true;
     };
   }, [state.ui.debugBones]);
+
+  // Mipmaps — QA toggle for texture minification quality. The atlas-source lookup
+  // (setSpineAtlasSourceProvider, registered once in main.tsx) reads the loader refs above,
+  // so this only needs to flip the policy once textures exist.
+  useEffect(() => {
+    if (!isLoaderReady) return;
+    setSpineAtlasMipmapsEnabled(SPINE_KEY, state.ui.mipmapsEnabled);
+  }, [state.ui.mipmapsEnabled, isLoaderReady, state.ui.mountCount]);
+
+  useEffect(() => {
+    if (!isSecondLoaderReady) return;
+    setSpineAtlasMipmapsEnabled(SECOND_SPINE_KEY, state.ui.mipmapsEnabled);
+  }, [state.ui.mipmapsEnabled, isSecondLoaderReady]);
 
   // Frame bounds overlays (live = green, max = yellow)
   useEffect(() => {

@@ -319,6 +319,18 @@ export function NewUiSidebar({
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
+                id="newui-mipmaps"
+                checked={ui.mipmapsEnabled}
+                onCheckedChange={(val) => {
+                  spineViewerStore.ui.mipmapsEnabled = Boolean(val)
+                }}
+              />
+              <Label htmlFor="newui-mipmaps" className="cursor-pointer text-sm">
+                Mipmaps
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
                 id="newui-debug-bounds-live"
                 checked={ui.debugBoundsLive}
                 onCheckedChange={(val) => {

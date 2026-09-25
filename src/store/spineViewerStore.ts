@@ -3,6 +3,7 @@ import { Container, Application as PIXIApplication } from 'pixi.js';
 import type { AnySpine } from 'spine-svelte';
 import { AnimationViewport } from 'spine-svelte';
 import { SpineFiles } from '../pages/Index';
+import type { FileSpineLoader } from '../lib/FileSpineLoader';
 
 export interface SyncedDirHandles {
   jsonHandle: FileSystemFileHandle;
@@ -24,6 +25,9 @@ export interface SpineViewerState {
     viewportTransitionStart: number;
     /** Raw handles (ref-wrapped to avoid proxy breaking getFile() this context) */
     syncedDirHandles: SyncedDirHandles | null;
+    /** Ref-wrapped — mipmap atlas-source lookups read these directly, not through valtio. */
+    fileSpineLoader: FileSpineLoader | null;
+    secondFileSpineLoader: FileSpineLoader | null;
   };
 
   ui: {
@@ -38,6 +42,8 @@ export interface SpineViewerState {
     timeline: number;
     timelineDuration: number;
     debugBones: boolean;
+    /** Mip chain on the loaded spine's atlas pages — QA tool for texture minification. */
+    mipmapsEnabled: boolean;
     /** Red/green origin axes at skeleton (0, 0), matching the Spine editor. */
     debugOriginAxes: boolean;
     /** Green overlay: current pose bounds (spine.bounds). */
@@ -162,6 +168,8 @@ export const initialState: SpineViewerState = {
     perfSpines: [],
     spineData: null,
     imageFiles: null,
+    fileSpineLoader: null,
+    secondFileSpineLoader: null,
     currentViewport: null,
     previousViewport: null,
     viewportTransitionStart: 0,
@@ -178,6 +186,7 @@ export const initialState: SpineViewerState = {
     timeline: 0,
     timelineDuration: 0,
     debugBones: false,
+    mipmapsEnabled: false,
     debugOriginAxes: true,
     debugBoundsLive: false,
     debugBoundsMax: false,

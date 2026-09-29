@@ -1,3 +1,9 @@
+/*
+ * React/valtio original, kept alive only for the `?overridePlayground` dev route while that page
+ * is still on @pixi/react. The maintained version is `SpineOverrideController` in `spine-svelte`,
+ * which is store-agnostic and adds track-1 overrides, mount gating and completion guards.
+ * Retire this file when that route moves to the Svelte runtime.
+ */
 import { proxy, useSnapshot } from 'valtio';
 
 export interface AnimationOverride {

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Application, useExtend } from '@pixi/react'
-import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
 import { fetchAndLoadSpinePreview } from '../lib/spinePreviewLoader'
-import { boundsToContainTransform, computeMaxAnimationBounds } from '../lib/spineUtils'
-import { Container } from 'pixi.js'
+import { SvelteHost } from '../runtime/bridge/SvelteHost'
+import SpinePreviewStage from '../runtime/SpinePreviewStage.svelte'
+import { createSpinePreviewState } from '../runtime/state/spinePreviewState.svelte'
 import { Loader2 } from 'lucide-react'
 
 const PREVIEW_KEY = 'preview'
@@ -24,6 +23,11 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, pngUrls, className }: 
   const [loader, setLoader] = useState<FileSpineLoader | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [stageState] = useState(() => createSpinePreviewState(CANVAS_W, CANVAS_H, PADDING))
+  const [stageApi] = useState(() => ({}))
+
+  // The Svelte root reads this reactively; assigning is what drives the canvas.
+  stageState.loader = loader
 
   useEffect(() => {
     let cancelled = false
@@ -86,41 +90,12 @@ export const SpinePreview = ({ jsonUrl, atlasUrl, pngUrl, pngUrls, className }: 
       className={`bg-muted/50 rounded overflow-hidden ${className ?? ''}`}
       style={{ minHeight: 200, width: '100%' }}
     >
-      <Application
-        width={CANVAS_W}
-        height={CANVAS_H}
-        backgroundAlpha={0}
-        antialias
-        autoDensity
-        resolution={window.devicePixelRatio || 1}
-      >
-        <SpinePreviewContent loader={loader} />
-      </Application>
+      <SvelteHost
+        component={SpinePreviewStage as never}
+        state={stageState}
+        api={stageApi}
+        className="h-full w-full"
+      />
     </div>
-  )
-}
-
-const SpinePreviewContent = ({ loader }: { loader: FileSpineLoader }) => {
-  useExtend({ Container })
-
-  const skeletonData = loader.getSkeletonData(PREVIEW_KEY)
-  const firstAnim = skeletonData?.animations[0]?.name
-  const bounds =
-    skeletonData && firstAnim ? computeMaxAnimationBounds(skeletonData, firstAnim) : null
-  const transform = bounds
-    ? boundsToContainTransform(bounds, CANVAS_W, CANVAS_H, PADDING)
-    : { x: CANVAS_W / 2, y: CANVAS_H / 2, scale: 0.5 }
-
-  return (
-    <SpineBase
-      spine={PREVIEW_KEY}
-      spineLoader={loader}
-      loop
-      playing
-      scale={{ x: transform.scale, y: transform.scale }}
-      x={transform.x}
-      y={transform.y}
-      scaleAnimationDuration={0}
-    />
   )
 }

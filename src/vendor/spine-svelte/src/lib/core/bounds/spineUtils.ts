@@ -5,13 +5,13 @@ import {
   Skeleton,
 } from '@esotericsoftware/spine-core'
 import type { Animation } from '@esotericsoftware/spine-core'
-import type { AnySkeletonData } from './spineRuntime'
+import type { AnySkeletonData } from '../runtime/spineRuntime'
 import {
   applyAnimationAtTime,
   setAnimationObject,
   skeletonSetupPose,
   skeletonSetupPoseSlots,
-} from './spineCompat'
+} from '../runtime/spineCompat'
 
 export interface SpineBounds {
   x: number

@@ -27,4 +27,31 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': 'warn',
     },
   },
+  {
+    /*
+     * Vendored packages are copied verbatim between this repo and the Svelte game codebases, so
+     * they must resolve against nothing but their own files and shared runtime deps. This rule is
+     * the machine-checkable definition of that contract — everything host-specific is supplied
+     * through props or `configureSpineSvelte`.
+     */
+    files: ['src/vendor/**/*.{ts,tsx}'],
+    rules: {
+      // Style is upstream's call — enforcing ours here would create sync drift for no benefit.
+      'prefer-const': 'off',
+      'no-empty': 'off',
+      '@typescript-eslint/ban-ts-comment': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/*', '$lib/*', '$app/*', 'valtio', 'sonner', 'react', 'react-*', 'gsap'],
+              message:
+                'Vendored package: no host-project imports. Supply project-specific behaviour via props or configureSpineSvelte().',
+            },
+          ],
+        },
+      ],
+    },
+  },
 )

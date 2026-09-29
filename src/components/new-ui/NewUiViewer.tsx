@@ -7,7 +7,8 @@ import { AttachmentTestPanel } from '@/components/AttachmentTestPanel'
 import { AttachmentHidePanel } from '@/components/AttachmentHidePanel'
 import { AttachmentDownloadModal } from '@/components/AttachmentDownloadModal'
 import { spineViewerStore, resetSpineViewerState, applyActionAfterAnimSwitch } from '@/store/spineViewerStore'
-import { getAnimationKeyframeTimes } from '@/lib/animationUtils'
+import { captureViewerScreenshot } from '@/lib/captureViewerScreenshot'
+import { getAnimationKeyframeTimes } from 'spine-svelte'
 import { seekSpineAnimationEvent } from './NewUiAnimationList'
 import { resetPageTitle, setSkeletonPageTitle } from '@/lib/pageTitle'
 import type { SpineFiles } from '@/pages/Index'
@@ -16,7 +17,7 @@ import { NewUiTimeline } from './NewUiTimeline'
 import { NewUiPerfStats } from './NewUiPerfStats'
 import { NewUiSpeedControl } from './NewUiSpeedControl'
 import { NewUiMobileTabs } from './NewUiMobileTabs'
-import { CHECKER_BG_COLOR } from '@/lib/checkerboardBackground'
+import { CHECKER_BG_COLOR } from 'spine-svelte'
 
 export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () => void }) {
   const snapshot = useSnapshot(spineViewerStore)
@@ -71,6 +72,11 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
       if (e.code === 'KeyL') {
         e.preventDefault()
         spineViewerStore.ui.loop = !spineViewerStore.ui.loop
+        return
+      }
+      if (e.code === 'KeyP') {
+        e.preventDefault()
+        captureViewerScreenshot()
         return
       }
       if (e.code === 'KeyR' && !e.shiftKey) {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useSnapshot } from 'valtio'
 import { spineViewerStore } from '@/store/spineViewerStore'
-import { getAnimationEvents, getAnimationKeyframeTimes } from '@/lib/animationUtils'
+import { getAnimationEvents, getAnimationKeyframeTimes } from 'spine-svelte'
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 

@@ -1,13 +1,13 @@
 import { Container, Graphics } from 'pixi.js'
 import { Physics, Vector2 } from '@esotericsoftware/spine-core'
-import { applyAnimationAtTime, skeletonSetupPose, skeletonSetupPoseSlots } from './spineCompat'
+import { applyAnimationAtTime, skeletonSetupPose, skeletonSetupPoseSlots } from '../runtime/spineCompat'
 import {
   createSpineFromData,
   loadSpineDataFromFiles as loadSpineDataFromFilesDual,
   type AnyAnimation,
   type AnySpine,
   type LoadedSpineData,
-} from './spineRuntime'
+} from '../runtime/spineRuntime'
 
 export interface SpineDisplayOptions {
   width: number

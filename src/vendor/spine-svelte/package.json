@@ -1,0 +1,13 @@
+{
+	"name": "spine-svelte",
+	"version": "0.1.0",
+	"type": "module",
+	"private": true,
+	"comment": "Vendored source, imported directly via the host's `spine-svelte` alias — never installed. Versions document what the source is written against; the host app resolves the real ones.",
+	"peerDependencies": {
+		"@esotericsoftware/spine-core": "^4.3.9",
+		"@esotericsoftware/spine-pixi-v8": "^4.3.9",
+		"pixi.js": "^8.6.6",
+		"svelte": "^5.20.5"
+	}
+}

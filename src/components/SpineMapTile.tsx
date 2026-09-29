@@ -1,11 +1,9 @@
-import { useLayoutEffect, useMemo, useSyncExternalStore } from 'react'
-import { useExtend } from '@pixi/react'
-import { Container } from 'pixi.js'
+import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, MoreVertical } from 'lucide-react'
-import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
-import { boundsToContainTransform, computeMaxAnimationBounds } from '../lib/spineUtils'
-import { formatSkinDisplayName } from '../lib/spineCompat'
+import type { SpinesMapStageState } from '../runtime/state/spinesMapStageState.svelte'
+import { boundsToContainTransform, computeMaxAnimationBounds } from 'spine-svelte'
+import { formatSkinDisplayName } from 'spine-svelte'
 import type { SpineEntry, SpineAction, SpineBoundsData } from '../types/spinesMap'
 import {
   EMPTY_SPINE_MAP_TILE_SNAPSHOT,
@@ -35,7 +33,8 @@ function useSpineMapTileModel(path: string) {
 }
 
 // ---------------------------------------------------------------------------
-// PIXI subtree only — must be a direct/Application descendant (no DOM, no portals).
+// Headless: owns tile selection state and publishes a descriptor to the Svelte
+// stage, which renders every tile into one shared Pixi Application.
 // ---------------------------------------------------------------------------
 
 export interface SpineMapTilePixiProps {
@@ -49,6 +48,7 @@ export interface SpineMapTilePixiProps {
   boundsFollowAnim: boolean
   /** Optional saved bounds/position for this skeleton (skips bounds recompute). */
   boundsData?: SpineBoundsData
+  stageState: SpinesMapStageState
 }
 
 export function SpineMapTilePixi({
@@ -61,9 +61,8 @@ export function SpineMapTilePixi({
   pixiY,
   boundsFollowAnim,
   boundsData,
+  stageState,
 }: SpineMapTilePixiProps) {
-  useExtend({ Container })
-
   const skeletonData = loader.getSkeletonData(spineKey)
   const animationNames = useMemo(
     () => skeletonData?.animations.map((a) => a.name) ?? [],
@@ -133,22 +132,38 @@ export function SpineMapTilePixi({
     }
   }
 
-  return (
-    <pixiContainer x={pixiX} y={pixiY}>
-      <SpineBase
-        spine={spineKey}
-        spineLoader={loader}
-        animation={selectedAnimName}
-        skin={skinNames.length > 0 ? selectedSkinName : undefined}
-        loop
-        playing
-        scale={{ x: transform.scale, y: transform.scale }}
-        x={transform.x}
-        y={transform.y}
-        scaleAnimationDuration={0}
-      />
-    </pixiContainer>
-  )
+  const skin = skinNames.length > 0 ? selectedSkinName : undefined
+
+  useEffect(() => {
+    if (!skeletonData || !selectedAnimName) return
+    stageState.tiles[spine.path] = {
+      id: spine.path,
+      spineKey,
+      spineData: skeletonData,
+      animation: selectedAnimName,
+      skin,
+      x: pixiX + transform.x,
+      y: pixiY + transform.y,
+      scale: transform.scale,
+    }
+    return () => {
+      delete stageState.tiles[spine.path]
+    }
+  }, [
+    stageState,
+    spine.path,
+    spineKey,
+    skeletonData,
+    selectedAnimName,
+    skin,
+    pixiX,
+    pixiY,
+    transform.x,
+    transform.y,
+    transform.scale,
+  ])
+
+  return null
 }
 
 // ---------------------------------------------------------------------------

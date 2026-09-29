@@ -10,6 +10,27 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "pixi-svelte": [
+        "./src/vendor/pixi-svelte/index.ts"
+      ],
+      "pixi-svelte/*": [
+        "./src/vendor/pixi-svelte/*"
+      ],
+      "spine-svelte": [
+        "./src/vendor/spine-svelte/index.ts"
+      ],
+      "spine-svelte/components": [
+        "./src/vendor/spine-svelte/src/lib/components/index.ts"
+      ],
+      "spine-svelte/dev": [
+        "./src/vendor/spine-svelte/src/lib/dev/index.ts"
+      ],
+      "spine-svelte/state": [
+        "./src/vendor/spine-svelte/src/lib/state/index.ts"
+      ],
+      "spine-svelte/*": [
+        "./src/vendor/spine-svelte/*"
       ]
     },
     "target": "ESNext",

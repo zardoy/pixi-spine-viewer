@@ -7,7 +7,7 @@ import {
   PathAttachment,
   RegionAttachment,
 } from '@esotericsoftware/spine-core'
-import { getSkeletonDrawOrderSlots, slotGetAttachment, slotGetPose } from './spineSlot'
+import { getSkeletonDrawOrderSlots, slotGetAttachment, slotGetPose } from 'spine-svelte'
 
 export function isRegionLikeAttachment(att: unknown): att is {
   computeWorldVertices: (...args: unknown[]) => void

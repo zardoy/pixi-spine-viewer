@@ -1,17 +1,22 @@
-import 'pixi.js/prepare' // Ensures prepare system is available for texture preload
-import { Application, Container, Filter, GlProgram, ColorMatrixFilter, type TextureSource } from 'pixi.js'
+import { Application, Container, Filter, type TextureSource } from 'pixi.js'
 import { PixiReactElementProps, useTick, useApplication } from '@pixi/react'
 import { useEffect, useLayoutEffect, useMemo, useRef, type Ref, type RefObject } from 'react'
 import { Physics } from '@esotericsoftware/spine-core'
-import { resolveSkinName, skeletonApplySkin, skeletonSetupPoseSlots } from './spineCompat'
-import type { AnySpine } from './spineRuntime'
-import { spinePixi } from './spineRuntime'
+import { resolveSkinName, skeletonApplySkin, skeletonSetupPoseSlots } from 'spine-svelte'
+import type { AnySpine } from 'spine-svelte'
+import { spinePixi } from 'spine-svelte'
+import { computeDrawableAttachmentBounds, isDrawableAttachment } from 'spine-svelte'
+import { getSkeletonDrawOrderSlots, slotGetAttachment } from 'spine-svelte'
 import {
-  computeDrawableAttachmentBounds,
-  isDrawableAttachment,
-  isRegionLikeAttachment,
-} from './spineAttachments'
-import { getSkeletonDrawOrderSlots, slotGetAttachment, slotSetAlpha, slotSetAttachment, slotSyncAlphaFromPose } from './spineSlot'
+  applyAttachmentMixRules,
+  applyForceHideAttachments,
+  getRenderModeFilter,
+  hasFromRule,
+  snapshotFromAttachments,
+  type AttachmentMixRule,
+  type FromAttachmentSnapshot,
+  type SpineRenderMode,
+} from 'spine-svelte'
 import { useSnapshot } from 'valtio'
 import { useChangedEffect } from '../hooks/useChangedEffect'
 import { globalSpineOverrides, registerSpine, unregisterSpine } from '../store/spineOverrides'
@@ -71,27 +76,7 @@ export type SpineDebugResults = Record<string, AttachmentSizeInfo | SpineDebugMi
   max: SpineDebugMinMax
 }
 
-/**
- * Per-slot attachment override for the duration of a skeletal mix transition.
- * Because Spine's AttachmentTimeline is binary (it either sets an attachment or reverts to
- * setup — there is no alpha-interpolation), controlling per-slot attachment appearance during
- * a mix must be done post-apply by patching slot.attachment directly.
- *
- * SpineBase snapshots the FROM animation's slot attachments immediately before calling
- * setAnimation, then applies these overrides every frame inside afterUpdateWorldTransforms
- * while `track.mixingFrom` is non-null.
- *
- * duringMix values:
- * - 'from'   → hold the old animation's attachment until the mix fully completes
- * - 'to'     → immediately show the new animation's attachment (Spine default, no override)
- * - 'setup'  → show the slot's setup-pose attachment for the duration of the mix
- * - 'hide'   → hide this slot entirely (slot.color.a = 0) during the mix
- */
-export interface AttachmentMixRule {
-  /** Slot name to control */
-  slot: string
-  duringMix: 'from' | 'to' | 'setup' | 'hide'
-}
+export type { AttachmentMixRule }
 
 function getAnimToUse(animation: string | undefined, spine: SpineInstance | null): string | null {
   if (animation) return animation
@@ -387,57 +372,7 @@ function getFollowTransform(spine: SpineInstance, item: AttachmentsFollowItem): 
   return null
 }
 
-/** Render mode for simplified spine visualization. 'normal' = default, 'silhouette' = flat color preserving texture alpha, 'ghosted' = fully desaturated gray preserving texture alpha/shape. */
-export type SpineRenderMode = 'normal' | 'silhouette' | 'ghosted'
-
-const silhouetteFilterVertex = `in vec2 aPosition;
-out vec2 vTextureCoord;
-uniform vec4 uInputSize;
-uniform vec4 uOutputFrame;
-uniform vec4 uOutputTexture;
-vec4 filterVertexPosition(void) {
-  vec2 position = aPosition * uOutputFrame.zw + uOutputFrame.xy;
-  position.x = position.x * (2.0 / uOutputTexture.x) - 1.0;
-  position.y = position.y * (2.0 * uOutputTexture.z / uOutputTexture.y) - uOutputTexture.z;
-  return vec4(position, 0.0, 1.0);
-}
-vec2 filterTextureCoord(void) {
-  return aPosition * (uOutputFrame.zw * uInputSize.zw);
-}
-void main(void) {
-  gl_Position = filterVertexPosition();
-  vTextureCoord = filterTextureCoord();
-}`
-
-const silhouetteFilterFragment = `in vec2 vTextureCoord;
-uniform sampler2D uTexture;
-uniform vec3 uSilhouetteColor;
-void main(void) {
-  float a = texture(uTexture, vTextureCoord).a;
-  gl_FragColor = vec4(uSilhouetteColor * a, a);
-}`
-
-let _silhouetteFilter: Filter | null = null
-function getSilhouetteFilter(): Filter {
-  if (!_silhouetteFilter) {
-    _silhouetteFilter = new Filter({
-      glProgram: new GlProgram({ vertex: silhouetteFilterVertex, fragment: silhouetteFilterFragment }),
-      resources: {
-        uniforms: { uSilhouetteColor: { value: new Float32Array([0.55, 0.55, 0.55]), type: 'vec3<f32>' } },
-      },
-    })
-  }
-  return _silhouetteFilter
-}
-
-let _ghostedFilter: ColorMatrixFilter | null = null
-function getGhostedFilter(): ColorMatrixFilter {
-  if (!_ghostedFilter) {
-    _ghostedFilter = new ColorMatrixFilter()
-    _ghostedFilter.desaturate()
-  }
-  return _ghostedFilter
-}
+export type { SpineRenderMode }
 
 export interface SpineOverrideControllerPublicAPI {
   getMergedProps: <T>(props: T) => T
@@ -660,11 +595,7 @@ export const SpineBase = (props: SpineProps) => {
   const textureWireframeModeRef = useRef(textureWireframeMode)
   textureWireframeModeRef.current = textureWireframeMode
 
-  const renderModeFilter = useMemo(() => {
-    if (renderMode === 'silhouette') return getSilhouetteFilter()
-    if (renderMode === 'ghosted') return getGhostedFilter()
-    return null
-  }, [renderMode])
+  const renderModeFilter = useMemo(() => getRenderModeFilter(renderMode), [renderMode])
   const mergedFilters = useMemo(() => {
     if (!renderModeFilter && !filters) return filters
     const base = filters ? (Array.isArray(filters) ? filters : [filters]) : []
@@ -722,7 +653,7 @@ export const SpineBase = (props: SpineProps) => {
   attachmentMixRulesRef.current = attachmentMixRules
   // Snapshot of slot attachment names captured just before a setAnimation call.
   // Read by afterUpdateWorldTransforms to implement 'from' duringMix rules.
-  const fromAttachmentSnapshotRef = useRef<Record<string, string | null> | null>(null)
+  const fromAttachmentSnapshotRef = useRef<FromAttachmentSnapshot | null>(null)
 
   // Debug tracking refs
   const mountTimeRef = useRef<string>('')
@@ -993,92 +924,27 @@ export const SpineBase = (props: SpineProps) => {
         spine.afterUpdateWorldTransforms = (spineObj: AnySpine) => {
           prevAfter(spineObj as never)
 
-          // --- Pass 1: force-hide ---
-          const wireframe = textureWireframeModeRef.current
-          const prefixes = forceHideAttachmentPrefixesRef.current
-          const exact = forceHideAttachmentExactRef.current
-          const hasPrefixes = prefixes?.length
-          const hasExact = exact?.length
-          if (wireframe || hasPrefixes || hasExact) {
-            const drawOrder = getSkeletonDrawOrderSlots(spineObj.skeleton)
-            const slots = drawOrder.length > 0 ? drawOrder : [...spineObj.skeleton.slots]
-            for (let i = 0; i < slots.length; i++) {
-              const slot = slots[i] as {
-                data: { name: string; attachmentName?: string }
-                setAttachment?: (name: string | null) => void
-                color?: { a: number }
-              }
-              const att = slotGetAttachment(slot)
-              if (!att || !isDrawableAttachment(att)) continue
-              if (wireframe) {
-                slotSetAlpha(slot, 0)
-                continue
-              }
-              const path = (isRegionLikeAttachment(att) ? att.path : undefined) ?? (att as { name: string }).name
-              const attName = (att as { name: string }).name
-              const matchesPrefix = hasPrefixes && prefixes!.some(
-                (p) => (path && path.startsWith(p)) || (attName && attName.startsWith(p))
-              )
-              const matchesExact = hasExact && exact.some(
-                (p) => (path === p) || (attName === p)
-              )
-              if (matchesPrefix || matchesExact) {
-                slotSetAlpha(slot, 0)
-              } else if (hasPrefixes || hasExact) {
-                slotSyncAlphaFromPose(slot)
-              }
-            }
-          }
-
-          // --- Pass 2: attachment mix rules ---
+          // Mix rules first, then force-hide: a 'from'/'setup' rule swaps the slot's attachment,
+          // and force-hide must judge the attachment that actually ends up visible. (The previous
+          // order was inverted; it only mattered when both features were active at once.)
           const mixRules = attachmentMixRulesRef.current
-          if (!mixRules?.length) return
-
-          const track = spineObj.state.tracks[0]
-          const isMixing = !!track?.mixingFrom
-
-          if (!isMixing) {
-            // Mix completed — clear snapshot so rules don't fire outside a transition
-            if (fromAttachmentSnapshotRef.current !== null) fromAttachmentSnapshotRef.current = null
-            return
-          }
-
-          const snapshot = fromAttachmentSnapshotRef.current
-          const skeleton = spineObj.skeleton
-
-          for (const rule of mixRules) {
-            if (rule.duringMix === 'to') continue // default Spine behavior, no override
-
-            const slot = skeleton.findSlot(rule.slot) as {
-              data: { index: number; attachmentName?: string }
-              setAttachment?: (att: unknown) => void
-              color?: { a: number }
-            } | null
-            if (!slot) continue
-
-            switch (rule.duringMix) {
-              case 'from': {
-                if (!snapshot) break
-                const fromAttName = snapshot[rule.slot]
-                if (fromAttName === undefined) break // slot wasn't snapshotted
-                const att = fromAttName != null
-                  ? skeleton.getAttachment(slot.data.index, fromAttName)
-                  : null
-                slotSetAttachment(slot, att)
-                break
-              }
-              case 'setup': {
-                const setupName = slot.data.attachmentName
-                const att = setupName ? skeleton.getAttachment(slot.data.index, setupName) : null
-                slotSetAttachment(slot, att)
-                break
-              }
-              case 'hide': {
-                slotSetAlpha(slot, 0)
-                break
-              }
+          if (mixRules?.length) {
+            const { mixing } = applyAttachmentMixRules(
+              spineObj,
+              mixRules,
+              fromAttachmentSnapshotRef.current,
+            )
+            // Mix finished — drop the snapshot so rules stop firing outside a transition.
+            if (!mixing && fromAttachmentSnapshotRef.current !== null) {
+              fromAttachmentSnapshotRef.current = null
             }
           }
+
+          applyForceHideAttachments(spineObj, {
+            wireframe: textureWireframeModeRef.current,
+            prefixes: forceHideAttachmentPrefixesRef.current,
+            exact: forceHideAttachmentExactRef.current,
+          })
         }
 
         // Sync spineRef prop immediately
@@ -1341,14 +1207,8 @@ export const SpineBase = (props: SpineProps) => {
       }
       // Snapshot FROM attachments for slots that have 'from' mix rules, before the switch
       const mixRulesNow = attachmentMixRulesRef.current
-      if (mixRulesNow?.some(r => r.duringMix === 'from')) {
-        const snap: Record<string, string | null> = {}
-        for (const rule of mixRulesNow) {
-          if (rule.duringMix !== 'from') continue
-          const slot = spineRef.current.skeleton.findSlot(rule.slot)
-          snap[rule.slot] = (slot ? (slotGetAttachment(slot) as { name?: string } | null)?.name : null) ?? null
-        }
-        fromAttachmentSnapshotRef.current = snap
+      if (hasFromRule(mixRulesNow)) {
+        fromAttachmentSnapshotRef.current = snapshotFromAttachments(spineRef.current, mixRulesNow!)
       }
 
       // Re-apply mix rules before the switch so per-pair mix is current

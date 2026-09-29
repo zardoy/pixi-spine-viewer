@@ -1,5 +1,5 @@
 import type { Container } from 'pixi.js'
-import type { AnySpine } from './spineRuntime'
+import type { AnySpine } from '../core/runtime/spineRuntime'
 
 interface BoneAppliedPose {
   a: number

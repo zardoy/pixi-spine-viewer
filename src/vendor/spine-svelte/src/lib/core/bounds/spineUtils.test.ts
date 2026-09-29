@@ -3,7 +3,7 @@ import {
   buildSpineScreenshotFilename,
   parseSpineScreenshotFilename,
   type SpineScreenshotFilenameFields,
-} from './spineUtils'
+} from 'spine-svelte'
 
 const wheelIdleFields: SpineScreenshotFilenameFields = {
   base: 'wheel_1',

@@ -19,7 +19,7 @@ import {
   isLikelyFolderDrop,
 } from "../lib/localSpineFolderScan";
 import JSZip from "jszip";
-import { SUPPORTED_SPINE_VERSIONS_TEXT } from "../lib/spineRuntime";
+import { supportedSpineVersionsText } from "spine-svelte";
 import {
   Select,
   SelectContent,
@@ -432,7 +432,7 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFo
           className="absolute top-4 left-4 text-xs leading-snug text-muted-foreground/65 text-left select-none"
           title="Spine 4.3 only — 4.2 assets open on pixi-spine-viewer-42.vercel.app"
         >
-          Supported: {SUPPORTED_SPINE_VERSIONS_TEXT}
+          Supported: {supportedSpineVersionsText()}
         </p>
         <div className="space-y-8">
           <div className="space-y-4">

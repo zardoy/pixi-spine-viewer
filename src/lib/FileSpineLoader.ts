@@ -1,11 +1,11 @@
 import type { TextureSource } from 'pixi.js';
-import { SpineDisplay } from './SpineDisplay';
+import { SpineDisplay } from 'spine-svelte';
 import type { SpineFiles } from '../pages/Index';
 import {
   createSpineFromData,
   type AnySkeletonData,
   type AnySpine,
-} from './spineRuntime';
+} from 'spine-svelte';
 
 export type { AnySpine as SpineInstance };
 

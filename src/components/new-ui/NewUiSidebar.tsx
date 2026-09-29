@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useSnapshot } from 'valtio'
 import { toast } from 'sonner'
 import {
+  Camera,
   Download,
   ExternalLink,
   Heart,
@@ -27,8 +28,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { spineViewerStore } from '@/store/spineViewerStore'
-import { CHECKER_BG_COLOR, isCheckerBackground } from '@/lib/checkerboardBackground'
-import { SUPPORTED_SPINE_VERSIONS_TEXT } from '@/lib/spineRuntime'
+import { captureViewerScreenshot } from '@/lib/captureViewerScreenshot'
+import { CHECKER_BG_COLOR, isCheckerBackground } from 'spine-svelte'
+import { supportedSpineVersionsText } from 'spine-svelte'
 import { NewUiFieldRow, NewUiGroup, NewUiHint } from './NewUiPrimitives'
 import { NewUiPlaybackControl } from './NewUiPlaybackControl'
 import { NewUiAnimationList } from './NewUiAnimationList'
@@ -123,7 +125,7 @@ export function NewUiSidebar({
     !spine || spine.destroyed
       ? '—'
       : (spine.skeleton?.data as { version?: string } | undefined)?.version ??
-      SUPPORTED_SPINE_VERSIONS_TEXT
+      supportedSpineVersionsText()
 
   const imagesSizeLabel = formatImagesSizeCompact(imagesSize)
   const isSkelFile = isSkelSkeletonFile(files)
@@ -145,7 +147,7 @@ export function NewUiSidebar({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <h1 className="truncate text-xl italic text-muted-foreground">PSV Project</h1>
-              <p className="text-[10px] text-muted-foreground/70">Pixi v8 Engine + React</p>
+              <p className="text-[10px] text-muted-foreground/70">Pixi v8 Engine + Svelte!</p>
             </div>
             <Button type="button" variant="ghost" size="sm" className="shrink-0 text-sm" onClick={onBack}>
               Close
@@ -317,6 +319,18 @@ export function NewUiSidebar({
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
+                id="newui-mipmaps"
+                checked={ui.mipmapsEnabled}
+                onCheckedChange={(val) => {
+                  spineViewerStore.ui.mipmapsEnabled = Boolean(val)
+                }}
+              />
+              <Label htmlFor="newui-mipmaps" className="cursor-pointer text-sm">
+                Mipmaps
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
                 id="newui-debug-bounds-live"
                 checked={ui.debugBoundsLive}
                 onCheckedChange={(val) => {
@@ -375,6 +389,17 @@ export function NewUiSidebar({
                 >
                   <Wrench className="h-3.5 w-3.5" />
                   Inspect atlas
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  title="Save the canvas exactly as framed right now (P)"
+                  onClick={() => captureViewerScreenshot()}
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  Screenshot
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

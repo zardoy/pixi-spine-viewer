@@ -48,11 +48,10 @@ export function NewUiTimeline() {
       <div className="relative px-1">
         <div className="pointer-events-none absolute inset-x-1 top-1/2 h-2 -translate-y-1/2">
           {markers.map((m) => (
-            <button
+            <div
               key={`${m.kind}-${m.time}`}
-              type="button"
               className={cn(
-                'pointer-events-auto absolute top-0 h-full w-px -translate-x-1/2',
+                'pointer-events-auto absolute top-0 h-full w-px -translate-x-1/2 cursor-pointer',
                 m.kind === 'event' ? 'bg-amber-400/90' : 'bg-primary/35',
               )}
               style={{ left: `${m.left}%` }}

@@ -101,11 +101,10 @@ export function NewUiAnimationList() {
           const label = hotkeyLabel(name, index)
 
           return (
-            <button
+            <div
               key={name}
-              type="button"
               className={cn(
-                'flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm transition-colors',
+                'flex w-full cursor-pointer select-none items-center gap-2 px-2 py-1.5 text-left text-sm transition-colors',
                 isSelected
                   ? 'bg-primary/15 text-foreground'
                   : 'hover:bg-accent/50',
@@ -126,7 +125,7 @@ export function NewUiAnimationList() {
                   </span>
                 )}
               </span>
-            </button>
+            </div>
           )
         })}
       </div>

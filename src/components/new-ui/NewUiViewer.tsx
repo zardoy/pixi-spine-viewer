@@ -159,9 +159,14 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
         const duration = spineViewerStore.ui.timelineDuration
         if (duration <= 0) return
         e.preventDefault()
-        const step = e.shiftKey ? 0.5 : 0.1
-        const delta = e.code === 'ArrowRight' ? step : -step
-        const next = Math.max(0, Math.min(duration, spineViewerStore.ui.timeline + delta))
+        const step = (e.shiftKey ? 0.1 : 0.02) * duration
+        const current = spineViewerStore.ui.timeline
+        let next: number
+        if (e.code === 'ArrowRight') {
+          next = current >= duration ? 0 : Math.min(duration, current + step)
+        } else {
+          next = current <= 0 ? duration : Math.max(0, current - step)
+        }
         spineViewerStore.ui.timeline = next
         spineViewerStore.ui.isPlaying = false
       } else if (e.code === 'Comma' || e.code === 'Period') {

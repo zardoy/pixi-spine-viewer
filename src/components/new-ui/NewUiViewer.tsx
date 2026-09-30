@@ -18,6 +18,7 @@ import { NewUiPerfStats } from './NewUiPerfStats'
 import { NewUiSpeedControl } from './NewUiSpeedControl'
 import { NewUiMobileTabs } from './NewUiMobileTabs'
 import { CHECKER_BG_COLOR } from 'spine-svelte'
+import { EMBED_CLOSE_MESSAGE } from '@/lib/embedApi'
 
 export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () => void }) {
   const snapshot = useSnapshot(spineViewerStore)
@@ -64,6 +65,11 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
 
+      if (e.code === 'Escape') {
+        e.preventDefault()
+        window.parent.postMessage({ type: EMBED_CLOSE_MESSAGE }, '*')
+        return
+      }
       if (e.code === 'Space') {
         e.preventDefault()
         spineViewerStore.ui.isPlaying = !spineViewerStore.ui.isPlaying

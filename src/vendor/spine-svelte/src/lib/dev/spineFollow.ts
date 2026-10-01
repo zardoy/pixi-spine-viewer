@@ -1,4 +1,4 @@
-import type { Container } from 'pixi.js'
+import { Container } from 'pixi.js'
 import type { AnySpine } from '../core/runtime/spineRuntime'
 
 interface BoneAppliedPose {
@@ -41,7 +41,17 @@ function offsetBoneAppliedPose(
   }
 }
 
+/** Wrappers used to apply a bone-local offset in draw-order mode (addSlotObject overwrites the transform). */
+const drawOrderWrappers = new WeakMap<Container, Container>()
+
 export function detachAttachmentTestMarker(spine: AnySpine, marker: Container): void {
+  const wrapper = drawOrderWrappers.get(marker)
+  if (wrapper) {
+    drawOrderWrappers.delete(marker)
+    wrapper.removeChild(marker)
+    detachAttachmentTestMarker(spine, wrapper)
+    wrapper.destroy()
+  }
   if (typeof spine.removeSlotObject === 'function') {
     try {
       spine.removeSlotObject(marker)
@@ -140,6 +150,42 @@ export function attachAttachmentTestToBone(
   marker.visible = true
   console.debug('[AttachmentTest] bone overlay follow:', boneName)
   return true
+}
+
+/**
+ * Bone follow rendered in spine draw order: injected above the first slot (in draw order) that
+ * belongs to the bone. Falls back to overlay (returns 'overlay') when the bone has no slot.
+ */
+export function attachAttachmentTestToBoneDrawOrder(
+  spine: AnySpine,
+  boneName: string,
+  marker: Container,
+  offsetX = 0,
+  offsetY = 0,
+): 'draw-order' | 'overlay' | false {
+  const bone = spine.skeleton.findBone(boneName)
+  if (!bone) {
+    console.warn('[AttachmentTest] bone not found:', boneName)
+    return false
+  }
+  const slot =
+    spine.skeleton.drawOrder.appliedPose.find((s: { bone: unknown }) => s.bone === bone) ??
+    spine.skeleton.slots.find((s: { bone: unknown }) => s.bone === bone)
+  if (!slot) {
+    return attachAttachmentTestToBone(spine, boneName, marker, offsetX, offsetY) ? 'overlay' : false
+  }
+  detachAttachmentTestMarker(spine, marker)
+  const wrapper = new Container()
+  marker.position.set(offsetX, offsetY)
+  marker.rotation = 0
+  marker.scale.set(1, 1)
+  marker.skew.set(0, 0)
+  wrapper.addChild(marker)
+  drawOrderWrappers.set(marker, wrapper)
+  spine.addSlotObject(slot.data.name, wrapper, { followAttachmentTimeline: false })
+  marker.visible = true
+  console.debug('[AttachmentTest] bone draw-order follow:', boneName, 'via slot', slot.data.name)
+  return 'draw-order'
 }
 
 export function tickAttachmentTestBoneFollow(

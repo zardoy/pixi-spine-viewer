@@ -1,12 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSnapshot } from 'valtio'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { spineViewerStore } from '@/store/spineViewerStore'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+const SMALL_SCREEN_QUERY = '(max-width: 900px), (max-height: 600px)'
+
 export function NewUiPerfStats() {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => window.matchMedia(SMALL_SCREEN_QUERY).matches)
+
+  // Auto-minimize when the screen becomes small, expand when it becomes large again
+  useEffect(() => {
+    const mq = window.matchMedia(SMALL_SCREEN_QUERY)
+    const onChange = (e: MediaQueryListEvent) => setCollapsed(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
   const state = useSnapshot(spineViewerStore)
   const spine = spineViewerStore.refs.spine
   const isDestroyed = !spine || spine.destroyed

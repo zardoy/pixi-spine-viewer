@@ -154,7 +154,7 @@ export const AttachmentTestPanel = () => {
               2× size
             </Label>
           </div>
-          {state.ui.attachmentFollowMode === 'slot' && (
+          {(
             <div className="flex items-center gap-2">
               <Checkbox
                 id="attachmentTestDrawOrder"
@@ -164,7 +164,7 @@ export const AttachmentTestPanel = () => {
                 }}
               />
               <Label htmlFor="attachmentTestDrawOrder" className="cursor-pointer text-xs leading-snug">
-                Spine draw order (above target slot only)
+                {state.ui.attachmentFollowMode === 'slot' ? 'Spine draw order (above target slot only)' : 'Spine draw order (above first slot on bone)'}
               </Label>
             </div>
           )}
@@ -224,7 +224,11 @@ export const AttachmentTestPanel = () => {
               </span>
             )}
             {state.ui.attachmentFollowMode === 'bone' && (
-              <span className="block mt-0.5">Bone follow always renders on top.</span>
+              <span className="block mt-0.5">
+                {state.ui.attachmentTestUseSpineDrawOrder
+                  ? 'Rendered in spine draw order (above first slot on bone).'
+                  : 'Rendered on top of all attachments.'}
+              </span>
             )}
           </div>
         )}

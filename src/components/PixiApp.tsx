@@ -25,6 +25,7 @@ import type { AnySpine } from "spine-svelte";
 import { globalController } from '@/components/globalController';
 import {
   attachAttachmentTestToBone,
+  attachAttachmentTestToBoneDrawOrder,
   attachAttachmentTestToSlotDrawOrder,
   attachAttachmentTestToSlotOverlay,
   detachAttachmentTestMarker,
@@ -1550,9 +1551,10 @@ const PixiAppContent = () => {
       const offsetEnabled = state.ui.attachmentTestBoneOffsetEnabled;
       const offsetX = offsetEnabled ? state.ui.attachmentTestBoneOffsetX : 0;
       const offsetY = offsetEnabled ? state.ui.attachmentTestBoneOffsetY : 0;
-      if (!attachAttachmentTestToBone(spine, boneName, marker, offsetX, offsetY)) {
-        marker.visible = false;
-      }
+      const result = state.ui.attachmentTestUseSpineDrawOrder
+        ? attachAttachmentTestToBoneDrawOrder(spine, boneName, marker, offsetX, offsetY)
+        : attachAttachmentTestToBone(spine, boneName, marker, offsetX, offsetY) && 'overlay';
+      if (!result) marker.visible = false;
     } else {
       marker.visible = false;
     }
@@ -1590,7 +1592,7 @@ const PixiAppContent = () => {
 
   const tickAttachmentTestBone = useCallback(() => {
     if (state.ui.attachmentFollowMode !== 'bone' || !state.ui.selectedAttachmentBone) return;
-    if (!state.ui.attachmentTestPanelVisible) return;
+    if (!state.ui.attachmentTestPanelVisible || state.ui.attachmentTestUseSpineDrawOrder) return;
     const spine = spineViewerStore.refs.spine;
     const marker = attachmentTestGraphicsRef.current;
     if (!spine || !marker || (spine as { destroyed?: boolean }).destroyed) return;
@@ -1602,6 +1604,7 @@ const PixiAppContent = () => {
     state.ui.attachmentFollowMode,
     state.ui.selectedAttachmentBone,
     state.ui.attachmentTestPanelVisible,
+    state.ui.attachmentTestUseSpineDrawOrder,
     state.ui.attachmentTestBoneOffsetEnabled,
     state.ui.attachmentTestBoneOffsetX,
     state.ui.attachmentTestBoneOffsetY,
@@ -1622,6 +1625,7 @@ const PixiAppContent = () => {
       state.ui.attachmentTestPanelVisible &&
       state.ui.attachmentFollowMode === 'bone' &&
       !!state.ui.selectedAttachmentBone &&
+      !state.ui.attachmentTestUseSpineDrawOrder &&
       !!state.refs.spine,
     callback: tickAttachmentTestBone,
   });

@@ -2,8 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import * as SPINE_PIXI from '@esotericsoftware/spine-pixi-v8';
 
-	import type { OverwriteCursor } from '../types';
-	import type { SpineDebugCell } from '../context.svelte';
+	import type { OverwriteCursor } from 'pixi-svelte';
+	import type { SpineDebugCell } from './context';
 
 	export type Props = OverwriteCursor<Omit<SPINE_PIXI.SpineOptions, 'children'>> & {
 		spineData: SPINE_PIXI.SkeletonData;
@@ -16,9 +16,9 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { propsSyncEffect } from '../utils.svelte';
-	import { getContextParent } from '../context.svelte';
-	import { notifySpineConstructed, notifySpineMounted } from '../spineMountHooks';
+	import { propsSyncEffect } from 'pixi-svelte';
+	import { getContextParent } from 'pixi-svelte';
+	import { notifySpineConstructed, notifySpineMounted } from './spineMountHooks';
 	import SpineSubtree from './SpineSubtree.svelte';
 
 	const props: Props = $props();

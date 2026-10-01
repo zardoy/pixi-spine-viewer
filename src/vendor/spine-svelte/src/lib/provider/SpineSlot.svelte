@@ -22,16 +22,13 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 
-	import {
-		getContextSpine,
-		createContextParent,
-		getContextSpineEventEmitter,
-	} from '../context.svelte';
+	import { getContextSpine, getContextSpineEventEmitter } from './context';
+	import { createContextParent } from 'pixi-svelte';
 	import {
 		attachSlotOverlay,
 		detachSlotOverlay,
 		syncContainerToSlotBone,
-	} from '../spineSlotFollow';
+	} from './spineSlotFollow';
 
 	const props: Props = $props();
 	const spine = getContextSpine();

@@ -8,8 +8,8 @@
 	import * as PIXI from 'pixi.js';
 	import { onDestroy } from 'svelte';
 
-	import { getContextSpine, setContextSpineEventEmitter } from '../context.svelte';
-	import { getFramePipeline, FRAME_PHASE } from '../spineFramePipeline';
+	import { getContextSpine, setContextSpineEventEmitter } from './context';
+	import { getFramePipeline, FRAME_PHASE } from './spineFramePipeline';
 
 	const props: Props = $props();
 	const spine = getContextSpine();

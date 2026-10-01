@@ -13,7 +13,7 @@
 
 <script lang="ts">
 	import { Skin } from '@esotericsoftware/spine-core'
-	import { getContextSpine } from 'pixi-svelte'
+	import { getContextSpine } from '../provider'
 
 	import { resolveSkinName, skeletonApplySkin } from '../core/runtime/spineCompat'
 

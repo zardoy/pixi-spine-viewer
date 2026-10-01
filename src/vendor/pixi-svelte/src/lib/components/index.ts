@@ -10,19 +10,6 @@ import AnimatedSprite, { type Props as AnimatedSpriteProps } from './AnimatedSpr
 import SpriteSheet, { type Props as SpriteSheetProps } from './SpriteSheet.svelte';
 import Sprite, { type Props as SpriteProps } from './Sprite.svelte';
 import BaseSprite, { type Props as BaseSpriteProps } from './BaseSprite.svelte';
-import BaseSpineProvider, {
-	type Props as BaseSpineProviderProps,
-} from './BaseSpineProvider.svelte';
-import SpineProvider, { type Props as SpineProviderProps } from './SpineProvider.svelte';
-import SpineEventEmitterProvider, {
-	type Props as SpineEventEmitterProviderProps,
-} from './SpineEventEmitterProvider.svelte';
-import SpineTrack, { type Props as SpineTrackProps } from './SpineTrack.svelte';
-import SpineBone, { type Props as SpineBoneProps } from './SpineBone.svelte';
-import SpineForceHideAttachments, {
-	type Props as SpineForceHideAttachmentsProps,
-} from './SpineForceHideAttachments.svelte';
-import SpineSlot, { type Props as SpineSlotProps } from './SpineSlot.svelte';
 import ParticleContainer, {
 	type Props as ParticleContainerProps,
 } from './ParticleContainer.svelte';
@@ -43,13 +30,6 @@ export {
 	SpriteSheet,
 	Sprite,
 	BaseSprite,
-	BaseSpineProvider,
-	SpineProvider,
-	SpineEventEmitterProvider,
-	SpineForceHideAttachments,
-	SpineTrack,
-	SpineBone,
-	SpineSlot,
 	ParticleContainer,
 	Particles,
 	BitmapText,
@@ -66,13 +46,6 @@ export type {
 	SpriteSheetProps,
 	SpriteProps,
 	BaseSpriteProps,
-	BaseSpineProviderProps,
-	SpineProviderProps,
-	SpineEventEmitterProviderProps,
-	SpineForceHideAttachmentsProps,
-	SpineTrackProps,
-	SpineBoneProps,
-	SpineSlotProps,
 	ParticleContainerProps,
 	ParticlesProps,
 	BitmapTextProps,

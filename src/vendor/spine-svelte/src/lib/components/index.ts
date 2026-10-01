@@ -1,3 +1,14 @@
+import BaseSpineProvider, { type Props as BaseSpineProviderProps } from '../provider/BaseSpineProvider.svelte'
+import SpineProvider, { type Props as SpineProviderProps } from '../provider/SpineProvider.svelte'
+import SpineEventEmitterProvider, {
+	type Props as SpineEventEmitterProviderProps,
+} from '../provider/SpineEventEmitterProvider.svelte'
+import SpineTrack, { type Props as SpineTrackProps } from '../provider/SpineTrack.svelte'
+import SpineBone, { type Props as SpineBoneProps } from '../provider/SpineBone.svelte'
+import SpineForceHideAttachments, {
+	type Props as SpineForceHideAttachmentsProps,
+} from '../provider/SpineForceHideAttachments.svelte'
+import SpineSlot, { type Props as SpineSlotProps } from '../provider/SpineSlot.svelte'
 import SpineNode, { type Props as SpineNodeProps } from './SpineNode.svelte'
 import SpineAttachmentMix, { type Props as SpineAttachmentMixProps } from './SpineAttachmentMix.svelte'
 import SpineAttachmentVisibility, {
@@ -16,6 +27,13 @@ import SpineRenderModeApply, {
 import SpineSkin, { type Props as SpineSkinProps } from './SpineSkin.svelte'
 
 export {
+	BaseSpineProvider,
+	SpineProvider,
+	SpineEventEmitterProvider,
+	SpineForceHideAttachments,
+	SpineTrack,
+	SpineBone,
+	SpineSlot,
 	SpineNode,
 	SpineAttachmentMix,
 	SpineAttachmentVisibility,
@@ -27,6 +45,13 @@ export {
 }
 
 export type {
+	BaseSpineProviderProps,
+	SpineProviderProps,
+	SpineEventEmitterProviderProps,
+	SpineForceHideAttachmentsProps,
+	SpineTrackProps,
+	SpineBoneProps,
+	SpineSlotProps,
 	SpineNodeProps,
 	SpineAttachmentMixProps,
 	SpineAttachmentVisibilityProps,

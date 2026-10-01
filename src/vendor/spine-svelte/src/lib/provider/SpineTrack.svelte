@@ -35,7 +35,7 @@
 		/** Dev: packed key this track expects — mismatch vs context is logged. */
 		expectedPackedKey?: string;
 		/** Board debug cell (owned path — no spine context). */
-		debugCell?: import('../context.svelte').SpineDebugCell;
+		debugCell?: import('./context').SpineDebugCell;
 		/**
 		 * SpineBase-style idle reset: bump to re-run `animationName` with mix. When frozen
 		 * (`timeScale` 0), manually advances the mix to frame 0 (baked idle pose).
@@ -48,12 +48,8 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 
-	import { propsSyncEffect } from '../utils.svelte';
-	import {
-		getContextSpine,
-		getContextSpineAssetKey,
-		getContextSpineDebugCell,
-	} from '../context.svelte';
+	import { propsSyncEffect } from 'pixi-svelte';
+	import { getContextSpine, getContextSpineAssetKey, getContextSpineDebugCell } from './context';
 
 	const props: Props = $props();
 
@@ -361,7 +357,7 @@
 		clearLoopDelayPause();
 		try {
 			const s = spine();
-			if (s?.state) {
+			if (s && !s.destroyed && s.state) {
 				if (s.state.timeScale === 0 && (props.timeScale ?? 1) !== 0) {
 					s.state.timeScale = 1;
 				}

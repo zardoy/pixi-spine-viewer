@@ -1,0 +1,9 @@
+{
+	"packages": [
+		"spine-svelte"
+	],
+	"targets": {
+		"rollin": "../rollin_realms/rollin-frontend/src/vendor",
+		"ths": "../3-hats-show/ths-front-svelte/src/vendor"
+	}
+}

@@ -14,8 +14,8 @@
 		y?: number
 		scale?: number | { x: number; y: number }
 		anchor?: number | { x: number; y: number }
-		width?: number
-		height?: number
+		blendMode?: BlendModes
+		zIndex?: number
 
 		// Playback
 		animation?: string
@@ -36,6 +36,11 @@
 		 * need loop delay on a base that hasn't been synced yet.
 		 */
 		loopDelay?: number
+		/**
+		 * Snap the track back to frame 0 whenever `timeScale` drops to 0, so a frozen spine always
+		 * shows its start pose. Needs a `pixi-svelte` whose `SpineTrack` declares the prop.
+		 */
+		resetToFrameZeroWhenFrozen?: boolean
 		/** Bump to replay the current animation. */
 		resetCounter?: number
 		/** Bump to re-trigger `animation` even when the name is unchanged. */
@@ -50,6 +55,9 @@
 		forceHideAttachment?: readonly string[] | null
 		forceHideAttachmentExact?: readonly string[] | null
 		attachmentMixRules?: readonly AttachmentMixRule[]
+
+		/** Per-instance debug cell reported to `pixi-svelte`'s spine debug overlay. */
+		debugCell?: SpineDebugCell
 
 		/** Draw this spine's bounding frame — usable in a real game build, not just the viewer. */
 		debugBounds?: SpineBoundsOverlayMode | false
@@ -74,10 +82,14 @@
 	import type { SpineRenderMode } from '../core/visibility/spineRenderModes'
 	import type { AnySkeletonData, AnySpine } from '../core/runtime/spineRuntime'
 	import type { SpineLoadedDetail, SpineLoaderApi, SpineTrackListener } from '../types'
+	import type { BlendModes } from 'pixi-svelte'
+	import type { SpineDebugCell } from '../provider/context'
 </script>
 
 <script lang="ts">
-	import { SpineProvider, SpineTrack, getContextApp } from 'pixi-svelte'
+	import { getContextApp } from 'pixi-svelte'
+	import SpineProvider from '../provider/SpineProvider.svelte'
+	import SpineTrack from '../provider/SpineTrack.svelte'
 
 	import SpineAttachmentMix from './SpineAttachmentMix.svelte'
 	import SpineAttachmentVisibility from './SpineAttachmentVisibility.svelte'
@@ -178,6 +190,11 @@
 		playback.playbackLoopDelay ? { loopDelay: playback.playbackLoopDelay } : {},
 	)
 
+	// Spread for the same reason as `loopDelayProp`: only newer `pixi-svelte` copies declare it.
+	const frozenResetProp = $derived(
+		props.resetToFrameZeroWhenFrozen ? { resetToFrameZeroWhenFrozen: true } : {},
+	)
+
 	const effectiveSkin = $derived(
 		Array.isArray(props.skin) ? props.skin : (playback.skinName ?? props.skin),
 	)
@@ -223,8 +240,9 @@
 		y={props.y}
 		scale={props.scale}
 		anchor={props.anchor}
-		width={props.width}
-		height={props.height}
+		blendMode={props.blendMode}
+		zIndex={props.zIndex}
+		debugCell={props.debugCell}
 	>
 		{#snippet children({ spine })}
 			<SpineMounted {spine} assetKey={props.key} onMounted={props.onSpineLoaded} />
@@ -247,6 +265,7 @@
 				resetCounter={playback.resetCounter}
 				restartKey={props.restartKey}
 				listener={trackListener}
+				{...frozenResetProp}
 			/>
 
 			{#if playback.animation2Name}

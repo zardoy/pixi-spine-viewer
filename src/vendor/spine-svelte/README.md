@@ -1,7 +1,7 @@
 # spine-svelte
 
 > **Vendored, syncable package.**
-> Source of truth: `pixi-spine-viewer`. Consumers: `rollin-frontend`, `lotc-front-svelte`.
+> Source of truth: `pixi-spine-viewer`. Consumers: `rollin-frontend` (synced), `ths-front-svelte` (not yet). Sync with `node scripts/vendor-sync.mjs <check|push> <target>`.
 > Change it here, then copy the folder outward. Edits made in a consumer will be overwritten.
 
 Spine runtime features that sit on top of [`pixi-svelte`](../pixi-svelte): the pieces the viewer
@@ -100,7 +100,8 @@ component re-derive when overrides change.
 | `core/bounds/` | Viewport/bounds math and animation metadata |
 | `core/debug/` | The standalone `SpineDebugRenderer` |
 | `dev/` | Tooling-grade extras: pan/zoom, origin axes, checkerboard, renderer stats |
-| `components/` | Svelte components composing over `pixi-svelte` |
+| `provider/` | Pixi-level spine plumbing: `SpineProvider`/`SpineTrack`/`SpineSlot`/`SpineBone`, spine contexts, the frame pipeline, mount hooks, slot-follow. Sits on the generic `pixi-svelte` base only |
+| `components/` | `SpineNode` and the helper components; also re-exports the `provider/` components |
 
 ## Frame ordering
 

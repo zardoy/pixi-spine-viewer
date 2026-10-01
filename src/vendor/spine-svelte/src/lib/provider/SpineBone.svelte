@@ -9,8 +9,8 @@
 </script>
 
 <script lang="ts">
-	import { propsSyncEffect } from '../utils.svelte';
-	import { getContextSpine } from '../context.svelte';
+	import { propsSyncEffect } from 'pixi-svelte';
+	import { getContextSpine } from './context';
 
 	const props: Props = $props();
 	const spine = getContextSpine();

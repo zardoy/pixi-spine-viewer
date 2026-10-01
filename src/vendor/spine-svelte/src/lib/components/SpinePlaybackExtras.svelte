@@ -19,7 +19,7 @@
 </script>
 
 <script lang="ts">
-	import { getContextSpine } from 'pixi-svelte'
+	import { getContextSpine } from '../provider'
 
 	import { applyMixTimeRules, seekTrackProgress } from '../core/playback/spinePlaybackCore'
 

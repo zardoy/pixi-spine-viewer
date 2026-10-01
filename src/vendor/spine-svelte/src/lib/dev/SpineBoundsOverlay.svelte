@@ -110,7 +110,7 @@
 		if (showMax && maxBounds) {
 			const rect = toParentSpace(maxBounds)
 			graphics.rect(rect.x, rect.y, rect.width, rect.height)
-			graphics.stroke({ color: props.maxColor ?? 'rgb(255, 212, 0)', width, alpha: 0.9 })
+			graphics.stroke({ color: props.maxColor ?? 'rgb(0, 255, 26)', width, alpha: 0.9 })
 		}
 
 		if (showLive && liveBounds) {

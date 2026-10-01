@@ -2,12 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import * as SPINE_PIXI from '@esotericsoftware/spine-pixi-v8';
 
-	import {
-		setContextSpine,
-		setContextSpineAssetKey,
-		setContextSpineDebugCell,
-		type SpineDebugCell,
-	} from '../context.svelte';
+	import { setContextSpine, setContextSpineAssetKey, setContextSpineDebugCell, type SpineDebugCell } from './context';
 
 	type Props = {
 		spine: SPINE_PIXI.Spine;

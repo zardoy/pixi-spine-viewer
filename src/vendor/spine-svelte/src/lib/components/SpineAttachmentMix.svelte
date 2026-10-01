@@ -10,7 +10,7 @@
 </script>
 
 <script lang="ts">
-	import { getContextSpine, getFramePipeline, FRAME_PHASE } from 'pixi-svelte'
+	import { getContextSpine, getFramePipeline, FRAME_PHASE } from '../provider'
 
 	import {
 		applyAttachmentMixRules,

@@ -15,6 +15,7 @@ export * from './core/runtime/spineRuntime'
 export * from './core/runtime/spineCompat'
 export * from './core/runtime/spineSlot'
 export * from './core/runtime/spineAttachments'
+export * from './provider'
 
 /*
  * Pure TypeScript only. Svelte components live behind `spine-svelte/components` and runes modules

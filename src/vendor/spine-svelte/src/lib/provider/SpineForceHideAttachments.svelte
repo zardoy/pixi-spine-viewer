@@ -8,8 +8,8 @@
 </script>
 
 <script lang="ts">
-	import { getContextSpine, getContextSpineEventEmitter } from '../context.svelte';
-	import { applySpineForceHideAttachmentPrefixes } from '../spineForceHideAttachments';
+	import { getContextSpine, getContextSpineEventEmitter } from './context';
+	import { applySpineForceHideAttachmentPrefixes } from './spineForceHideAttachments';
 
 	const props: Props = $props();
 

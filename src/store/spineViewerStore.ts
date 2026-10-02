@@ -44,6 +44,8 @@ export interface SpineViewerState {
     debugBones: boolean;
     /** Mip chain on the loaded spine's atlas pages — QA tool for texture minification. */
     mipmapsEnabled: boolean;
+    /** Blend mode applied to the whole spine container */
+    blendMode: 'normal' | 'add' | 'multiply' | 'screen';
     /** Red/green origin axes at skeleton (0, 0), matching the Spine editor. */
     debugOriginAxes: boolean;
     /** Green overlay: current pose bounds (spine.bounds). */
@@ -187,6 +189,7 @@ export const initialState: SpineViewerState = {
     timelineDuration: 0,
     debugBones: false,
     mipmapsEnabled: false,
+    blendMode: 'normal',
     debugOriginAxes: true,
     debugBoundsLive: false,
     debugBoundsMax: false,

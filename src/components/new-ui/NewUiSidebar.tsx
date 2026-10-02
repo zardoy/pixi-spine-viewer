@@ -329,6 +329,24 @@ export function NewUiSidebar({
                 Mipmaps
               </Label>
             </div>
+            <NewUiFieldRow label="Blend mode">
+              <Select
+                value={ui.blendMode}
+                onValueChange={(val) => {
+                  spineViewerStore.ui.blendMode = val as typeof ui.blendMode
+                }}
+              >
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="add">Additive</SelectItem>
+                  <SelectItem value="multiply">Multiply</SelectItem>
+                  <SelectItem value="screen">Screen</SelectItem>
+                </SelectContent>
+              </Select>
+            </NewUiFieldRow>
             <div className="flex items-center gap-2">
               <Checkbox
                 id="newui-debug-bounds-live"

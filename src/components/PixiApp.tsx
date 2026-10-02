@@ -1190,6 +1190,12 @@ const PixiAppContent = () => {
     setSpineAtlasMipmapsEnabled(SECOND_SPINE_KEY, state.ui.mipmapsEnabled);
   }, [state.ui.mipmapsEnabled, isSecondLoaderReady]);
 
+  useEffect(() => {
+    const spine = state.refs.spine;
+    if (!spine || (spine as { destroyed?: boolean }).destroyed) return;
+    (spine as { blendMode: string }).blendMode = state.ui.blendMode;
+  }, [state.ui.blendMode, state.refs.spine, state.ui.mountCount]);
+
   // Frame bounds overlays (live = green, max = yellow)
   useEffect(() => {
     const showBounds =

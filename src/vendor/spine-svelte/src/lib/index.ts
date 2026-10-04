@@ -25,6 +25,8 @@ export * from './provider'
 export * from './types'
 
 export * from './core/override/spineOverrideController'
+export * from './core/crossfade/crossfadePlan'
+export { SpineCrossfader } from './core/crossfade/SpineCrossfader'
 export * from './core/playback/attachmentMixRules'
 export * from './core/playback/spinePlaybackCore'
 export * from './core/visibility/forceHideAttachments'

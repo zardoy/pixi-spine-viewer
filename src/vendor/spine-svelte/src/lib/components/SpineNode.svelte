@@ -41,6 +41,12 @@
 		 * shows its start pose. Needs a `pixi-svelte` whose `SpineTrack` declares the prop.
 		 */
 		resetToFrameZeroWhenFrozen?: boolean
+		/**
+		 * Blend the rendered result between animations instead of Spine mixing — for frame-by-frame
+		 * art whose attachment swaps can't mix. A number is shorthand for `{ duration }`.
+		 * See `core/crossfade`.
+		 */
+		crossfade?: CrossfadeOptions | number | null
 		/** Bump to replay the current animation. */
 		resetCounter?: number
 		/** Bump to re-trigger `animation` even when the name is unchanged. */
@@ -76,6 +82,7 @@
 
 	import type { Snippet } from 'svelte'
 	import type { SpineOverrideController } from '../core/override/spineOverrideController'
+	import type { CrossfadeOptions } from '../core/crossfade/crossfadePlan'
 	import type { SpineBoundsOverlayMode } from '../dev/SpineBoundsOverlay.svelte'
 	import type { AttachmentMixRule } from '../core/playback/attachmentMixRules'
 	import type { MixTimeRule } from '../core/playback/spinePlaybackCore'
@@ -190,6 +197,12 @@
 		playback.playbackLoopDelay ? { loopDelay: playback.playbackLoopDelay } : {},
 	)
 
+	const crossfadeOptions = $derived<CrossfadeOptions | null>(
+		typeof props.crossfade === 'number'
+			? { duration: props.crossfade }
+			: (props.crossfade ?? null),
+	)
+
 	// Spread for the same reason as `loopDelayProp`: only newer `pixi-svelte` copies declare it.
 	const frozenResetProp = $derived(
 		props.resetToFrameZeroWhenFrozen ? { resetToFrameZeroWhenFrozen: true } : {},
@@ -265,6 +278,7 @@
 				resetCounter={playback.resetCounter}
 				restartKey={props.restartKey}
 				listener={trackListener}
+				crossfade={crossfadeOptions}
 				{...frozenResetProp}
 			/>
 

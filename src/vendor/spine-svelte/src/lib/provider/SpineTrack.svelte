@@ -1,6 +1,8 @@
 <script lang="ts" module>
 	import * as SPINE_PIXI from '@esotericsoftware/spine-pixi-v8';
 
+	import type { CrossfadeOptions } from '../core/crossfade/crossfadePlan';
+
 	type SpineState = SPINE_PIXI.Spine['state'];
 	type TrackEntry = SPINE_PIXI.TrackEntry;
 
@@ -42,11 +44,19 @@
 		 */
 		resetCounter?: number;
 		onMixToFrameZeroComplete?: () => void;
+		/**
+		 * Blend the rendered result between animations instead of Spine mixing (see
+		 * `core/crossfade`). Only the main track (index 0) crossfades.
+		 */
+		crossfade?: CrossfadeOptions | null;
 	};
 </script>
 
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+
+	import { SpineCrossfader } from '../core/crossfade/SpineCrossfader';
+	import { shouldCrossfade } from '../core/crossfade/crossfadePlan';
 
 	import { propsSyncEffect } from 'pixi-svelte';
 	import { getContextSpine, getContextSpineAssetKey, getContextSpineDebugCell } from './context';
@@ -61,6 +71,8 @@
 	}
 
 	let track = $state<TrackEntry | null>(null);
+	let crossfader: SpineCrossfader | null = null;
+	let crossfaderSpine: SPINE_PIXI.Spine | null = null;
 	let lastAppliedRestartKey: number | string | undefined = undefined;
 	let prevResetCounter: number | undefined = undefined;
 	let mixAnimationFrame: number | null = null;
@@ -228,7 +240,16 @@
 		}
 
 		const mixDur = props.mixDuration ?? 0.3;
-		if (track && mixDur === 0) s.state.setEmptyAnimation(track.trackIndex, 0);
+		// A crossfade replaces the mix: it must capture the outgoing pose *before* the track is
+		// emptied or replaced, so the decision is made up front.
+		const crossfadeOptions = props.trackIndex === 0 ? props.crossfade : null;
+		const willCrossfade = shouldCrossfade({
+			options: crossfadeOptions,
+			data: skeletonData,
+			from: s.state.tracks[props.trackIndex]?.animation?.name ?? null,
+			to: animationName,
+		});
+		if (!willCrossfade && track && mixDur === 0) s.state.setEmptyAnimation(track.trackIndex, 0);
 
 		if (props.expectedPackedKey && !availableAnimations.includes(animationName)) {
 			// Skeleton swap in progress — parent {#key ownedSpineData} will remount with correct data.
@@ -241,9 +262,28 @@
 			if (s.state.timeScale === 0 && (props.timeScale ?? 1) !== 0) {
 				s.state.timeScale = 1;
 			}
-			track = s.state.setAnimation(props.trackIndex, animationName, props.loop);
-			if (mixDur > 0 && track) track.mixDuration = mixDur;
-			if (track) track.listener = buildTrackListener(s, props.listener);
+			const switchAnimation = (crossfading: boolean) => {
+				track = s.state.setAnimation(props.trackIndex, animationName, props.loop);
+				// Crossfading cuts underneath; plain switches keep the configured mix.
+				if (crossfading) {
+					if (track) track.mixDuration = 0;
+				} else if (mixDur > 0 && track) {
+					track.mixDuration = mixDur;
+				}
+				if (track) track.listener = buildTrackListener(s, props.listener);
+			};
+
+			if (willCrossfade) {
+				if (!crossfader || crossfaderSpine !== s) {
+					crossfader?.destroy();
+					crossfader = new SpineCrossfader(s);
+					crossfaderSpine = s;
+				}
+				crossfader.run(switchAnimation, crossfadeOptions, animationName, props.trackIndex);
+			} else {
+				crossfader?.finish();
+				switchAnimation(false);
+			}
 		} catch (error) {
 			console.error('[SpineTrack] setAnimation failed', error, {
 				requestedAnimation: animationName,
@@ -353,6 +393,7 @@
 	});
 
 	onDestroy(() => {
+		crossfader?.destroy();
 		cancelMixAnimationFrame();
 		clearLoopDelayPause();
 		try {

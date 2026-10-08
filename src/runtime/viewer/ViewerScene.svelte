@@ -37,6 +37,7 @@
 	import {
 		AttachmentTestMarker,
 		BoundsOverlay,
+		SizeBonesOverlay,
 		SpawnBoundsOverlay,
 		readAttachmentTestOptions,
 	} from './screenOverlays'
@@ -82,6 +83,7 @@
 
 	let boundsOverlay = $state.raw<BoundsOverlay>()
 	let spawnOverlay = $state.raw<SpawnBoundsOverlay>()
+	let sizeBonesOverlay = $state.raw<SizeBonesOverlay>()
 	const attachmentTest = new AttachmentTestMarker()
 
 	const isDestroyed = (s: AnySpine | null | undefined) =>
@@ -267,6 +269,7 @@
 	onTick(() => {
 		boundsOverlay?.tick(store.refs.spine)
 		spawnOverlay?.tick()
+		sizeBonesOverlay?.tick(store.refs.spine)
 	})
 
 	onTick(() => {
@@ -440,7 +443,11 @@
 		const spawn = new SpawnBoundsOverlay(root)
 		boundsOverlay = bounds
 		spawnOverlay = spawn
+		const sizeBones = new SizeBonesOverlay(root)
+		sizeBonesOverlay = sizeBones
 		return () => {
+			sizeBones.destroy()
+			sizeBonesOverlay = undefined
 			bounds.destroy()
 			spawn.destroy()
 			boundsOverlay = undefined

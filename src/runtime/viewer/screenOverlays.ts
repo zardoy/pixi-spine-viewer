@@ -200,6 +200,60 @@ export class SpawnBoundsOverlay {
 	}
 }
 
+const SIZE_BONE_RE = /^size\d+$/i
+const SIZE_BONES_COLOR = 0x00d4ff
+
+/**
+ * Hairline border around the bones named size1, size2, ... — riggers use them as corner markers
+ * for the intended display area. Appears on its own whenever the skeleton has at least two.
+ */
+export class SizeBonesOverlay {
+	private graphics: Graphics | null = null
+
+	constructor(private readonly parent: Container) {}
+
+	tick(spine: AnySpine | null): void {
+		if (isDestroyed(spine)) {
+			this.graphics?.clear()
+			return
+		}
+		const bones = (spine!.skeleton.bones as { data: { name: string }; appliedPose: { worldX: number; worldY: number } }[])
+			.filter((bone) => SIZE_BONE_RE.test(bone.data.name))
+		if (bones.length < 2) {
+			this.destroy()
+			return
+		}
+		if (!this.graphics) {
+			this.graphics = new Graphics()
+			this.parent.addChild(this.graphics)
+		}
+		const { graphics } = this
+		const { ui } = spineViewerStore
+		const xs = bones.map((bone) => bone.appliedPose.worldX)
+		const ys = bones.map((bone) => bone.appliedPose.worldY)
+		const minX = Math.min(...xs)
+		const minY = Math.min(...ys)
+		const maxX = Math.max(...xs)
+		const maxY = Math.max(...ys)
+		graphics.clear()
+		if (![minX, minY, maxX, maxY].every(Number.isFinite)) return
+		graphics.rect(
+			ui.spinePosition.x + minX * ui.scale,
+			ui.spinePosition.y + minY * ui.scale,
+			(maxX - minX) * ui.scale,
+			(maxY - minY) * ui.scale,
+		)
+		graphics.stroke({ color: SIZE_BONES_COLOR, width: 1, alpha: 0.9 })
+	}
+
+	destroy(): void {
+		if (!this.graphics) return
+		this.parent.removeChild(this.graphics)
+		this.graphics.destroy()
+		this.graphics = null
+	}
+}
+
 function drawMarker(graphics: Graphics, blue: boolean, large: boolean): void {
 	const half = large ? 10 : 5
 	graphics.clear()

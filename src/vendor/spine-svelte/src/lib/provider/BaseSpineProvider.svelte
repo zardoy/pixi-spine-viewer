@@ -31,7 +31,15 @@
 
 	parentContext.addToParent(spine);
 
-	onMount(() => notifySpineMounted(spine));
+	onMount(() => {
+		// A new Spine has never been updated: its track and skin are set by child effects but only
+		// applied on the next ticker update. That update runs on `Ticker.shared`, which Pixi's app
+		// ticker does not wait for, so a mount that lands before this frame's render is drawn once
+		// in its un-posed state (blank for rigs that reveal attachments from animations). Apply
+		// the pose now so the first render already shows it.
+		if (!spine.destroyed) spine.update(0);
+		return notifySpineMounted(spine);
+	});
 </script>
 
 <SpineSubtree {spine} assetKey={props.assetKey} debugCell={props.debugCell}>

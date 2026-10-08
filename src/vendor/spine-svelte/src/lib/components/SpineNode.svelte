@@ -107,6 +107,7 @@
 	import SpineSkin from './SpineSkin.svelte'
 	import SpineBoundsOverlay from '../dev/SpineBoundsOverlay.svelte'
 	import { spineSvelteConfig } from '../configure'
+	import { EMPTY_ANIMATION_NAME } from '../core/playback/spinePlaybackCore'
 	import { useSpineOverrideRevision } from '../state/useSpineOverride.svelte'
 
 	const props: Props = $props()
@@ -273,7 +274,7 @@
 				{...loopDelayProp}
 				trackIndex={0}
 				animationName={playback.animationName}
-				loop={playback.playbackLoop}
+				loop={playback.animationName === EMPTY_ANIMATION_NAME ? false : playback.playbackLoop}
 				mixDuration={props.mixTime}
 				reverse={props.reverse}
 				resetCounter={playback.resetCounter}

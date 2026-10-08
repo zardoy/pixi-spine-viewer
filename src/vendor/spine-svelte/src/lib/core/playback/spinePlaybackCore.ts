@@ -47,6 +47,13 @@ export function seekTrackProgress(spine: AnySpine, progress: number, trackIndex 
 	immediateUpdate(spine)
 }
 
+/**
+ * Pseudo-animation name that plays nothing and hides the spine — a debugging aid for seeing how
+ * a crossfade fades the outgoing animation out (or the incoming one in) against an empty frame.
+ * It is not part of any skeleton; `SpineTrack` recognises the name.
+ */
+export const EMPTY_ANIMATION_NAME = '<empty>'
+
 export type MixTimeRule = {
 	animation: string
 	direction: 'from' | 'to' | 'both'

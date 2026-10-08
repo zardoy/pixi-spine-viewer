@@ -78,6 +78,15 @@ export interface SpineViewerState {
     mixTime: number;
     /** When false, animation switches use mixTime 0 (instant). */
     mixTimeEnabled: boolean;
+    /**
+     * Blend the rendered result between animations instead of Spine mixing — for frame-by-frame
+     * art whose attachment swaps can't mix. 'off' = plain mixing.
+     */
+    crossfadeMode: 'off' | 'over' | 'dissolve';
+    /** Seconds the crossfade takes. */
+    crossfadeDuration: number;
+    /** 'auto' = only when an involved animation keys attachments; 'always' = every switch. */
+    crossfadeTrigger: 'auto' | 'always';
     spinePosition: { x: number; y: number };
     /** Interactive viewport position (drag-pan); auto-fit writes here until user pans. */
     manualPosition: { x: number; y: number };
@@ -211,6 +220,9 @@ export const initialState: SpineViewerState = {
     backgroundColor: '#2a2a2a',
     mixTime: 0.25,
     mixTimeEnabled: true,
+    crossfadeMode: 'off',
+    crossfadeDuration: 0.3,
+    crossfadeTrigger: 'auto',
     spinePosition: { x: 0, y: 0 },
     manualPosition: { x: 0, y: 0 },
     manualGuideSize: { width: 800, height: 600 },

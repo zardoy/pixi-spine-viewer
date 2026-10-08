@@ -1,5 +1,6 @@
 <script lang="ts" module>
 	import * as SPINE_PIXI from '@esotericsoftware/spine-pixi-v8';
+	import { AnimationState } from '@esotericsoftware/spine-core';
 
 	import type { CrossfadeOptions } from '../core/crossfade/crossfadePlan';
 
@@ -56,6 +57,7 @@
 	import { onDestroy } from 'svelte';
 
 	import { SpineCrossfader } from '../core/crossfade/SpineCrossfader';
+	import { EMPTY_ANIMATION_NAME } from '../core/playback/spinePlaybackCore';
 	import { shouldCrossfade } from '../core/crossfade/crossfadePlan';
 
 	import { propsSyncEffect } from 'pixi-svelte';
@@ -253,16 +255,32 @@
 		const mixDur = props.mixDuration ?? 0.3;
 		// A crossfade replaces the mix: it must capture the outgoing pose *before* the track is
 		// emptied or replaced, so the decision is made up front.
-		const crossfadeOptions = props.trackIndex === 0 ? props.crossfade : null;
+		const isEmpty = animationName === EMPTY_ANIMATION_NAME;
+		const fromName = s.state.tracks[props.trackIndex]?.animation?.name ?? null;
+		// Any switch into or out of the empty pseudo-animation fades, whatever the configured trigger
+		// (it keys no attachments, so `auto` would never pick it). Fading to nothing only reads as
+		// a fade when the outgoing pose fades out, hence `dissolve` there.
+		const involvesEmpty = isEmpty || fromName === EMPTY_ANIMATION_NAME;
+		const crossfadeOptions =
+			props.trackIndex !== 0 || !props.crossfade
+				? null
+				: involvesEmpty
+					? {
+							...props.crossfade,
+							mode: isEmpty ? ('dissolve' as const) : props.crossfade.mode,
+							trigger: 'always' as const,
+							only: undefined,
+						}
+					: props.crossfade;
 		const willCrossfade = shouldCrossfade({
 			options: crossfadeOptions,
 			data: skeletonData,
-			from: s.state.tracks[props.trackIndex]?.animation?.name ?? null,
+			from: fromName,
 			to: animationName,
 		});
 		if (!willCrossfade && track && mixDur === 0) s.state.setEmptyAnimation(track.trackIndex, 0);
 
-		if (props.expectedPackedKey && !availableAnimations.includes(animationName)) {
+		if (!isEmpty && props.expectedPackedKey && !availableAnimations.includes(animationName)) {
 			// Skeleton swap in progress — parent {#key ownedSpineData} will remount with correct data.
 			return;
 		}
@@ -273,6 +291,18 @@
 			// ours: a host that paused the spine (timeScale 0 via `paused`) must stay paused.
 			releaseLoopDelayFreeze(s);
 			const switchAnimation = (crossfading: boolean) => {
+				if (isEmpty) {
+					// Persist (infinite trackEnd) rather than `setEmptyAnimation`, whose entry is
+					// disposed after one frame and would leave nothing to crossfade from later.
+					track = s.state.setAnimation(props.trackIndex, AnimationState.emptyAnimation, false);
+					track.trackEnd = Infinity;
+					if (crossfading) track.mixDuration = 0;
+					else if (mixDur > 0) track.mixDuration = mixDur;
+					track.listener = buildTrackListener(s, props.listener);
+					if (props.trackIndex === 0) s.visible = false;
+					return;
+				}
+				if (props.trackIndex === 0) s.visible = true;
 				track = s.state.setAnimation(props.trackIndex, animationName, props.loop);
 				// Crossfading cuts underneath; plain switches keep the configured mix.
 				if (crossfading) {

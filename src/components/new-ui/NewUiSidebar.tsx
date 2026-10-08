@@ -207,6 +207,58 @@ export function NewUiSidebar({
               </Select>
             </NewUiFieldRow>
 
+            <NewUiFieldRow label="Crossfade" hint="for attachment (frame-by-frame) swaps">
+              <Select
+                value={ui.crossfadeMode}
+                onValueChange={(val: 'off' | 'over' | 'dissolve') => {
+                  spineViewerStore.ui.crossfadeMode = val
+                }}
+              >
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off (Spine mix)</SelectItem>
+                  <SelectItem value="over">Over — new fades in on top</SelectItem>
+                  <SelectItem value="dissolve">Dissolve — old out, new in</SelectItem>
+                </SelectContent>
+              </Select>
+            </NewUiFieldRow>
+
+            {ui.crossfadeMode !== 'off' && (
+              <>
+                <NewUiFieldRow label={`Crossfade duration ${ui.crossfadeDuration.toFixed(2)}s`}>
+                  <Slider
+                    value={[ui.crossfadeDuration]}
+                    onValueChange={(value) => {
+                      spineViewerStore.ui.crossfadeDuration = value[0]
+                    }}
+                    min={0.05}
+                    max={1.5}
+                    step={0.05}
+                    className="w-full"
+                  />
+                </NewUiFieldRow>
+                <NewUiFieldRow label="Crossfade when">
+                  <Select
+                    value={ui.crossfadeTrigger}
+                    onValueChange={(val: 'auto' | 'always') => {
+                      spineViewerStore.ui.crossfadeTrigger = val
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto — only if an animation keys attachments</SelectItem>
+                      <SelectItem value="always">Always — every switch</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </NewUiFieldRow>
+                <NewUiHint>Replaces the mix time on the switches it applies to.</NewUiHint>
+              </>
+            )}
+
             <NewUiSkinList />
           </NewUiGroup>
         )}

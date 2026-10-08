@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useSnapshot } from 'valtio'
 import { ListOrdered, TimerOff, Timer } from 'lucide-react'
 import {
@@ -16,10 +16,22 @@ import {
   applyActionAfterAnimSwitch,
 } from '@/store/spineViewerStore'
 import {
+  EMPTY_ANIMATION_NAME,
   formatAnimationMetaSuffix,
   getAnimationEvents,
   seekSortedMarkerTime,
 } from 'spine-svelte'
+
+const LIST_HEIGHT_KEY = 'newUi.animationListHeight'
+
+function readSavedListHeight(): number | null {
+  try {
+    const saved = Number(localStorage.getItem(LIST_HEIGHT_KEY))
+    return Number.isFinite(saved) && saved >= 80 ? saved : null
+  } catch {
+    return null
+  }
+}
 
 function selectAnimation(name: string, current: string) {
   if (name === current) return
@@ -69,10 +81,38 @@ export function NewUiAnimationList() {
     return map
   }, [spine, ui.animations])
 
+  // The list is drag-resizable (bottom-right grip). Until the user resizes it, it hugs its content
+  // up to a cap; once they do, their height is remembered and used as-is.
+  const [savedHeight] = useState<number | null>(readSavedListHeight)
+  const heightAtPointerDown = useRef(0)
+
+  const handleListPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    heightAtPointerDown.current = el.offsetHeight
+    // Only the bottom-right grip resizes; a click on a row must not freeze the height.
+    const rect = el.getBoundingClientRect()
+    const onGrip = e.clientX > rect.right - 20 && e.clientY > rect.bottom - 20
+    // The cap would otherwise stop the grip from growing the list.
+    if (onGrip && el.style.maxHeight) {
+      el.style.height = `${el.offsetHeight}px`
+      el.style.maxHeight = 'none'
+    }
+  }
+
+  const handleListPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const height = Math.round(e.currentTarget.offsetHeight)
+    if (height === heightAtPointerDown.current) return
+    try {
+      localStorage.setItem(LIST_HEIGHT_KEY, String(height))
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
   const previousAnim =
     ui.previousAnimation &&
     ui.previousAnimation !== ui.selectedAnimation &&
-    ui.animations.includes(ui.previousAnimation)
+    (ui.animations.includes(ui.previousAnimation) || ui.previousAnimation === EMPTY_ANIMATION_NAME)
       ? ui.previousAnimation
       : null
 
@@ -92,8 +132,14 @@ export function NewUiAnimationList() {
   return (
     <div className="space-y-2">
       <div
-        className="overflow-y-auto rounded-md border border-border bg-background/40"
-        style={{ maxHeight: '11rem' }}
+        className="resize-y overflow-y-auto rounded-md border border-border bg-background/40"
+        style={
+          savedHeight
+            ? { height: savedHeight, minHeight: '5rem' }
+            : { maxHeight: '11rem', minHeight: '5rem' }
+        }
+        onPointerDown={handleListPointerDown}
+        onPointerUp={handleListPointerUp}
       >
         {ui.animations.map((name, index) => {
           const meta = animationMeta.get(name)
@@ -128,6 +174,23 @@ export function NewUiAnimationList() {
             </div>
           )
         })}
+
+        {/* Debug: plays nothing, so a crossfade out of (or into) an animation is easy to watch. */}
+        <div
+          className={cn(
+            'flex w-full cursor-pointer select-none items-center gap-2 border-t border-dashed border-border px-2 py-1.5 text-left text-sm italic transition-colors',
+            ui.selectedAnimation === EMPTY_ANIMATION_NAME
+              ? 'bg-primary/15 text-foreground'
+              : 'text-muted-foreground hover:bg-accent/50',
+          )}
+          title="Debug: renders nothing — crossfade to/from it to see the fade"
+          onClick={() => selectAnimation(EMPTY_ANIMATION_NAME, ui.selectedAnimation)}
+        >
+          <span className="w-5 shrink-0 text-center text-xs font-medium">
+            {previousAnim === EMPTY_ANIMATION_NAME ? 'Q' : ''}
+          </span>
+          <span className="min-w-0 truncate">{EMPTY_ANIMATION_NAME} — debug</span>
+        </div>
       </div>
 
       <p className="text-[11px] leading-snug text-muted-foreground">

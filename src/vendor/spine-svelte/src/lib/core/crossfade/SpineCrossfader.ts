@@ -1,6 +1,7 @@
 import { Physics } from '@esotericsoftware/spine-core'
-import { Ticker } from 'pixi.js'
+import { AlphaFilter, Ticker, type Filter } from 'pixi.js'
 
+import { EMPTY_ANIMATION_NAME } from '../playback/spinePlaybackCore'
 import type { AnySpine } from '../runtime/spineRuntime'
 import {
 	CrossfadeClock,
@@ -8,6 +9,9 @@ import {
 	shouldCrossfade,
 	type CrossfadeOptions,
 } from './crossfadePlan'
+
+const asFilterList = (filters: Filter | readonly Filter[] | null | undefined): Filter[] =>
+	!filters ? [] : Array.isArray(filters) ? [...filters] : [filters as Filter]
 
 type TrackSnapshot = {
 	index: number
@@ -26,6 +30,11 @@ type TrackSnapshot = {
  * textures are shared — no GPU upload) and put into the outgoing pose; the real spine then switches
  * with no mix underneath and fades in while the ghost keeps playing the old animation.
  *
+ * Both spines are faded through an `AlphaFilter`, not `container.alpha`: a spine's slots are
+ * separate quads and Pixi applies container alpha to each, so a layered rig (skins, outfits, hair
+ * over face) would show its overlapping parts *through* each other mid-fade. The filter renders the
+ * spine flat first and fades that.
+ *
  * Not mirrored onto the ghost: runtime attachment tweaks the host applies per frame to the real
  * spine (force-hide, attachment mix rules). A hidden attachment can therefore show on the ghost
  * for the length of the fade.
@@ -33,7 +42,7 @@ type TrackSnapshot = {
 export class SpineCrossfader {
 	private ghost: AnySpine | null = null
 	private tick: ((ticker: Ticker) => void) | null = null
-	private baseAlpha = 1
+	private spineFade: AlphaFilter | null = null
 
 	constructor(private readonly spine: AnySpine) {}
 
@@ -68,7 +77,6 @@ export class SpineCrossfader {
 		this.finish()
 		const snapshot = this.capture()
 		const ghost = this.buildGhost(snapshot)
-		this.baseAlpha = spine.alpha
 		spine.parent.addChildAt(ghost, spine.parent.getChildIndex(spine))
 
 		change(true)
@@ -76,14 +84,19 @@ export class SpineCrossfader {
 		const mode = options.mode ?? DEFAULT_CROSSFADE_MODE
 		const clock = new CrossfadeClock(options.duration, mode)
 		const first = clock.step(0)
-		spine.alpha = this.baseAlpha * first.incoming
-		ghost.alpha = this.baseAlpha * first.outgoing
 
+		const spineFade = new AlphaFilter({ alpha: first.incoming })
+		const ghostFade = new AlphaFilter({ alpha: first.outgoing })
+		// Keep whatever filters the host put on the spine (render modes); ours goes last.
+		spine.filters = [...asFilterList(spine.filters), spineFade]
+		ghost.filters = [...asFilterList(ghost.filters), ghostFade]
+
+		this.spineFade = spineFade
 		this.ghost = ghost
 		this.tick = (ticker) => {
 			const { outgoing, incoming, done } = clock.step(ticker.deltaMS / 1000)
-			spine.alpha = this.baseAlpha * incoming
-			ghost.alpha = this.baseAlpha * outgoing
+			spineFade.alpha = incoming
+			ghostFade.alpha = outgoing
 			if (done) this.finish()
 		}
 		Ticker.shared.add(this.tick)
@@ -95,12 +108,17 @@ export class SpineCrossfader {
 		if (this.tick) Ticker.shared.remove(this.tick)
 		this.tick = null
 
+		const fade = this.spineFade
+		this.spineFade = null
+		if (fade && !this.spine.destroyed) {
+			// Remove only our filter: the host may have changed the others mid-fade.
+			this.spine.filters = asFilterList(this.spine.filters).filter((filter) => filter !== fade)
+		}
+		fade?.destroy()
+
 		const ghost = this.ghost
 		this.ghost = null
-		if (ghost) {
-			if (!ghost.destroyed) ghost.destroy()
-			if (!this.spine.destroyed) this.spine.alpha = this.baseAlpha
-		}
+		if (ghost && !ghost.destroyed) ghost.destroy()
 	}
 
 	destroy(): void {
@@ -110,7 +128,8 @@ export class SpineCrossfader {
 	private capture(): TrackSnapshot[] {
 		const out: TrackSnapshot[] = []
 		this.spine.state.tracks.forEach((entry, index) => {
-			if (!entry?.animation) return
+			// The empty pseudo-animation is not in the skeleton data, and shows nothing anyway.
+			if (!entry?.animation || entry.animation.name === EMPTY_ANIMATION_NAME) return
 			out.push({
 				index,
 				animation: entry.animation.name,
@@ -144,9 +163,13 @@ export class SpineCrossfader {
 		ghost.pivot.copyFrom(spine.pivot)
 		ghost.rotation = spine.rotation
 		ghost.skew.copyFrom(spine.skew)
+		ghost.alpha = spine.alpha
 		ghost.zIndex = spine.zIndex
 		ghost.blendMode = spine.blendMode
 		ghost.eventMode = 'none'
+		// Nothing was playing (e.g. fading in from the empty pseudo-animation): there is no outgoing
+		// pose, and an unposed ghost would show the setup pose.
+		ghost.visible = tracks.length > 0
 		return ghost
 	}
 }

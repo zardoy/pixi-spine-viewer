@@ -11,6 +11,7 @@
 	import { toast } from 'sonner'
 	import { ref } from 'valtio'
 	import {
+		EMPTY_ANIMATION_NAME,
 		SpineDebugRenderer,
 		consumePixiWebGLDrawCalls,
 		getPixiWebGLGpuTimeMaxMs,
@@ -20,6 +21,7 @@
 		isPixiWebGLGpuTimerSupported,
 		tickPixiWebGLGpuTimeAggregation,
 		type AnySpine,
+		type CrossfadeOptions,
 		type SpineLoadedDetail,
 	} from 'spine-svelte'
 	import { SpineNode } from 'spine-svelte/components'
@@ -208,6 +210,8 @@
 	const trackListener = {
 		complete: () => {
 			const track = store.refs.spine?.state?.tracks?.[0]
+			// The empty pseudo-animation "completes" instantly; that must not pause playback.
+			if (track?.animation?.name === EMPTY_ANIMATION_NAME) return
 			const duration = track?.animation?.duration ?? store.ui.timelineDuration
 
 			if (store.ui.loop) {
@@ -485,6 +489,12 @@
 
 	const mixTime = $derived(ui.mixTimeEnabled ? ui.mixTime : 0)
 
+	const crossfade = $derived<CrossfadeOptions | null>(
+		ui.crossfadeMode === 'off'
+			? null
+			: { duration: ui.crossfadeDuration, mode: ui.crossfadeMode, trigger: ui.crossfadeTrigger },
+	)
+
 	// While paused the timeline scrubber owns the pose; while playing the clip does.
 	const animationProgress = $derived(
 		!ui.isPlaying && ui.timelineDuration > 0 ? ui.timeline / ui.timelineDuration : undefined,
@@ -518,6 +528,7 @@
 					reverse={ui.isReversed}
 					skin={ui.selectedSkin}
 					{mixTime}
+					{crossfade}
 					resetCounter={ui.resetCounter}
 					{animationProgress}
 					forceHideAttachmentExact={hiddenPaths}
@@ -541,6 +552,7 @@
 						reverse={ui.isReversed}
 						skin={ui.selectedSkin}
 						{mixTime}
+						{crossfade}
 						resetCounter={ui.resetCounter}
 						x={stage.secondSpineOffset.x}
 						y={stage.secondSpineOffset.y}

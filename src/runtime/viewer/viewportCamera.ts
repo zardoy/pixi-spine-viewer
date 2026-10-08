@@ -1,5 +1,6 @@
 import { Physics } from '@esotericsoftware/spine-core'
 import {
+	EMPTY_ANIMATION_NAME,
 	interpolateCameraTransform,
 	pickInitialSkinName,
 	resolveAutoViewport,
@@ -214,6 +215,13 @@ export function tickTimelineAndViewport(screen: ScreenSize, userIsPanning: boole
  */
 export function onSelectedAnimationChanged(spine: AnySpine, screen: ScreenSize): void {
 	if (!ui().selectedAnimation) return
+
+	// The debug empty pseudo-animation has no clip: nothing to time or frame.
+	if (ui().selectedAnimation === EMPTY_ANIMATION_NAME) {
+		ui().timelineDuration = 0
+		ui().timeline = 0
+		return
+	}
 
 	const animation = spine.skeleton?.data?.findAnimation(ui().selectedAnimation)
 	if (!animation) return

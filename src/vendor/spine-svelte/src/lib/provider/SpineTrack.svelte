@@ -77,6 +77,8 @@
 	let prevResetCounter: number | undefined = undefined;
 	let mixAnimationFrame: number | null = null;
 	let loopDelayTimeout: ReturnType<typeof setTimeout> | null = null;
+	/** True only while *this* track holds `state.timeScale` at 0 for a loop delay. */
+	let loopDelayFrozen = false;
 
 	function cancelMixAnimationFrame() {
 		if (mixAnimationFrame !== null) {
@@ -90,6 +92,13 @@
 			clearTimeout(loopDelayTimeout);
 			loopDelayTimeout = null;
 		}
+	}
+
+	/** Undo a loop-delay freeze, if (and only if) this track caused it. */
+	function releaseLoopDelayFreeze(s: SPINE_PIXI.Spine) {
+		if (!loopDelayFrozen) return;
+		loopDelayFrozen = false;
+		if (s.state.timeScale === 0 && (props.timeScale ?? 1) !== 0) s.state.timeScale = 1;
 	}
 
 	/** SpineBase loopDelay: freeze `state.timeScale` between loop iterations. */
@@ -117,8 +126,10 @@
 				const resumeScale = props.timeScale ?? 1;
 				if (resumeScale === 0) return;
 				s.state.timeScale = 0;
+				loopDelayFrozen = true;
 				loopDelayTimeout = setTimeout(() => {
 					loopDelayTimeout = null;
+					loopDelayFrozen = false;
 					if (!s.destroyed && s.state) {
 						s.state.timeScale = props.timeScale ?? 1;
 					}
@@ -258,10 +269,9 @@
 
 		try {
 			clearLoopDelayPause();
-			// Clear any prior loop-delay freeze before starting a new clip.
-			if (s.state.timeScale === 0 && (props.timeScale ?? 1) !== 0) {
-				s.state.timeScale = 1;
-			}
+			// Clear any prior loop-delay freeze before starting a new clip. Gated on the freeze being
+			// ours: a host that paused the spine (timeScale 0 via `paused`) must stay paused.
+			releaseLoopDelayFreeze(s);
 			const switchAnimation = (crossfading: boolean) => {
 				track = s.state.setAnimation(props.trackIndex, animationName, props.loop);
 				// Crossfading cuts underneath; plain switches keep the configured mix.
@@ -399,9 +409,7 @@
 		try {
 			const s = spine();
 			if (s && !s.destroyed && s.state) {
-				if (s.state.timeScale === 0 && (props.timeScale ?? 1) !== 0) {
-					s.state.timeScale = 1;
-				}
+				releaseLoopDelayFreeze(s);
 				s.state.setEmptyAnimation(props.trackIndex, 0);
 			}
 		} catch (e) {

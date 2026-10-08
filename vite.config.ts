@@ -54,7 +54,7 @@ export default defineConfig(() => ({
       "@": path.resolve(__dirname, "./src"),
       // Must precede the bare "pixi-svelte" entry below — Vite/Rollup alias matching is
       // prefix-based and first-match-wins, so a deep import like "pixi-svelte/src/lib/..."
-      // (used to reach pure-TS files without going through the barrel — see PixiApp.tsx) would
+      // (used to reach pure-TS files without going through the barrel — see main.tsx) would
       // otherwise get rewritten using the bare entry's file path instead of its directory.
       "pixi-svelte/src": path.resolve(__dirname, "./src/vendor/pixi-svelte/src"),
       "pixi-svelte": path.resolve(__dirname, "./src/vendor/pixi-svelte/index.ts"),

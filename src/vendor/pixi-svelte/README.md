@@ -11,6 +11,10 @@
 > - `App` / `InitialiseApplication` — `resetAssets` and `resetOnDestroy` opt-outs, so a host with
 >   several `App` roots on one page doesn't have each new root wipe its siblings' global
 >   `PIXI.Assets` cache. Defaults preserve the previous behaviour.
+> - `App` / `InitialiseApplication` — optional `antialias` prop (default off, as before), for the
+>   viewer, whose vector overlays and mesh edges looked worse without it.
+> - `App` / `InitialiseApplication` — optional `resolution` prop (default: capped device pixel
+>   ratio, as before), for pixel-exact screenshot export.
 > - `svelte.config.js` self-contained, `vite.config.js` removed, `package.json` trimmed — these
 >   referenced `config-svelte` / `config-vite` / `eslint-config-custom` workspace packages that
 >   only exist in the origin monorepo. A vendored folder must not import from its host project.

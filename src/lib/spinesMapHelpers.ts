@@ -12,7 +12,7 @@ export function getSortedPngUrlsFromEntry(spine: SpineEntry): string[] {
   return pngKeys.map((k) => spine[k] as string).filter(Boolean)
 }
 
-/** Safe unique key for FileSpineLoader / SpineBase inside one Application. */
+/** Safe unique key for FileSpineLoader / SpineNode inside one Application. */
 export function spineKeyFromMapPath(path: string): string {
   return `map-${path.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
 }

@@ -329,7 +329,7 @@ export function NewUiSidebar({
                 Mipmaps
               </Label>
             </div>
-            <NewUiFieldRow label="Blend mode">
+            <NewUiFieldRow label="Blend mode override">
               <Select
                 value={ui.blendMode}
                 onValueChange={(val) => {
@@ -340,6 +340,7 @@ export function NewUiSidebar({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="original">Original (per slot)</SelectItem>
                   <SelectItem value="normal">Normal</SelectItem>
                   <SelectItem value="add">Additive</SelectItem>
                   <SelectItem value="multiply">Multiply</SelectItem>

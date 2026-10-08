@@ -18,6 +18,10 @@
 		size?: { width: number; height: number };
 		backgroundColor?: string;
 		backgroundAlpha?: number;
+		/** Forwarded to `PIXI.Application.init` — see `InitialiseApplication`. */
+		antialias?: boolean;
+		/** Overrides the capped device pixel ratio — pixel-exact exports want a fixed 1. */
+		resolution?: number;
 	};
 
 	const props: Props = $props();
@@ -35,6 +39,8 @@
 	size={props.size}
 	backgroundColor={props.backgroundColor}
 	backgroundAlpha={props.backgroundAlpha}
+	antialias={props.antialias}
+	resolution={props.resolution}
 >
 	<InitialiseParent>
 		<AssetsLoader>

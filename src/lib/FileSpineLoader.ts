@@ -15,7 +15,7 @@ function skeletonNameFromFile(f: File): string {
 
 /**
  * File-based Spine loader that implements the SpineLoader interface
- * for use with the SpineBase component. Supports single or multiple skeletons (shared atlas).
+ * for use with the SpineNode component. Supports single or multiple skeletons (shared atlas).
  */
 export class FileSpineLoader {
   private skeletonDataCache = new Map<string, AnySkeletonData>();

@@ -1,5 +1,6 @@
 import { configureSpineSvelte } from "spine-svelte";
-// Direct file path, not the `pixi-svelte` barrel — see PixiApp.tsx for why.
+// Direct file path, not the `pixi-svelte` barrel: that barrel re-exports Svelte component `Props`
+// types, which plain `tsc` (this file's build) can't parse.
 import { setSpineAtlasSourceProvider } from "pixi-svelte/src/lib/mipmaps/spineAtlasTextureRegistry";
 import { createRoot } from "react-dom/client";
 import { toast } from "sonner";

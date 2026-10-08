@@ -1,12 +1,12 @@
-import 'pixi.js/prepare'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Application, useApplication, useExtend, useTick } from '@pixi/react'
-import { Container, Rectangle } from 'pixi.js'
+import { Rectangle } from 'pixi.js'
 import type { Application as PIXIApplication } from 'pixi.js'
 import type { AnySkeletonData } from 'spine-svelte'
 import JSZip from 'jszip'
-import { SpineBase } from '../lib/SpineBase'
 import { FileSpineLoader } from '../lib/FileSpineLoader'
+import { SvelteHost } from '../runtime/bridge/SvelteHost'
+import ScreenshotStage from '../runtime/ScreenshotStage.svelte'
+import { createScreenshotStageState } from '../runtime/state/screenshotStageState.svelte'
 import {
   SCREENSHOT_FPS,
   buildSpineScreenshotFilename,
@@ -84,62 +84,6 @@ async function hashFiles(files: File[]): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// PIXI inner component — renders the spine and auto-captures after 2 frames
-// ---------------------------------------------------------------------------
-
-const SpineScreenshotContent = ({
-  loader,
-  bounds,
-  outputScale,
-  animName,
-  skinName,
-  animationProgress,
-  autoDownload,
-  captureSession,
-  onCapture,
-}: {
-  loader: FileSpineLoader
-  bounds: SpineBounds
-  outputScale: number
-  animName: string
-  skinName?: string
-  animationProgress: number
-  autoDownload: boolean
-  captureSession: number
-  onCapture: (app: PIXIApplication, session: number) => void
-}) => {
-  useExtend({ Container })
-  const { app } = useApplication()
-  const captured = useRef(false)
-  const tickCount = useRef(0)
-
-  // Wait several ticks so SpineBase's async useLayoutEffect has time to run
-  useTick(() => {
-    tickCount.current += 1
-    if (!autoDownload || captured.current || tickCount.current < 6) return
-    captured.current = true
-    // Two rAF passes ensure WebGL has flushed the draw commands
-    requestAnimationFrame(() => requestAnimationFrame(() => onCapture(app, captureSession)))
-  })
-
-  return (
-    <SpineBase
-      spine={SPINE_KEY}
-      animation={animName || undefined}
-      skin={skinName}
-      animationProgress={animationProgress}
-      paused
-      loop={false}
-      spineLoader={loader}
-      x={-bounds.x * outputScale}
-      y={-bounds.y * outputScale}
-      scale={{ x: outputScale, y: outputScale }}
-      scaleAnimationDuration={0}
-    />
-  )
-}
-
-// ---------------------------------------------------------------------------
 // File utilities  (identical pattern to PlaygroundAtPosition)
 // ---------------------------------------------------------------------------
 
@@ -203,6 +147,9 @@ export const SpineScreenshot = () => {
   const [captureSession, setCaptureSession] = useState(0)
   const [autoDownload, setAutoDownload] = useState(true)
 
+  const [stageState] = useState(() => createScreenshotStageState())
+  const [stageApi] = useState(() => ({}))
+
   const dropRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const hadBoundsRef = useRef(false)
@@ -244,6 +191,19 @@ export const SpineScreenshot = () => {
   captureParamsRef.current = {
     baseName, fileHash, boundsMode, selectedAnim, selectedSkin, frameIndex, outputScale, canvasW, canvasH, activeBounds,
   }
+
+  // The Svelte stage reads this reactively; assigning is what drives the canvas.
+  stageState.loader = loader
+  stageState.spineKey = SPINE_KEY
+  stageState.bounds = activeBounds
+  stageState.outputScale = outputScale
+  stageState.animName = captureAnimName
+  stageState.skinName = selectedSkin
+  stageState.animationProgress = animationProgress
+  stageState.canvasWidth = canvasW
+  stageState.canvasHeight = canvasH
+  stageState.captureSession = captureSession
+  stageState.autoDownload = autoDownload
 
   const requestCapture = useCallback((withAutoDownload: boolean) => {
     setAutoDownload(withAutoDownload)
@@ -411,6 +371,8 @@ export const SpineScreenshot = () => {
       setStatus('Capture failed — see console')
     }
   }, [])
+
+  stageState.onCapture = handleCapture
 
   const loadFromFiles = useCallback(async (rawFiles: File[]) => {
     const resolved = await resolveSpineFiles(rawFiles)
@@ -771,27 +733,12 @@ export const SpineScreenshot = () => {
                     height: canvasH,
                   }}
                 >
-                  <Application
-                    width={canvasW}
-                    height={canvasH}
-                    backgroundAlpha={0}
-                    antialias
-                    resolution={1}
-                    autoDensity={false}
-                  >
-                    <SpineScreenshotContent
-                      key={captureSession}
-                      loader={loader}
-                      bounds={activeBounds}
-                      outputScale={outputScale}
-                      animName={captureAnimName}
-                      skinName={selectedSkin || undefined}
-                      animationProgress={animationProgress}
-                      autoDownload={autoDownload}
-                      captureSession={captureSession}
-                      onCapture={handleCapture}
-                    />
-                  </Application>
+                  <SvelteHost
+                    component={ScreenshotStage as never}
+                    state={stageState}
+                    api={stageApi}
+                    className=""
+                  />
                 </div>
               </div>
             ) : (

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useSnapshot, ref } from 'valtio'
 import { toast } from 'sonner'
-import { PixiApp } from '@/components/PixiApp'
+import { ViewerCanvas } from '@/components/ViewerCanvas'
 import { AtlasExplorerModal } from '@/components/AtlasExplorerModal'
 import { AttachmentTestPanel } from '@/components/AttachmentTestPanel'
 import { AttachmentHidePanel } from '@/components/AttachmentHidePanel'
@@ -93,6 +93,12 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
       if (e.code === 'KeyT') {
         e.preventDefault()
         spineViewerStore.ui.debugBones = !spineViewerStore.ui.debugBones
+      } else if (e.code === 'KeyY') {
+        e.preventDefault()
+        spineViewerStore.ui.attachmentTestPanelVisible = !spineViewerStore.ui.attachmentTestPanelVisible
+      } else if (e.code === 'KeyU') {
+        e.preventDefault()
+        spineViewerStore.ui.attachmentHidePanelVisible = !spineViewerStore.ui.attachmentHidePanelVisible
       } else if (e.code === 'KeyB') {
         e.preventDefault()
         spineViewerStore.ui.debugBoundsLive = !spineViewerStore.ui.debugBoundsLive
@@ -233,7 +239,7 @@ export function NewUiViewer({ files, onBack }: { files: SpineFiles; onBack: () =
 
       <main className="flex min-h-0 min-w-0 flex-[2] flex-col pb-14 md:pb-0">
         <div className="relative min-h-0 flex-1">
-          <PixiApp />
+          <ViewerCanvas />
           {snapshot.ui.loadError && (
             <div
               className="absolute inset-0 z-10 flex items-center justify-center bg-background/85 p-6"

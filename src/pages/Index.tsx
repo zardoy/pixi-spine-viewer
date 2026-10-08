@@ -3,10 +3,6 @@ import { useSnapshot } from "valtio";
 import { LandingPage } from "../components/LandingPage";
 import { NewUiViewer } from "../components/new-ui/NewUiViewer";
 import { SpinesMapViewer } from "../components/SpinesMapViewer";
-import { SpineTester } from "../components/SpineTester";
-import { Playground } from "../components/Playground";
-import { OverridePlayground } from "../components/OverridePlayground";
-import { PlaygroundAtPosition } from "../components/PlaygroundAtPosition";
 import { SpineScreenshot } from "../components/SpineScreenshot";
 import { EmbedSpineViewer } from "../components/EmbedSpineViewer";
 import { fetchSpineFilesFromUrl, decodeQueryParam } from "../lib/urlFetcher";
@@ -60,16 +56,8 @@ const Index = () => {
   const loadFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
 
-    // Check for tester, playground, override playground, or atPosition first
-    const tester = params.get("tester");
-    const playground = params.get("playground");
-    const overridePlayground = params.get("overridePlayground");
-    const atPosition = params.get("atPosition");
-    const screenshot = params.get("screenshot");
-    if (tester !== null || playground !== null || overridePlayground !== null || atPosition !== null || screenshot !== null) {
-      // These are handled by the component render logic below
-      return;
-    }
+    // The standalone screenshot tool is handled by the render logic below
+    if (params.get("screenshot") !== null) return;
 
     const mapUrl = params.get("spinesMap");
     if (mapUrl) {
@@ -218,33 +206,12 @@ const Index = () => {
     }
   };
 
-  // Check URL params for tester, playground, override playground, or atPosition
   const params = new URLSearchParams(window.location.search);
-  const tester = params.get("tester");
-  const playground = params.get("playground");
-  const overridePlayground = params.get("overridePlayground");
-  const atPosition = params.get("atPosition");
   const screenshot = params.get("screenshot");
   const embed = params.get("embed");
 
   if (embed !== null) {
     return <EmbedSpineViewer />;
-  }
-
-  if (tester !== null) {
-    return <SpineTester />;
-  }
-
-  if (playground !== null) {
-    return <Playground />;
-  }
-
-  if (overridePlayground !== null) {
-    return <OverridePlayground />;
-  }
-
-  if (atPosition !== null) {
-    return <PlaygroundAtPosition />;
   }
 
   if (screenshot !== null) {

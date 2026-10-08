@@ -1,4 +1,4 @@
-import { Upload, FileImage, Sparkles, TestTube, FolderSync, Sparkles as SparklesIcon } from "lucide-react";
+import { Upload, FileImage, Sparkles, FolderSync, Sparkles as SparklesIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { useRef, useEffect, useState } from "react";
@@ -387,10 +387,6 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFo
     await loadExampleInViewer(example);
   };
 
-  const handleOpenTester = () => {
-    window.location.href = '?tester';
-  };
-
   const handleOpenParticleGenerator = () => {
     // Sync URL so reload restores generator view
     window.history.replaceState({}, "", `${window.location.pathname}?generator=1`);
@@ -410,17 +406,6 @@ export const LandingPage = ({ onFilesSelect, onMultipleSkeletonsFound, onSpineFo
         onChange={handleFileInputChange}
         className="hidden"
       />
-      {/* Small tester button in top-right */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={handleOpenTester}
-        className="absolute top-4 right-4 text-xs"
-        title="Open SpineBase Tester"
-      >
-        <TestTube className="w-3 h-3 mr-1" />
-        Tester
-      </Button>
       {/* ZARDOY Watermark */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-[20rem] font-bold italic text-white opacity-[0.03] select-none tracking-wider" style={{ fontFamily: 'Impact, "Arial Black", sans-serif' }}>

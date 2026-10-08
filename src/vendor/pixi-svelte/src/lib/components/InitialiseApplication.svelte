@@ -21,6 +21,10 @@
 		/** Defaults to opaque black — the caller recolours once its loading screen is gone. */
 		backgroundColor?: string
 		backgroundAlpha?: number
+		/** Defaults to Pixi's own default (off). Tooling that draws vector overlays wants it on. */
+		antialias?: boolean
+		/** Defaults to the device pixel ratio, capped. */
+		resolution?: number
 	}
 
 	const props: Props = $props()
@@ -76,13 +80,13 @@
 			backgroundAlpha: props.backgroundAlpha ?? 1,
 			hello: true,
 			multiView: false,
-			// antialias: true,
+			antialias: props.antialias ?? false,
 			clearBeforeRender: true,
 			// Dev: keep GL buffer for canvas.toDataURL (B screenshots — see devCanvasScreenshot).
 			// preserveDrawingBuffer: import.meta.env.DEV_MODE,
 			// Default Pixi order is WebGL → WebGPU → canvas. Forcing WebGPU first breaks
 			// canvas-backed `FillGradient` textures in some builds (solid fill instead of ramp).
-			resolution: cappedDevicePixelRatio(devicePixelRatio.current),
+			resolution: props.resolution ?? cappedDevicePixelRatio(devicePixelRatio.current),
 			...(props.size
 				? { width: props.size.width, height: props.size.height }
 				: { resizeTo: resizeTarget }),

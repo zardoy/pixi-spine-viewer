@@ -275,6 +275,7 @@
 				animationName={playback.animationName}
 				loop={playback.playbackLoop}
 				mixDuration={props.mixTime}
+				reverse={props.reverse}
 				resetCounter={playback.resetCounter}
 				restartKey={props.restartKey}
 				listener={trackListener}
